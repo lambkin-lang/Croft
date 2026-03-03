@@ -23,7 +23,12 @@ set(TIER1_SOURCES
     src/host/host_queue.c
 )
 
-add_library(croft STATIC ${TIER0_SOURCES} ${TIER1_SOURCES})
+# ── Tier 2: Filesystem ──────────────────────────────────────────────────
+set(TIER2_SOURCES
+    src/host/host_fs.c
+)
+
+add_library(croft STATIC ${TIER0_SOURCES} ${TIER1_SOURCES} ${TIER2_SOURCES})
 
 # ── WIT Schema Codegen ──────────────────────────────────────────────────
 set(WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_schema_dbis.h")
@@ -87,7 +92,7 @@ target_link_libraries(croft PUBLIC Threads::Threads)
 if(CROFT_BUILD_TESTS)
     enable_testing()
 
-    add_executable(test_croft tests/test_main.c tests/test_queue.c)
+    add_executable(test_croft tests/test_main.c tests/test_queue.c tests/host_tests/test_fs.c)
     target_include_directories(test_croft PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
     target_link_libraries(test_croft PRIVATE croft)
     add_test(NAME croft_tests COMMAND test_croft)

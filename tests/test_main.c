@@ -214,6 +214,17 @@ extern int test_queue_backpressure(void);
 extern int test_queue_unbind(void);
 
 /* ═══════════════════════════════════════════════════════════════════ *
+ *  Filesystem Tests                                                  *
+ * ═══════════════════════════════════════════════════════════════════ */
+
+extern void run_test_fs(int argc, char **argv);
+
+static int run_tier2_fs_tests(void) {
+    run_test_fs(0, NULL);
+    return 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════ *
  *  main                                                              *
  * ═══════════════════════════════════════════════════════════════════ */
 
@@ -240,6 +251,9 @@ int main(void)
     RUN_TEST(test_queue_multi_producer);
     RUN_TEST(test_queue_backpressure);
     RUN_TEST(test_queue_unbind);
+
+    printf("\n[host_fs]\n");
+    RUN_TEST(run_tier2_fs_tests);
 
     printf("\n%d/%d tests passed.\n",
            g_tests_run - g_tests_failed, g_tests_run);
