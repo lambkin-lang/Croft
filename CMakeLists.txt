@@ -11,6 +11,32 @@ option(CROFT_ENABLE_AUDIO         "Tier 8: Audio (miniaudio)"                   
 option(CROFT_ENABLE_ACCESSIBILITY "Tier 9: OS accessibility bridges"            OFF)
 option(CROFT_BUILD_TESTS          "Build the test suite"                        ON)
 
+# ── Dependencies ────────────────────────────────────────────────────────
+include(FetchContent)
+
+if(CROFT_ENABLE_WASM)
+    # Configure Wasm3 for universal "MVP" Wasm only, to maximize compatibility
+    set(BUILD_WASI NONE CACHE STRING "Disable built-in WASI to use custom Sapling WASI shim")
+    set(d3_compiler OFF CACHE BOOL "Disable compiler")
+    set(d3_extensions OFF CACHE BOOL "Disable extensions (MVP only)")
+    
+    FetchContent_Declare(wasm3
+        GIT_REPOSITORY https://github.com/wasm3/wasm3.git
+        GIT_TAG        v0.5.0
+    )
+    FetchContent_MakeAvailable(wasm3)
+
+    # WABT is needed to compile our .wat fixtures to .wasm tests
+    set(BUILD_TESTS OFF CACHE BOOL "Disable WABT tests")
+    set(BUILD_TOOLS ON CACHE BOOL "Enable WABT tools")
+    set(BUILD_LIBWASM OFF CACHE BOOL "Disable building WABT's shared library")
+    FetchContent_Declare(wabt
+        GIT_REPOSITORY https://github.com/WebAssembly/wabt.git
+        GIT_TAG        1.0.34
+    )
+    FetchContent_MakeAvailable(wabt)
+endif()
+
 # ── Tier 0: Foundation (always built) ───────────────────────────────────
 set(TIER0_SOURCES
     src/host/host_log.c
@@ -88,6 +114,14 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 target_link_libraries(croft PUBLIC Threads::Threads)
 
+if(CROFT_ENABLE_WASM)
+    target_link_libraries(croft PUBLIC m3)
+    # Tier 4: Wasm Integration Sources
+    target_sources(croft PRIVATE 
+        src/host/host_wasm.c
+    )
+endif()
+
 # ── Tests ───────────────────────────────────────────────────────────────
 if(CROFT_BUILD_TESTS)
     enable_testing()
@@ -96,6 +130,29 @@ if(CROFT_BUILD_TESTS)
     target_include_directories(test_croft PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
     target_link_libraries(test_croft PRIVATE croft)
     add_test(NAME croft_tests COMMAND test_croft)
+
+    if(CROFT_ENABLE_WASM)
+        # ── Compile Wasm Guest Test Fixture ─────────────────────────────
+        set(WASM_GUEST_BIN "${CMAKE_CURRENT_BINARY_DIR}/tests/dummy_guest.wasm")
+        add_custom_command(
+            OUTPUT ${WASM_GUEST_BIN}
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/tests"
+            COMMAND wat2wasm "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/dummy_guest.wat"
+                             -o ${WASM_GUEST_BIN}
+            DEPENDS wat2wasm "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/dummy_guest.wat"
+            COMMENT "Compiling dummy_guest.wat to Wasm..."
+        )
+        add_custom_target(wasm_guest_gen DEPENDS ${WASM_GUEST_BIN})
+
+        # ── Test Wasm Integration ───────────────────────────────────────
+        target_sources(test_croft PRIVATE tests/host_tests/test_wasm_guest.c)
+        if(TARGET wasm_guest_gen)
+            add_dependencies(test_croft wasm_guest_gen)
+            target_compile_definitions(test_croft PRIVATE 
+                DUMMY_GUEST_WASM_PATH="${WASM_GUEST_BIN}"
+            )
+        endif()
+    endif()
 
     # Sapling test suite (each file has its own main)
     file(GLOB SAPLING_UNIT_TESTS "tests/sapling_tests/unit/*.c" "tests/sapling_tests/integration/*.c")
