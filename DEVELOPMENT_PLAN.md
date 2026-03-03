@@ -102,18 +102,11 @@ Threads never share Wasm memory or tables.
 
 ## 4. Wasm Execution Model
 
-The Wasm execution model defines the isolation and communication semantics for all modules. These same constraints apply when modules are compiled to native code — each thread context is isolated with its own state and message queues, mirroring Wasm‑style sandboxing.
+The Wasm execution model is formally implemented by the integrated **Sapling Runner Engine** (`sap_runner_v0`). It defines the isolation and communication semantics for all modules. These same constraints apply when modules are compiled to native code — each thread context is isolated with its own state and message queues, mirroring Wasm‑style sandboxing.
 
-### 4.1 Per‑Thread Wasm Context
+### 4.1 Per‑Thread Wasm Context (`SapRunnerV0Worker`)
 
-```c
-struct wasm_thread_ctx {
-    struct wasm_runtime *rt;
-    struct wasm_instance *inst;
-    struct host_queue inbox;
-    struct host_queue outbox;
-};
-```
+Sapling `runner_v0` defines the execution context natively. Incoming intentions are parsed from `host_queue` equivalents, mapped into strict runtime constraints, and fulfilled via `TxnCtx`.
 
 ### 4.2 Host‑Provided Imports
 
@@ -178,23 +171,17 @@ struct scene_node_vtbl {
 
 ---
 
-## 6. Editor Model (Persistent Text)
+## 6. Editor Model (Persistent Text via Sapling)
 
-### 6.1 API
+The persistent text, instead of a standalone piece-table, is directly backed by the deeply integrated Sapling datastore engine (`sap_text_*` and `sap_seq_*` modules).
+
+### 6.1 Sapling Driven API
 
 ```c
-typedef struct text_buffer text_buffer;
-
-text_buffer *tb_create(void);
-void tb_destroy(text_buffer *);
-
-int tb_insert(text_buffer *, uint32_t pos,
-              const uint8_t *utf8, uint32_t len);
-
-int tb_delete(text_buffer *, uint32_t pos, uint32_t len);
-
-int tb_slice(const text_buffer *, uint32_t start, uint32_t len,
-             uint8_t *out, uint32_t out_cap);
+/* Implemented via sapling/text.h and sapling/seq.h */
+SapTextTree *sap_text_tree_new(SapTxnCtx *txn);
+int sap_text_insert_str(SapTxnCtx *txn, uint32_t char_pos, const char *str);
+int sap_text_delete(SapTxnCtx *txn, uint32_t char_pos, uint32_t char_len);
 ```
 
 ### 6.2 Requirements

@@ -115,32 +115,31 @@ on each platform.
 **Tests:** read/write round‑trip, non‑existent path error, directory
 helpers return non‑empty strings.
 
-### Tier 3 — Text Buffer
-
-**Goal:** Persistent text data structure with cheap slicing.
-
+### Tier 3 — Text Buffer / Datastore
+    
+**Goal:** Persistent text capability and ordered map (B-Tree/Finger Tree) via the embedded Sapling engine.
+    
 | Component | Header | Source |
 |---|---|---|
-| Text buffer | `croft/text_buffer.h` | `text_buffer.c` |
-
-Implements a piece table (or rope) behind the API from
-`DEVELOPMENT_PLAN.md` §6. Insert, delete, and slice are all O(log n)
-or better.
-
+| Sapling DB | `sapling/sapling.h` | `sapling.c` |
+| Sequence | `sapling/seq.h` | `seq.c` |
+| Mutable Text | `sapling/text.h` | `text.c` |
+    
+Fulfills the persistent text data structure using Sapling's `text.c` (an immutable finger-tree implementation) and `seq.c`, instead of a generic piece table. The `SapMemArena` handles all caching.
+    
 **Tests:** insert at start/middle/end, delete range, slice round‑trip,
 empty buffer edge cases, large‑document stress.
 
-### Tier 4 — Wasm Embedding
+### Tier 4 — Wasm Embedding & Wasm Runtime Event Loop
 
 **Goal:** Embed a Wasm runtime and wire every host function from
-Tiers 0–3 as Wasm imports.
+Tiers 0–3 as Wasm imports, mediated by the Sapling `runner_v0` loop.
 
-Uses wasm3, Wasmtime‑C, or another single‑file‑friendly runtime.
-The `wasm_thread_ctx` struct from `DEVELOPMENT_PLAN.md` §4.1 owns
-the runtime store, instance, and queue pair.
+Utilizes the `sapling/src/runner/` infrastructure as the canonical
+runtime framework. The `SapRunnerV0Workers` own the thread execution
+and message handling context.
 
-Wasm exports `wasm_handle_event` and `wasm_tick` are called by the
-host's event loop (or a simple `while` loop for back‑end services).
+Wasm exports and intent executions are called by `sap_runner_v0_worker_tick`.
 
 **Tests:** load a trivial `.wasm` module, call `wasm_tick`, verify
 `host_log` output, round‑trip a message through send/recv.
