@@ -4,6 +4,8 @@
 
 Croft is a lightweight, cross-platform host runtime written in **portable C11**. It uses pthreads, GLFW, tgfx/Skia, miniaudio, and an embedded Wasm runtime. The host executes one Wasm instance per OS thread with strict isolation and host-mediated messaging.
 
+Croft also serves as the **runtime library for a new programming language**, producing small native binaries. The Wasm-style isolation model (per-thread instances, host-mediated messaging, no shared memory) defines the conceptual architecture regardless of whether modules are compiled to Wasm or to native code.
+
 Target platforms: macOS, Windows, Linux.
 
 ## Tech Stack
