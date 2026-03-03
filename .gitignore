@@ -58,3 +58,7 @@ dkms.conf
 build/
 cmake-build-*/
 CMakeUserPresets.json
+
+# Tooling binaries
+tools/wit_codegen
+tools/wit_schema_check
