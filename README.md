@@ -1,6 +1,5 @@
 # Croft
-
-Lightweight Cross‑Platform Host Architecture (C11 + pthreads + Wasm)
+Lightweight Cross‑Platform Host Architecture & Runtime Library (C11 + pthreads + Wasm/Native)
 
 ## Overview
 

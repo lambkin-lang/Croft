@@ -2,6 +2,8 @@
 
 This document defines the architecture, subsystem boundaries, and development plan for a lightweight, cross‑platform host runtime written in **portable C11**, using **pthreads**, **GLFW**, **tgfx/Skia**, **miniaudio**, and an embedded **Wasm runtime**. The host executes one Wasm instance per OS thread, with strict isolation and host‑mediated messaging.
 
+Croft is also designed to serve as the **runtime library for a new programming language**, producing small native binaries. The Wasm‑style isolation model (per‑thread instances, host‑mediated messaging, no shared memory) forms the semantic conceptualization of the architecture whether modules are compiled to Wasm or to native code.
+
 ---
 
 ## 1. Goals
@@ -15,6 +17,7 @@ This document defines the architecture, subsystem boundaries, and development pl
 - One Wasm instance per thread; no direct Wasm–Wasm communication.
 - Host‑mediated messaging between threads.
 - Modular subsystems (audio, filesystem, rendering, threading).
+- Serve as a runtime library for a new programming language, supporting both Wasm and native compilation targets while preserving Wasm‑like isolation semantics.
 
 ---
 
@@ -98,6 +101,8 @@ Threads never share Wasm memory or tables.
 ---
 
 ## 4. Wasm Execution Model
+
+The Wasm execution model defines the isolation and communication semantics for all modules. These same constraints apply when modules are compiled to native code — each thread context is isolated with its own state and message queues, mirroring Wasm‑style sandboxing.
 
 ### 4.1 Per‑Thread Wasm Context
 
