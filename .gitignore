@@ -53,3 +53,8 @@ dkms.conf
 
 # debug information files
 *.dwo
+
+# CMake build directories
+build/
+cmake-build-*/
+CMakeUserPresets.json
