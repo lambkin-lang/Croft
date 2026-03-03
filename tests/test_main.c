@@ -1,0 +1,233 @@
+/*
+ * test_main.c — Tier 0 test suite.
+ *
+ * A deliberately simple test harness: each test is a function that
+ * returns 0 on success.  No external test framework is required.
+ */
+
+#include "croft/platform.h"
+#include "croft/host_log.h"
+#include "croft/host_time.h"
+#include "croft/host_thread.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+/* ── Minimal test macros ──────────────────────────────────────────── */
+
+static int g_tests_run    = 0;
+static int g_tests_failed = 0;
+
+#define RUN_TEST(fn)                                                 \
+    do {                                                             \
+        g_tests_run++;                                               \
+        printf("  %-40s ", #fn);                                     \
+        int _rc = fn();                                              \
+        if (_rc != 0) { g_tests_failed++; printf("FAIL\n"); }       \
+        else { printf("ok\n"); }                                     \
+    } while (0)
+
+#define ASSERT(cond)                                                 \
+    do {                                                             \
+        if (!(cond)) {                                               \
+            fprintf(stderr, "    ASSERT failed: %s  (%s:%d)\n",     \
+                    #cond, __FILE__, __LINE__);                      \
+            return 1;                                                \
+        }                                                            \
+    } while (0)
+
+/* ═══════════════════════════════════════════════════════════════════ *
+ *  host_time tests                                                   *
+ * ═══════════════════════════════════════════════════════════════════ */
+
+static int test_time_nonzero(void)
+{
+    uint64_t t = host_time_millis();
+    ASSERT(t > 0);
+    return 0;
+}
+
+static int test_time_monotonic(void)
+{
+    uint64_t a = host_time_millis();
+    /* Burn a tiny amount of time. */
+    for (volatile int i = 0; i < 100000; i++) { }
+    uint64_t b = host_time_millis();
+    ASSERT(b >= a);
+    return 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════ *
+ *  host_log tests                                                    *
+ * ═══════════════════════════════════════════════════════════════════ */
+
+/* A small capture buffer used by the custom sink. */
+static char  g_log_buf[256];
+static int   g_log_level;
+static uint32_t g_log_len;
+
+static void capture_sink(int level, const char *ptr, uint32_t len,
+                          void *userdata)
+{
+    (void)userdata;
+    g_log_level = level;
+    g_log_len   = len < sizeof(g_log_buf) ? len : (uint32_t)(sizeof(g_log_buf) - 1);
+    memcpy(g_log_buf, ptr, g_log_len);
+    g_log_buf[g_log_len] = '\0';
+}
+
+static int test_log_capture(void)
+{
+    host_log_set_sink(capture_sink, NULL);
+    host_log_set_level(CROFT_LOG_TRACE);
+
+    const char *msg = "hello croft";
+    host_log(CROFT_LOG_INFO, msg, (uint32_t)strlen(msg));
+
+    ASSERT(g_log_level == CROFT_LOG_INFO);
+    ASSERT(g_log_len == strlen(msg));
+    ASSERT(memcmp(g_log_buf, msg, g_log_len) == 0);
+
+    /* Restore defaults. */
+    host_log_set_sink(NULL, NULL);
+    return 0;
+}
+
+static int test_log_level_filter(void)
+{
+    host_log_set_sink(capture_sink, NULL);
+    host_log_set_level(CROFT_LOG_WARN);
+
+    g_log_buf[0] = '\0';
+    g_log_len    = 0;
+
+    const char *msg = "should be filtered";
+    host_log(CROFT_LOG_DEBUG, msg, (uint32_t)strlen(msg));
+
+    /* The message should NOT have reached the sink. */
+    ASSERT(g_log_len == 0);
+
+    /* But a WARN message should. */
+    const char *msg2 = "warning!";
+    host_log(CROFT_LOG_WARN, msg2, (uint32_t)strlen(msg2));
+    ASSERT(g_log_len == strlen(msg2));
+
+    host_log_set_sink(NULL, NULL);
+    host_log_set_level(CROFT_LOG_TRACE);
+    return 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════ *
+ *  host_thread tests                                                 *
+ * ═══════════════════════════════════════════════════════════════════ */
+
+static void *increment_thread(void *arg)
+{
+    int *counter = (int *)arg;
+    (*counter)++;
+    return NULL;
+}
+
+static int test_thread_create_join(void)
+{
+    int counter = 0;
+    host_thread_t t;
+    int rc = host_thread_create(&t, increment_thread, &counter);
+    ASSERT(rc == 0);
+
+    rc = host_thread_join(t, NULL);
+    ASSERT(rc == 0);
+    ASSERT(counter == 1);
+    return 0;
+}
+
+static int test_mutex_lock_unlock(void)
+{
+    host_mutex_t m;
+    ASSERT(host_mutex_init(&m) == 0);
+    ASSERT(host_mutex_lock(&m) == 0);
+    ASSERT(host_mutex_unlock(&m) == 0);
+    host_mutex_destroy(&m);
+    return 0;
+}
+
+/* Shared state for the mutex‑contention test. */
+struct counter_ctx {
+    host_mutex_t mutex;
+    int          value;
+};
+
+static void *mutex_incrementer(void *arg)
+{
+    struct counter_ctx *ctx = (struct counter_ctx *)arg;
+    for (int i = 0; i < 10000; i++) {
+        host_mutex_lock(&ctx->mutex);
+        ctx->value++;
+        host_mutex_unlock(&ctx->mutex);
+    }
+    return NULL;
+}
+
+static int test_mutex_contention(void)
+{
+    struct counter_ctx ctx;
+    ctx.value = 0;
+    ASSERT(host_mutex_init(&ctx.mutex) == 0);
+
+    enum { N = 4 };
+    host_thread_t threads[N];
+    for (int i = 0; i < N; i++)
+        ASSERT(host_thread_create(&threads[i], mutex_incrementer, &ctx) == 0);
+
+    for (int i = 0; i < N; i++)
+        ASSERT(host_thread_join(threads[i], NULL) == 0);
+
+    ASSERT(ctx.value == N * 10000);
+    host_mutex_destroy(&ctx.mutex);
+    return 0;
+}
+
+static int test_cond_signal(void)
+{
+    host_mutex_t m;
+    host_cond_t  c;
+    ASSERT(host_mutex_init(&m) == 0);
+    ASSERT(host_cond_init(&c) == 0);
+
+    /* Simple signal/broadcast — just verify no errors. */
+    ASSERT(host_cond_signal(&c) == 0);
+    ASSERT(host_cond_broadcast(&c) == 0);
+
+    host_cond_destroy(&c);
+    host_mutex_destroy(&m);
+    return 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════════ *
+ *  main                                                              *
+ * ═══════════════════════════════════════════════════════════════════ */
+
+int main(void)
+{
+    printf("Croft Tier 0 — test suite\n");
+
+    printf("\n[host_time]\n");
+    RUN_TEST(test_time_nonzero);
+    RUN_TEST(test_time_monotonic);
+
+    printf("\n[host_log]\n");
+    RUN_TEST(test_log_capture);
+    RUN_TEST(test_log_level_filter);
+
+    printf("\n[host_thread]\n");
+    RUN_TEST(test_thread_create_join);
+    RUN_TEST(test_mutex_lock_unlock);
+    RUN_TEST(test_mutex_contention);
+    RUN_TEST(test_cond_signal);
+
+    printf("\n%d/%d tests passed.\n",
+           g_tests_run - g_tests_failed, g_tests_run);
+
+    return g_tests_failed > 0 ? 1 : 0;
+}
