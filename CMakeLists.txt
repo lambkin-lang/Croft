@@ -18,7 +18,12 @@ set(TIER0_SOURCES
     src/host/host_thread.c
 )
 
-add_library(croft STATIC ${TIER0_SOURCES})
+# ── Tier 1: Messaging ───────────────────────────────────────────────────
+set(TIER1_SOURCES
+    src/host/host_queue.c
+)
+
+add_library(croft STATIC ${TIER0_SOURCES} ${TIER1_SOURCES})
 
 target_include_directories(croft PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -34,7 +39,7 @@ target_link_libraries(croft PUBLIC Threads::Threads)
 if(CROFT_BUILD_TESTS)
     enable_testing()
 
-    add_executable(test_croft tests/test_main.c)
+    add_executable(test_croft tests/test_main.c tests/test_queue.c)
     target_link_libraries(test_croft PRIVATE croft)
     add_test(NAME croft_tests COMMAND test_croft)
 endif()

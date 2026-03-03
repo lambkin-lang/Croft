@@ -205,6 +205,15 @@ static int test_cond_signal(void)
 }
 
 /* ═══════════════════════════════════════════════════════════════════ *
+ *  Queue Tests                                                       *
+ * ═══════════════════════════════════════════════════════════════════ */
+
+extern int test_queue_basic(void);
+extern int test_queue_multi_producer(void);
+extern int test_queue_backpressure(void);
+extern int test_queue_unbind(void);
+
+/* ═══════════════════════════════════════════════════════════════════ *
  *  main                                                              *
  * ═══════════════════════════════════════════════════════════════════ */
 
@@ -225,6 +234,12 @@ int main(void)
     RUN_TEST(test_mutex_lock_unlock);
     RUN_TEST(test_mutex_contention);
     RUN_TEST(test_cond_signal);
+
+    printf("\n[host_queue]\n");
+    RUN_TEST(test_queue_basic);
+    RUN_TEST(test_queue_multi_producer);
+    RUN_TEST(test_queue_backpressure);
+    RUN_TEST(test_queue_unbind);
 
     printf("\n%d/%d tests passed.\n",
            g_tests_run - g_tests_failed, g_tests_run);
