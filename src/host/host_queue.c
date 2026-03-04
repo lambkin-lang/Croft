@@ -3,6 +3,7 @@
  */
 
 #include "croft/host_queue.h"
+#include "croft/host_messaging.h"
 #include "croft/host_thread.h"
 #include "croft/host_log.h"
 #include <stdlib.h>
@@ -89,6 +90,12 @@ void host_queue_destroy(host_queue_t *q)
 int32_t host_queue_send(host_queue_t *q, const uint8_t *ptr, uint32_t len)
 {
     if (!q || (!ptr && len > 0)) return -1;
+    
+    // Tier 10: Fail-Fast ABI Constraint Boundary
+    int32_t validation_err = croft_msg_validate(ptr, len);
+    if (validation_err != 0) {
+        return validation_err; // Bubble up specific failure codes (-1, -2, -3, -4)
+    }
 
     host_mutex_lock(&q->mutex);
     

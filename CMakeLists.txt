@@ -76,6 +76,7 @@ set(TIER0_SOURCES
 # ── Tier 1: Messaging ───────────────────────────────────────────────────
 set(TIER1_SOURCES
     src/host/host_queue.c
+    src/host/host_messaging.c
 )
 
 # ── Tier 2: Filesystem ──────────────────────────────────────────────────
@@ -235,6 +236,10 @@ if(CROFT_BUILD_TESTS)
         add_executable(test_audio_standalone tests/host_tests/test_audio_standalone.c)
         target_link_libraries(test_audio_standalone croft)
     endif()
+    
+    # Tier 10: ABI Hardening Validation barrier
+    add_executable(test_fuzz_messaging tests/host_tests/test_fuzz_messaging.c)
+    target_link_libraries(test_fuzz_messaging croft)
 
     # Sapling test suite (each file has its own main)
     file(GLOB SAPLING_UNIT_TESTS "tests/sapling_tests/unit/*.c" "tests/sapling_tests/integration/*.c")
@@ -258,3 +263,28 @@ if(CROFT_BUILD_TESTS)
         add_test(NAME sapling_${test_name} COMMAND ${test_name})
     endforeach()
 endif()
+
+# ── Tier 10: Packaging ──────────────────────────────────────────────────
+# Install library
+install(TARGETS croft
+    ARCHIVE DESTINATION lib
+    LIBRARY DESTINATION lib
+    RUNTIME DESTINATION bin
+)
+
+# Install public headers
+install(DIRECTORY include/croft/
+    DESTINATION include/croft
+    FILES_MATCHING PATTERN "*.h"
+)
+
+# CPack configuration
+set(CPACK_PACKAGE_NAME "croft-host")
+set(CPACK_PACKAGE_VENDOR "Lambkin-Lang")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Croft Wasm Application Engine")
+set(CPACK_PACKAGE_VERSION "0.1.0")
+
+# Generate ZIP and TGZ packages by default
+set(CPACK_GENERATOR "ZIP;TGZ")
+
+include(CPack)
