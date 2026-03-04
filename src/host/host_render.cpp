@@ -138,6 +138,24 @@ int32_t host_render_begin_frame(uint32_t width, uint32_t height) {
     return 0;
 }
 
+void host_render_save(void) {
+    if (state.canvas) {
+        state.canvas->save();
+    }
+}
+
+void host_render_restore(void) {
+    if (state.canvas) {
+        state.canvas->restore();
+    }
+}
+
+void host_render_translate(float dx, float dy) {
+    if (state.canvas) {
+        state.canvas->translate(dx, dy);
+    }
+}
+
 int32_t host_render_clear(uint32_t color_rgba) {
     if (!state.canvas) return -1;
     float r = ((color_rgba >> 24) & 0xFF) / 255.0f;

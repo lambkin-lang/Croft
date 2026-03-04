@@ -115,6 +115,30 @@ int32_t host_ui_should_close(void) {
     return glfwWindowShouldClose(g_window);
 }
 
+void host_ui_get_mouse_pos(double *x, double *y) {
+    if (g_window) {
+        glfwGetCursorPos(g_window, x, y);
+    } else {
+        *x = 0; *y = 0;
+    }
+}
+
+int32_t host_ui_get_mouse_button(int32_t button) {
+    if (!g_window) return 0;
+    return glfwGetMouseButton(g_window, button) == GLFW_PRESS;
+}
+
+void host_ui_set_user_data(void *data) {
+    if (g_window) {
+        glfwSetWindowUserPointer(g_window, data);
+    }
+}
+
+void *host_ui_get_user_data(void) {
+    if (!g_window) return NULL;
+    return glfwGetWindowUserPointer(g_window);
+}
+
 void host_ui_poll_events(void) {
     glfwPollEvents();
 }

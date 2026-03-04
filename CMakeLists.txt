@@ -145,10 +145,13 @@ endif()
 
 if(CROFT_ENABLE_UI)
     target_link_libraries(croft PUBLIC glfw tgfx)
-    # Tier 5 and 6: Windowing and Rendering
+    # Tier 5, 6, 7: Windowing, Rendering, and UI Scene Graph
     target_sources(croft PRIVATE 
         src/host/host_ui.c
         src/host/host_render.cpp
+        src/scene/scene_node.c
+        src/scene/node_viewport.c
+        src/scene/node_code_block.c
     )
 endif()
 
@@ -190,7 +193,10 @@ if(CROFT_BUILD_TESTS)
         target_link_libraries(test_ui_window_standalone PRIVATE croft)
 
         add_executable(test_render_standalone tests/host_tests/test_render_standalone.c)
-        target_link_libraries(test_render_standalone PRIVATE croft)
+        target_link_libraries(test_render_standalone croft)
+
+        add_executable(test_scene_standalone tests/host_tests/test_scene_standalone.c)
+        target_link_libraries(test_scene_standalone croft)
         target_include_directories(test_ui_window_standalone PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
         # We explicitly omit this from `add_test(NAME croft_tests)` to prevent headless CI server failures
     endif()

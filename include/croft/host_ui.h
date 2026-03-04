@@ -55,6 +55,11 @@ void host_ui_test_clear_blue(void);
  */
 int32_t host_ui_should_close(void);
 
+void host_ui_get_mouse_pos(double *x, double *y);
+int32_t host_ui_get_mouse_button(int32_t button);
+void host_ui_set_user_data(void *data);
+void *host_ui_get_user_data(void);
+
 /**
  * Process pending window events. Will trigger the registered event callback.
  */
