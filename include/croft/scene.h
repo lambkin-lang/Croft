@@ -32,6 +32,7 @@ typedef struct scene_node_vtbl {
     void (*draw)(scene_node *n, render_ctx *rc);
     void (*hit_test)(scene_node *n, float x, float y, hit_result *out);
     void (*update_accessibility)(scene_node *n);
+    void (*transform_coords)(scene_node *n, float *x, float *y);
 } scene_node_vtbl;
 
 //
@@ -69,6 +70,7 @@ typedef struct viewport_node {
     scene_node base;
     float scroll_x;
     float scroll_y;
+    float scale;
 } viewport_node;
 
 void viewport_node_init(viewport_node *n, float x, float y, float sx, float sy);

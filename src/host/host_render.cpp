@@ -156,6 +156,12 @@ void host_render_translate(float dx, float dy) {
     }
 }
 
+void host_render_scale(float sx, float sy) {
+    if (state.canvas) {
+        state.canvas->scale(sx, sy);
+    }
+}
+
 int32_t host_render_clear(uint32_t color_rgba) {
     if (!state.canvas) return -1;
     float r = ((color_rgba >> 24) & 0xFF) / 255.0f;

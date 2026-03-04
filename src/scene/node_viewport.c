@@ -17,6 +17,7 @@ static void viewport_draw(scene_node *n, render_ctx *rc) {
     // and then translate by scroll_x, scroll_y before drawing children.
     // For this basic tier 7 implementation, we just translate.
     host_render_translate(vp->scroll_x, vp->scroll_y);
+    host_render_scale(vp->scale, vp->scale);
 }
 
 static void viewport_hit_test(scene_node *n, float x, float y, hit_result *out) {
@@ -30,10 +31,18 @@ static void viewport_update_accessibility(scene_node *n) {
     // Not implemented for Tier 7
 }
 
+static void viewport_transform_coords(scene_node *n, float *x, float *y) {
+    viewport_node *vp = (viewport_node *)n;
+    // Inverse of what draw does: translate(scroll_x, scroll_y) then scale(scale, scale)
+    *x = (*x - vp->scroll_x) / vp->scale;
+    *y = (*y - vp->scroll_y) / vp->scale;
+}
+
 static scene_node_vtbl viewport_vtbl = {
     .draw = viewport_draw,
     .hit_test = viewport_hit_test,
-    .update_accessibility = viewport_update_accessibility
+    .update_accessibility = viewport_update_accessibility,
+    .transform_coords = viewport_transform_coords
 };
 
 void viewport_node_init(viewport_node *n, float x, float y, float sx, float sy) {
@@ -41,6 +50,7 @@ void viewport_node_init(viewport_node *n, float x, float y, float sx, float sy) 
     n->base.flags |= 1; // Mark as container/viewport
     n->scroll_x = 0;
     n->scroll_y = 0;
+    n->scale = 1.0f;
     
     // Group role doesn't have a specific text label, but acts as a container
     host_a11y_node_config cfg = {

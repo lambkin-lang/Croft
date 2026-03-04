@@ -252,6 +252,9 @@ if(CROFT_BUILD_TESTS)
             target_link_libraries(test_menu_standalone "-framework AppKit")
         endif()
         
+        add_executable(test_zoom_standalone tests/host_tests/test_zoom_standalone.c)
+        target_link_libraries(test_zoom_standalone croft)
+        
         target_include_directories(test_ui_window_standalone PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
         # We explicitly omit this from `add_test(NAME croft_tests)` to prevent headless CI server failures
     endif()

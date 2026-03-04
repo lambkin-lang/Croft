@@ -28,6 +28,7 @@ int32_t host_render_begin_frame(uint32_t width, uint32_t height);
 void host_render_save(void);
 void host_render_restore(void);
 void host_render_translate(float dx, float dy);
+void host_render_scale(float sx, float sy);
 
 /**
  * Clears the screen to the given RGBA color.

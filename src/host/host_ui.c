@@ -40,6 +40,14 @@ static void glfw_mouse_button_callback(GLFWwindow* window, int button, int actio
     }
 }
 
+static void glfw_scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
+    (void)window;
+    if (g_event_cb) {
+        /* Encodes xoffset, yoffset using integer multiplication to preserve fractional precision */
+        g_event_cb(CROFT_UI_EVENT_SCROLL, (int32_t)(xoffset * 1000.0), (int32_t)(yoffset * 1000.0));
+    }
+}
+
 /* -- Host UI API -- */
 
 int32_t host_ui_init(void) {
@@ -86,6 +94,7 @@ int32_t host_ui_create_window(uint32_t width, uint32_t height, const char *title
     /* Register input callbacks */
     glfwSetKeyCallback(g_window, glfw_key_callback);
     glfwSetMouseButtonCallback(g_window, glfw_mouse_button_callback);
+    glfwSetScrollCallback(g_window, glfw_scroll_callback);
     
     return 0;
 }

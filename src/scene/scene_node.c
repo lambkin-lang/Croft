@@ -73,6 +73,12 @@ static int hit_test_recursive(scene_node *node, float x, float y, hit_result *ou
         return 0; // Miss entirely
     }
     
+    float child_x = local_x;
+    float child_y = local_y;
+    if (node->vtbl && node->vtbl->transform_coords) {
+        node->vtbl->transform_coords(node, &child_x, &child_y);
+    }
+    
     // Test children in reverse-paint order (deepest layer first)
     // For a linked list, we collect them all and traverse backward or just do a greedy match.
     // Given the sibling nature, we test all children, and the *last* one drawn that matches wins.
@@ -82,7 +88,7 @@ static int hit_test_recursive(scene_node *node, float x, float y, hit_result *ou
     // To do true z-order, we should traverse list backwards.
     // But for a simple greedy approach, traversing forwards but overwriting hits is equivalent.
     while (child) {
-        if (hit_test_recursive(child, local_x, local_y, out)) {
+        if (hit_test_recursive(child, child_x, child_y, out)) {
             hit_found = 1;
         }
         child = child->next_sibling;

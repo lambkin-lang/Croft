@@ -9,8 +9,9 @@ extern "C" {
 #endif
 
 /* UI Event Types */
-#define CROFT_UI_EVENT_KEY   1
-#define CROFT_UI_EVENT_MOUSE 2
+#define CROFT_UI_EVENT_KEY    1
+#define CROFT_UI_EVENT_MOUSE  2
+#define CROFT_UI_EVENT_SCROLL 3
 
 /* Event callback signature */
 typedef void (*host_ui_event_cb_t)(int32_t event_type, int32_t arg0, int32_t arg1);
