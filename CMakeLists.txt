@@ -161,6 +161,14 @@ if(CROFT_ENABLE_UI)
         src/scene/node_viewport.c
         src/scene/node_code_block.c
     )
+    # Tier 9: Accessibility Bridge (macOS MVP)
+    if(APPLE)
+        target_sources(croft PRIVATE src/host/mac/host_a11y.m)
+        set_source_files_properties(src/host/mac/host_a11y.m PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+        target_link_libraries(croft PUBLIC "-framework AppKit")
+    else()
+        target_sources(croft PRIVATE src/host/host_a11y_stub.c)
+    endif()
 endif()
 
 if(CROFT_ENABLE_AUDIO)
@@ -212,6 +220,13 @@ if(CROFT_BUILD_TESTS)
 
         add_executable(test_scene_standalone tests/host_tests/test_scene_standalone.c)
         target_link_libraries(test_scene_standalone croft)
+        
+        add_executable(test_a11y_standalone tests/host_tests/test_a11y_standalone.c)
+        target_link_libraries(test_a11y_standalone croft)
+        if(APPLE)
+            target_link_libraries(test_a11y_standalone "-framework AppKit")
+        endif()
+        
         target_include_directories(test_ui_window_standalone PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
         # We explicitly omit this from `add_test(NAME croft_tests)` to prevent headless CI server failures
     endif()

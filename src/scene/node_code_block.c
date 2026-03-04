@@ -1,5 +1,6 @@
 #include "croft/scene.h"
 #include "croft/host_render.h"
+#include "croft/host_a11y.h"
 
 //
 // Code Block Node Implementation
@@ -33,6 +34,14 @@ static scene_node_vtbl code_block_vtbl = {
 void code_block_node_init(code_block_node *n, float x, float y, float sx, float sy, const char *text) {
     scene_node_init(&n->base, &code_block_vtbl, x, y, sx, sy);
     n->text = text;
+    
+    // Wire text into the screen-reader node
+    host_a11y_node_config cfg = {
+        .x = x, .y = y, .width = sx, .height = sy,
+        .label = text,
+        .os_specific_mixin = NULL
+    };
+    n->base.a11y_handle = host_a11y_create_node(ROLE_TEXT, &cfg);
     // Calculate naive length
     const char *p = text;
     while (*p) p++;

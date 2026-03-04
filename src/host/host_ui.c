@@ -1,9 +1,15 @@
 #include "croft/host_ui.h"
 #include "croft/host_log.h"
 #include <string.h>
+#include <stdio.h>
 
 /* GLFW must be included for UI builds */
 #include <GLFW/glfw3.h>
+
+#ifdef __APPLE__
+#define GLFW_EXPOSE_NATIVE_COCOA
+#include <GLFW/glfw3native.h>
+#endif
 
 static GLFWwindow *g_window = NULL;
 static host_ui_event_cb_t g_event_cb = NULL;
@@ -155,4 +161,13 @@ void host_ui_set_event_callback(host_ui_event_cb_t cb) {
 
 void* host_ui_get_window(void) {
     return (void*)g_window;
+}
+
+void* host_ui_get_native_window(void) {
+    if (!g_window) return NULL;
+#ifdef __APPLE__
+    return (void*)glfwGetCocoaWindow(g_window);
+#else
+    return NULL;
+#endif
 }

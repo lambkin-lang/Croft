@@ -1,5 +1,7 @@
 #include "croft/scene.h"
 #include "croft/host_render.h"
+#include "croft/host_a11y.h"
+#include <stddef.h>
 
 //
 // Viewport Node Implementation
@@ -36,6 +38,15 @@ static scene_node_vtbl viewport_vtbl = {
 
 void viewport_node_init(viewport_node *n, float x, float y, float sx, float sy) {
     scene_node_init(&n->base, &viewport_vtbl, x, y, sx, sy);
+    n->base.flags |= 1; // Mark as container/viewport
     n->scroll_x = 0;
     n->scroll_y = 0;
+    
+    // Group role doesn't have a specific text label, but acts as a container
+    host_a11y_node_config cfg = {
+        .x = x, .y = y, .width = sx, .height = sy,
+        .label = "Viewport Group",
+        .os_specific_mixin = NULL
+    };
+    n->base.a11y_handle = host_a11y_create_node(ROLE_GROUP, &cfg);
 }

@@ -47,6 +47,7 @@ struct scene_node {
     scene_node_vtbl *vtbl;
     scene_node *first_child;
     scene_node *next_sibling;
+    void *a11y_handle;
 };
 
 //

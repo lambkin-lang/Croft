@@ -75,6 +75,11 @@ void host_ui_swap_buffers(void);
  */
 void host_ui_set_event_callback(host_ui_event_cb_t cb);
 
+/**
+ * Gets the OS-specific native window handle (e.g., NSWindow* on macOS).
+ */
+void* host_ui_get_native_window(void);
+
 #ifdef __cplusplus
 }
 #endif
