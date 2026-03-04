@@ -93,6 +93,9 @@ set(WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_schema_dbis.c")
 set(TEST_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/test_result_types.h")
 set(TEST_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/test_result_types.c")
 
+set(MENU_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_menu_schema.h")
+set(MENU_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_menu_schema.c")
+
 add_executable(wit_codegen tools/wit_codegen.c)
 
 # Main runtime schema
@@ -117,6 +120,17 @@ add_custom_command(
 )
 add_custom_target(test_wit_schema_gen DEPENDS ${TEST_WIT_GENERATED_H} ${TEST_WIT_GENERATED_C})
 
+# Menu Schema
+add_custom_command(
+    OUTPUT ${MENU_WIT_GENERATED_H} ${MENU_WIT_GENERATED_C}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
+    COMMAND wit_codegen --wit "${CMAKE_CURRENT_SOURCE_DIR}/schemas/wit/menu-schema.wit"
+                        --header "${MENU_WIT_GENERATED_H}" --source "${MENU_WIT_GENERATED_C}"
+    DEPENDS wit_codegen "${CMAKE_CURRENT_SOURCE_DIR}/schemas/wit/menu-schema.wit"
+    COMMENT "Generating Menu Schema C Layouts from WIT..."
+)
+add_custom_target(menu_wit_schema_gen DEPENDS ${MENU_WIT_GENERATED_H} ${MENU_WIT_GENERATED_C})
+
 # ── Library: Sapling ────────────────────────────────────────────────────
 file(GLOB SAPLING_SOURCES "src/sapling/*.c" "src/runner/*.c" "src/wasi/*.c")
 
@@ -136,6 +150,7 @@ endif()
 
 target_include_directories(croft PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
     $<INSTALL_INTERFACE:include>
 )
 
@@ -154,8 +169,11 @@ endif()
 
 if(CROFT_ENABLE_UI)
     target_link_libraries(croft PUBLIC glfw tgfx)
+    add_dependencies(croft menu_wit_schema_gen)
+    
     # Tier 5, 6, 7: Windowing, Rendering, and UI Scene Graph
     target_sources(croft PRIVATE 
+        ${MENU_WIT_GENERATED_C}
         src/host/host_ui.c
         src/host/host_render.cpp
         src/scene/scene_node.c
@@ -164,8 +182,8 @@ if(CROFT_ENABLE_UI)
     )
     # Tier 9: Accessibility Bridge (macOS MVP)
     if(APPLE)
-        target_sources(croft PRIVATE src/host/mac/host_a11y.m)
-        set_source_files_properties(src/host/mac/host_a11y.m PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+        target_sources(croft PRIVATE src/host/mac/host_a11y.m src/host/mac/host_menu.m)
+        set_source_files_properties(src/host/mac/host_a11y.m src/host/mac/host_menu.m PROPERTIES COMPILE_FLAGS "-fobjc-arc")
         target_link_libraries(croft PUBLIC "-framework AppKit")
     else()
         target_sources(croft PRIVATE src/host/host_a11y_stub.c)
@@ -226,6 +244,12 @@ if(CROFT_BUILD_TESTS)
         target_link_libraries(test_a11y_standalone croft)
         if(APPLE)
             target_link_libraries(test_a11y_standalone "-framework AppKit")
+        endif()
+        
+        add_executable(test_menu_standalone tests/host_tests/test_menu_standalone.c)
+        target_link_libraries(test_menu_standalone croft)
+        if(APPLE)
+            target_link_libraries(test_menu_standalone "-framework AppKit")
         endif()
         
         target_include_directories(test_ui_window_standalone PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)

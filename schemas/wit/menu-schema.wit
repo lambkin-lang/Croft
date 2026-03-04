@@ -1,0 +1,17 @@
+interface menu-api {
+    flags modifiers { cmd, shift, ctrl, alt, }
+    
+    record menu-item {
+        action-id: s32,
+        parent-action-id: s32,
+        label: string,
+        shortcut: option<string>,
+        mods: modifiers,
+    }
+
+    variant menu-intent {
+        begin-update,
+        add-item(menu-item),
+        commit-update,
+    }
+}
