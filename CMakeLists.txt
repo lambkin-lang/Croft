@@ -58,6 +58,14 @@ if(CROFT_ENABLE_UI)
     FetchContent_MakeAvailable(tgfx)
 endif()
 
+if(CROFT_ENABLE_AUDIO)
+    FetchContent_Declare(miniaudio
+        GIT_REPOSITORY https://github.com/mackron/miniaudio.git
+        GIT_TAG        0.11.21
+    )
+    FetchContent_MakeAvailable(miniaudio)
+endif()
+
 # ── Tier 0: Foundation (always built) ───────────────────────────────────
 set(TIER0_SOURCES
     src/host/host_log.c
@@ -155,6 +163,13 @@ if(CROFT_ENABLE_UI)
     )
 endif()
 
+if(CROFT_ENABLE_AUDIO)
+    target_include_directories(croft PRIVATE ${miniaudio_SOURCE_DIR})
+    target_sources(croft PRIVATE 
+        src/host/host_audio.c
+    )
+endif()
+
 # ── Tests ───────────────────────────────────────────────────────────────
 if(CROFT_BUILD_TESTS)
     enable_testing()
@@ -199,6 +214,11 @@ if(CROFT_BUILD_TESTS)
         target_link_libraries(test_scene_standalone croft)
         target_include_directories(test_ui_window_standalone PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
         # We explicitly omit this from `add_test(NAME croft_tests)` to prevent headless CI server failures
+    endif()
+
+    if(CROFT_ENABLE_AUDIO)
+        add_executable(test_audio_standalone tests/host_tests/test_audio_standalone.c)
+        target_link_libraries(test_audio_standalone croft)
     endif()
 
     # Sapling test suite (each file has its own main)
