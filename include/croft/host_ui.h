@@ -33,6 +33,23 @@ void host_ui_terminate(void);
 int32_t host_ui_create_window(uint32_t width, uint32_t height, const char *title);
 
 /**
+ * Gets the actual pixel size of the window's framebuffer. Required for rendering backends 
+ * like tgfx/OpenGL on High-DPI/Retina screens.
+ */
+void host_ui_get_framebuffer_size(uint32_t *w, uint32_t *h);
+
+/**
+ * Reads a single pixel's RGBA format from the current OpenGL Context/Framebuffer. 
+ * Allows debugging unit tests headlessly.
+ */
+void host_ui_read_pixel(uint32_t x, uint32_t y, uint8_t *r, uint8_t *g, uint8_t *b, uint8_t *a);
+
+/**
+ * Debugging function to clear the native window to blue using raw OpenGL.
+ */
+void host_ui_test_clear_blue(void);
+
+/**
  * Checks if the user requested the window to close.
  * Returns 1 if should close, 0 otherwise.
  */

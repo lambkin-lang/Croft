@@ -217,6 +217,8 @@ int32_t host_render_end_frame(void) {
             
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, (GLuint)texInfo.id);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
             glUniform1i(glGetUniformLocation(state.quadProgram, "tex"), 0);
 
             // Core profile requires a VAO for drawing
