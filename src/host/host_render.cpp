@@ -26,7 +26,7 @@ static const char* quadVert =
     "out vec2 uv;\n"
     "void main() {\n"
     "    gl_Position = vec4(pos, 0.0, 1.0);\n"
-    "    uv = pos * 0.5 + 0.5;\n"
+    "    uv = vec2(pos.x * 0.5 + 0.5, 0.5 - pos.y * 0.5);\n"
     "}\n";
 
 static const char* quadFrag =
@@ -169,8 +169,12 @@ int32_t host_render_draw_text(float x, float y, const char* text, uint32_t len, 
     float a =  (color_rgba        & 0xFF) / 255.0f;
     paint.setColor(tgfx::Color{r, g, b, a});
     
-    tgfx::Font font;
-    font.setSize(36.0f);
+    auto typeface = tgfx::Typeface::MakeFromName("Helvetica", "");
+    if (!typeface) {
+        typeface = tgfx::Typeface::MakeFromName("", "");
+    }
+    
+    tgfx::Font font(typeface, 36.0f);
     std::string str(text, static_cast<size_t>(len));
     auto textBlob = tgfx::TextBlob::MakeFrom(str, font);
     if (textBlob) {
