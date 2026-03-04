@@ -1,8 +1,11 @@
 cmake_minimum_required(VERSION 3.15)
-project(croft C)
+project(croft C CXX OBJC OBJCXX)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # ── Feature flags (future tiers default OFF until implemented) ──────────
 option(CROFT_ENABLE_UI            "Tier 5-7: Windowing, rendering, scene graph" OFF)
@@ -47,6 +50,12 @@ if(CROFT_ENABLE_UI)
         GIT_TAG        3.4
     )
     FetchContent_MakeAvailable(glfw)
+
+    # TGFX: Tencent's lightweight 2D rendering engine (C++)
+    FetchContent_Declare(tgfx
+        SOURCE_DIR "/Users/mshonle/Projects/Tencent/tgfx"
+    )
+    FetchContent_MakeAvailable(tgfx)
 endif()
 
 # ── Tier 0: Foundation (always built) ───────────────────────────────────
@@ -135,10 +144,11 @@ if(CROFT_ENABLE_WASM)
 endif()
 
 if(CROFT_ENABLE_UI)
-    target_link_libraries(croft PUBLIC glfw)
-    # Tier 5: Windowing Integration Sources
+    target_link_libraries(croft PUBLIC glfw tgfx)
+    # Tier 5 and 6: Windowing and Rendering
     target_sources(croft PRIVATE 
         src/host/host_ui.c
+        src/host/host_render.cpp
     )
 endif()
 
@@ -178,6 +188,9 @@ if(CROFT_BUILD_TESTS)
         # ── Demo UI Window Integration ──────────────────────────────────
         add_executable(test_ui_window_standalone tests/host_tests/test_ui_window_standalone.c)
         target_link_libraries(test_ui_window_standalone PRIVATE croft)
+
+        add_executable(test_render_standalone tests/host_tests/test_render_standalone.c)
+        target_link_libraries(test_render_standalone PRIVATE croft)
         target_include_directories(test_ui_window_standalone PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
         # We explicitly omit this from `add_test(NAME croft_tests)` to prevent headless CI server failures
     endif()
