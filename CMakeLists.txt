@@ -37,6 +37,18 @@ if(CROFT_ENABLE_WASM)
     FetchContent_MakeAvailable(wabt)
 endif()
 
+if(CROFT_ENABLE_UI)
+    set(GLFW_BUILD_DOCS OFF CACHE BOOL "Disable GLFW docs")
+    set(GLFW_BUILD_TESTS OFF CACHE BOOL "Disable GLFW tests")
+    set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "Disable GLFW examples")
+    
+    FetchContent_Declare(glfw
+        GIT_REPOSITORY https://github.com/glfw/glfw.git
+        GIT_TAG        3.4
+    )
+    FetchContent_MakeAvailable(glfw)
+endif()
+
 # ── Tier 0: Foundation (always built) ───────────────────────────────────
 set(TIER0_SOURCES
     src/host/host_log.c
@@ -122,6 +134,14 @@ if(CROFT_ENABLE_WASM)
     )
 endif()
 
+if(CROFT_ENABLE_UI)
+    target_link_libraries(croft PUBLIC glfw)
+    # Tier 5: Windowing Integration Sources
+    target_sources(croft PRIVATE 
+        src/host/host_ui.c
+    )
+endif()
+
 # ── Tests ───────────────────────────────────────────────────────────────
 if(CROFT_BUILD_TESTS)
     enable_testing()
@@ -152,6 +172,14 @@ if(CROFT_BUILD_TESTS)
                 DUMMY_GUEST_WASM_PATH="${WASM_GUEST_BIN}"
             )
         endif()
+    endif()
+
+    if(CROFT_ENABLE_UI)
+        # ── Demo UI Window Integration ──────────────────────────────────
+        add_executable(test_ui_window_standalone tests/host_tests/test_ui_window_standalone.c)
+        target_link_libraries(test_ui_window_standalone PRIVATE croft)
+        target_include_directories(test_ui_window_standalone PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
+        # We explicitly omit this from `add_test(NAME croft_tests)` to prevent headless CI server failures
     endif()
 
     # Sapling test suite (each file has its own main)
