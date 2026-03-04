@@ -1,5 +1,7 @@
 #include "croft/host_audio.h"
 #include <stdio.h>
+#include <stdlib.h>
+#include <math.h>
 
 #define MINIAUDIO_IMPLEMENTATION
 #include "miniaudio.h"
@@ -27,91 +29,101 @@ void host_audio_terminate(void) {
     g_initialized = 0;
 }
 
-// User Requirements: "ADSR and a frequency that starts slightly sharp and ends slighly flat."
+// User Requirements: Plucked string, +5/-5 cents envelope, 12 specific harmonics
 int32_t host_audio_play_tone(float start_freq, float end_freq, float duration_sec) {
     if (!g_initialized) return -1;
     
-    // N.B. miniaudio doesn't have an out-of-the-box sweeping oscillator with ADSR,
-    // but we can spawn a waveform and manually fade it if we build a custom node...
-    // simpler: use a sound group or direct manipulation of ma_waveform.
+    ma_uint32 sampleRate = g_engine.pDevice->sampleRate;
+    ma_uint32 channels = g_engine.pDevice->playback.channels;
+    ma_uint64 total_frames = (ma_uint64)(duration_sec * sampleRate);
     
-    // Wait, the easiest primitive we can do natively is ma_waveform for a steady tone,
-    // combined with a volume fade out (decay/release).
-    ma_waveform_config config = ma_waveform_config_init(
-        g_engine.pDevice->playback.format,
-        g_engine.pDevice->playback.channels,
-        g_engine.pDevice->sampleRate,
-        ma_waveform_type_sine,
-        0.5,    // Amplitude
-        start_freq
-    );
+    // Allocate buffer for 32-bit float samples, interleaved
+    float* pFrames = (float*)malloc(total_frames * channels * sizeof(float));
+    if (!pFrames) return -1;
     
-    // We allocate a sound node dynamically that plays and then kills itself.
-    // However, ma_engine_play_sound takes a file path.
-    // For pure generative, we can't just pass the waveform into play_sound easily 
-    // without an explicit data source tree.
+    float pitch_sharp_mult = powf(2.0f, 5.0f / 1200.0f);
+    float pitch_flat_mult = powf(2.0f, -5.0f / 1200.0f);
     
-    // Instead of raw ma_engine, let's just initialize a custom data source 
-    // and route it to an `ma_sound`.
-    ma_sound* sound = (ma_sound*)malloc(sizeof(ma_sound));
-    ma_waveform* pSineWave = (ma_waveform*)malloc(sizeof(ma_waveform));
+    // Track phase per harmonic continuously
+    float phases[12] = {0};
     
-    ma_waveform_init(&config, pSineWave);
+    // Harmonic amplitudes
+    float h_amps[12] = { 0.8f, 1.0f, 0.8f, 0.4f, 0.4f, 0.4f, 0.2f, 0.1f, 0.1f, 0.1f, 0.1f, 0.1f };
+    // Decay rates
+    float h_decays[12] = { 1.5f, 2.0f, 2.5f, 3.0f, 3.0f, 3.0f, 5.0f, 6.0f, 6.0f, 6.0f, 6.0f, 6.0f };
+    // Ratios from fundamental
+    float h_ratios[12];
+    for(int i=0; i<12; i++) {
+        h_ratios[i] = (float)(i + 1);
+    }
+    // 7th harmonic is exactly 31 cents flat
+    h_ratios[6] = 7.0f * powf(2.0f, -31.0f / 1200.0f);
     
-    // Initialize the sound from the data source
-    ma_result result = ma_sound_init_from_data_source(&g_engine, pSineWave, 0, NULL, sound);
-    if (result != MA_SUCCESS) {
-        free(sound);
-        free(pSineWave);
+    for (ma_uint64 i = 0; i < total_frames; i++) {
+        float t = (float)i / sampleRate;
+        
+        // Fast pitch decay for the "pluck" envelope
+        // Relaxes quickly (exp(-t*8)) into the long flattening tail
+        float pitch_env = expf(-t * 8.0f); 
+        float current_fund = start_freq * (pitch_flat_mult + (pitch_sharp_mult - pitch_flat_mult) * pitch_env);
+        
+        float sample_val = 0.0f;
+        for (int h = 0; h < 12; h++) {
+            float h_freq = current_fund * h_ratios[h];
+            
+            // Advance phase continuously based on frequency at this exact sample
+            phases[h] += (h_freq * 2.0f * 3.14159265f) / sampleRate;
+            if (phases[h] > 2.0f * 3.14159265f) {
+                phases[h] -= 2.0f * 3.14159265f;
+            }
+            
+            // Additive synthesis
+            float amp = h_amps[h] * expf(-t * h_decays[h]);
+            sample_val += amp * sinf(phases[h]);
+        }
+        
+        // Normalization HEADROOM (scale 0-1)
+        sample_val *= 0.15f; 
+        
+        // Attack (Pluck starts instantly but linearly ramps within 5ms to avoid click pop)
+        if (t < 0.005f) {
+            sample_val *= (t / 0.005f);
+        }
+        
+        // Safety decay bounds check (avoids zero crossing clicks when stream stops)
+        if (t > duration_sec - 0.05f) {
+            sample_val *= (duration_sec - t) / 0.05f;
+        }
+
+        for (ma_uint32 c = 0; c < channels; c++) {
+            pFrames[i * channels + c] = sample_val;
+        }
+    }
+    
+    ma_audio_buffer_config buf_config = ma_audio_buffer_config_init(
+        ma_format_f32, channels, total_frames, pFrames, NULL);
+        
+    ma_audio_buffer audio_buffer;
+    ma_result res = ma_audio_buffer_init(&buf_config, &audio_buffer);
+    if (res != MA_SUCCESS) {
+        free(pFrames);
         return -1;
     }
     
-    // Apply pitch pitch logic using miniaudio's built-in pitch scaler!
-    // If start=450 and end=440, we pitch shift over time.
-    ma_sound_set_pitch(sound, 1.0f); 
-    
-    // For ADSR, we can use built in fades!
-    // Attack: fade in over 0.05s
-    ma_sound_set_volume(sound, 0.0f);
-    ma_sound_set_fade_in_milliseconds(sound, 0.0f, 1.0f, 50);
-    
-    // Release: fade out at the end of duration
-    // We'll calculate the sample offset for the fade out to start
-    ma_uint64 total_samples = (ma_uint64)(duration_sec * g_engine.pDevice->sampleRate);
-    ma_uint64 attack_samples = (ma_uint64)(0.05f * g_engine.pDevice->sampleRate);
-    ma_uint64 release_samples = (ma_uint64)(0.2f * g_engine.pDevice->sampleRate);
-    
-    // Start playback
-    ma_sound_start(sound);
-    
-    // Because we are synchronous for this test tone just to prove it works:
-    // (A real app wouldn't block, but the test runner will).
-    // Let's implement the slight pitch bend via polling
-    
-    ma_uint64 current_sample = 0;
-    while (current_sample < total_samples) {
-        float progress = (float)current_sample / total_samples;
-        
-        // Pitch bend: interpolate frequency via miniaudio Pitch modifier
-        float current_freq = start_freq + progress * (end_freq - start_freq);
-        ma_sound_set_pitch(sound, current_freq / start_freq);
-        
-        // Trigger decay/release phase
-        if (current_sample == total_samples - release_samples) {
-            ma_sound_set_fade_in_milliseconds(sound, 1.0f, 0.0f, 200);
-        }
-        
-        // Sleep 15ms
-        ma_sleep(15);
-        current_sample += (ma_uint64)(0.015f * g_engine.pDevice->sampleRate);
+    ma_sound sound;
+    res = ma_sound_init_from_data_source(&g_engine, &audio_buffer, 0, NULL, &sound);
+    if (res != MA_SUCCESS) {
+        ma_audio_buffer_uninit(&audio_buffer);
+        free(pFrames);
+        return -1;
     }
     
-    ma_sound_stop(sound);
-    ma_sound_uninit(sound);
-    ma_waveform_uninit(pSineWave);
+    ma_sound_start(&sound);
+    ma_sleep((ma_uint32)(duration_sec * 1000.0f) + 100);
     
-    free(sound);
-    free(pSineWave);
+    ma_sound_uninit(&sound);
+    ma_audio_buffer_uninit(&audio_buffer);
+    free(pFrames);
     
     return 0;
 }
