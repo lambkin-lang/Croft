@@ -26,9 +26,12 @@ int main(void) {
 
         host_ui_poll_events();
         
-        if (host_render_begin_frame(800, 600) == 0) {
-            // clear black
-            host_render_clear(0x000000FF);
+        uint32_t fw, fh;
+        host_ui_get_framebuffer_size(&fw, &fh);
+        
+        if (host_render_begin_frame(fw, fh) == 0) {
+            // clear white
+            host_render_clear(0xFFFFFFFF);
             // draw red rect
             host_render_draw_rect(100, 100, 200, 200, 0xFF0000FF);
             // draw text

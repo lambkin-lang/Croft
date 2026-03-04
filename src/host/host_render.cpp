@@ -1,5 +1,6 @@
 #include "croft/host_render.h"
 #include <tgfx/gpu/opengl/GLDevice.h>
+#include <GLFW/glfw3.h>
 #include <tgfx/gpu/opengl/GLTypes.h>
 #include <tgfx/core/Surface.h>
 #include <tgfx/core/Canvas.h>
@@ -8,19 +9,85 @@
 #include <tgfx/core/Font.h>
 #include <tgfx/core/TextBlob.h>
 #include <string>
+#include <OpenGL/gl3.h>
 
 struct RenderState {
     std::shared_ptr<tgfx::GLDevice> device;
     tgfx::Context* context = nullptr;
     std::shared_ptr<tgfx::Surface> surface;
     tgfx::Canvas* canvas = nullptr;
+    GLuint quadVao = 0;
+    GLuint quadProgram = 0;
 } state;
+
+static const char* quadVert = 
+    "#version 330 core\n"
+    "in vec2 pos;\n"
+    "out vec2 uv;\n"
+    "void main() {\n"
+    "    gl_Position = vec4(pos, 0.0, 1.0);\n"
+    "    uv = pos * 0.5 + 0.5;\n"
+    "}\n";
+
+static const char* quadFrag =
+    "#version 330 core\n"
+    "in vec2 uv;\n"
+    "out vec4 color;\n"
+    "uniform sampler2D tex;\n"
+    "void main() {\n"
+    "    color = texture(tex, uv);\n"
+    "}\n";
+
+static GLuint compile_shader(GLenum type, const char* src) {
+    GLuint s = glCreateShader(type);
+    glShaderSource(s, 1, &src, NULL);
+    glCompileShader(s);
+    GLint success;
+    glGetShaderiv(s, GL_COMPILE_STATUS, &success);
+    if (!success) {
+        char log[512];
+        glGetShaderInfoLog(s, 512, NULL, log);
+        printf("Shader compilation error: %s\n", log);
+    }
+    return s;
+}
 
 extern "C" {
 
 int32_t host_render_init(void) {
-    state.device = tgfx::GLDevice::MakeWithFallback();
-    if (!state.device) return -1;
+    // Compile quad shader for final blit to FBO 0
+    GLuint vs = compile_shader(GL_VERTEX_SHADER, quadVert);
+    GLuint fs = compile_shader(GL_FRAGMENT_SHADER, quadFrag);
+    state.quadProgram = glCreateProgram();
+    glAttachShader(state.quadProgram, vs);
+    glAttachShader(state.quadProgram, fs);
+    glLinkProgram(state.quadProgram);
+    glDeleteShader(vs);
+    glDeleteShader(fs);
+    
+    // Core profile requires a VAO to be bound even if we generate vertices in the shader
+    // Moreover, Apple macOS drivers throw GL_INVALID_FRAMEBUFFER_OPERATION (0x506) if you draw without a VBO bound!
+    glGenVertexArrays(1, &state.quadVao);
+    glBindVertexArray(state.quadVao);
+    
+    GLuint vbo;
+    glGenBuffers(1, &vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    float quadVertices[] = {
+        -1.0f, -1.0f,
+         1.0f, -1.0f,
+        -1.0f,  1.0f,
+         1.0f,  1.0f
+    };
+    glBufferData(GL_ARRAY_BUFFER, sizeof(quadVertices), quadVertices, GL_STATIC_DRAW);
+    
+    GLint posAttrib = glGetAttribLocation(state.quadProgram, "pos");
+    glEnableVertexAttribArray(posAttrib);
+    glVertexAttribPointer(posAttrib, 2, GL_FLOAT, GL_FALSE, 0, 0);
+    
+    glBindVertexArray(0);
+
+    // Device is now lazily initialized in begin_frame to guarantee context readiness
     return 0;
 }
 
@@ -35,17 +102,32 @@ void host_render_terminate(void) {
 }
 
 int32_t host_render_begin_frame(uint32_t width, uint32_t height) {
-    if (!state.device) return -1;
+    if (!state.device) {
+        state.device = tgfx::GLDevice::Current();
+        if (!state.device) {
+            printf("host_render_begin_frame: Failed to create device from GLFW context.\n");
+            return -1;
+        }
+    }
     
     state.context = state.device->lockContext();
     if (!state.context) return -1;
     
-    tgfx::GLFrameBufferInfo glInfo;
-    glInfo.id = 0;
-    glInfo.format = 0x8058; // GL_RGBA8
+    // Explicitly set the OpenGL viewport before handing control to tgfx
+    glViewport(0, 0, width, height);
+
+    GLint drawFboId = 0;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING, &drawFboId);
     
-    tgfx::BackendRenderTarget renderTarget(glInfo, width, height);
-    state.surface = tgfx::Surface::MakeFrom(state.context, renderTarget, tgfx::ImageOrigin::BottomLeft);
+    static bool printed = false;
+    if (!printed) {
+        printf("host_render_begin_frame: Active FBO is %d, Dimensions: %dx%d\n", drawFboId, width, height);
+        printed = true;
+    }
+
+    // Create an offscreen surface. Since tgfx spawns its own shared OpenGL context, 
+    // we cannot render directly to FBO 0.
+    state.surface = tgfx::Surface::Make(state.context, width, height);
     if (!state.surface) {
         state.device->unlock();
         state.context = nullptr;
@@ -99,10 +181,67 @@ int32_t host_render_draw_text(float x, float y, const char* text, uint32_t len, 
 
 int32_t host_render_end_frame(void) {
     if (state.context) {
-        state.context->flushAndSubmit(true);
+        bool result = state.context->flushAndSubmit(true);
+        if (!result) {
+            printf("host_render_end_frame: flushAndSubmit returned false.\n");
+        }
+        
+        GLenum tgfxErr = glGetError();
+        if (tgfxErr != GL_NO_ERROR) {
+            printf("host_render_end_frame: error INSIDE tgfx context: 0x%X\n", tgfxErr);
+        }
+        
+        // Extact texture before unlocking Device/Context
+        tgfx::BackendTexture backendTex = state.surface->getBackendTexture();
+        tgfx::GLTextureInfo texInfo;
+        bool hasTex = backendTex.getGLTextureInfo(&texInfo);
+        int width = state.surface->width();
+        int height = state.surface->height();
+        
+        // UNLOCK BEFORE BLITTING! This restores the thread to the GLFW context.
+        state.device->unlock();
+        
+        // Force the GLFW context current explicitly, because tgfx's unlock may not be reliable
+        // across differing OS context management paradigms like CGL vs NSOpenGL.
+        // We MUST set it to NULL first because GLFW maintains a TLS cache of the current context
+        // and will NO-OP if it thinks the window is already current!
+        extern void* host_ui_get_window(void);
+        glfwMakeContextCurrent(NULL);
+        glfwMakeContextCurrent((GLFWwindow*)host_ui_get_window());
+
+        if (hasTex) {
+            glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+            
+            // Draw via textured quad mapping our offscreen render texture to FBO 0
+            glUseProgram(state.quadProgram);
+            
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, (GLuint)texInfo.id);
+            glUniform1i(glGetUniformLocation(state.quadProgram, "tex"), 0);
+
+            // Core profile requires a VAO for drawing
+            glBindVertexArray(state.quadVao);
+
+            glDisable(GL_DEPTH_TEST);
+            glDisable(GL_SCISSOR_TEST);
+            glDisable(GL_BLEND);
+            glDisable(GL_CULL_FACE);
+
+            // macOS requires explicitly setting the viewport 
+            glViewport(0, 0, width, height);
+
+            glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+            glBindVertexArray(0);
+            glBindTexture(GL_TEXTURE_2D, 0);
+            glUseProgram(0);
+            
+        } else {
+            // printf("host_render_end_frame: Failed to retrieve GL texture from surface.\n");
+        }
+
         state.canvas = nullptr;
         state.surface = nullptr;
-        state.device->unlock();
         state.context = nullptr;
     }
     return 0;
