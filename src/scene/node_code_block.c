@@ -11,7 +11,7 @@ static void code_block_draw(scene_node *n, render_ctx *rc) {
     
     // N.B: We draw at (0,0) because the parent scene_node_draw_tree already
     // pushed our specific coordinates into the GPU transform matrix!
-    host_render_draw_text(0, 0, cb->text, cb->text_len, rc->fg_color);
+    host_render_draw_text(0, 0, cb->text, cb->text_len, 20.0f, rc->fg_color);
 }
 
 static void code_block_hit_test(scene_node *n, float x, float y, hit_result *out) {

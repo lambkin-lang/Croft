@@ -10,6 +10,7 @@
 typedef struct render_ctx {
     uint32_t bg_color;
     uint32_t fg_color;
+    double time;
 } render_ctx;
 
 //
@@ -33,6 +34,9 @@ typedef struct scene_node_vtbl {
     void (*hit_test)(scene_node *n, float x, float y, hit_result *out);
     void (*update_accessibility)(scene_node *n);
     void (*transform_coords)(scene_node *n, float *x, float *y);
+    void (*on_mouse_event)(scene_node *n, int action, float local_x, float local_y);
+    void (*on_key_event)(scene_node *n, int key, int action);
+    void (*on_char_event)(scene_node *n, uint32_t codepoint);
 } scene_node_vtbl;
 
 //
@@ -83,5 +87,28 @@ typedef struct code_block_node {
 } code_block_node;
 
 void code_block_node_init(code_block_node *n, float x, float y, float sx, float sy, const char *text);
+
+// Text Editor Node (Draws text from a persistent Sapling Text engine)
+struct Text;
+struct SapEnv;
+
+typedef struct text_editor_node {
+    scene_node base;
+    struct SapEnv *env;
+    struct Text *text_tree;
+    float scroll_x;
+    float scroll_y;
+    // Cache for naive line rendering MVP
+    char *utf8_cache;
+    uint32_t utf8_len;
+    float font_size;
+    float line_height;
+    uint32_t sel_start;
+    uint32_t sel_end;
+    int is_selecting;
+} text_editor_node;
+
+void text_editor_node_init(text_editor_node *n, struct SapEnv *env, float x, float y, float sx, float sy, struct Text *text_tree);
+void text_editor_node_set_text(text_editor_node *n, struct Text *text_tree);
 
 #endif // CROFT_SCENE_H

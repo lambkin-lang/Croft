@@ -13,6 +13,8 @@ extern "C" {
 #define CROFT_UI_EVENT_MOUSE         2
 #define CROFT_UI_EVENT_SCROLL        3
 #define CROFT_UI_EVENT_ZOOM_GESTURE  4
+#define CROFT_UI_EVENT_CURSOR_POS    5
+#define CROFT_UI_EVENT_CHAR          6
 
 /* Event callback signature */
 typedef void (*host_ui_event_cb_t)(int32_t event_type, int32_t arg0, int32_t arg1);
@@ -56,6 +58,11 @@ void host_ui_test_clear_blue(void);
  * Returns 1 if should close, 0 otherwise.
  */
 int32_t host_ui_should_close(void);
+
+/**
+ * Returns the elapsed time in seconds since the UI was initialized.
+ */
+double host_ui_get_time(void);
 
 void host_ui_get_mouse_pos(double *x, double *y);
 int32_t host_ui_get_mouse_button(int32_t button);

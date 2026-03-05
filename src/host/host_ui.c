@@ -48,6 +48,20 @@ static void glfw_scroll_callback(GLFWwindow* window, double xoffset, double yoff
     }
 }
 
+static void glfw_cursor_pos_callback(GLFWwindow* window, double xpos, double ypos) {
+    (void)window;
+    if (g_event_cb) {
+        g_event_cb(CROFT_UI_EVENT_CURSOR_POS, 0, 0);
+    }
+}
+
+static void glfw_char_callback(GLFWwindow* window, unsigned int codepoint) {
+    (void)window;
+    if (g_event_cb) {
+        g_event_cb(CROFT_UI_EVENT_CHAR, (int32_t)codepoint, 0);
+    }
+}
+
 /* -- Host UI API -- */
 
 int32_t host_ui_init(void) {
@@ -93,8 +107,10 @@ int32_t host_ui_create_window(uint32_t width, uint32_t height, const char *title
     
     /* Register input callbacks */
     glfwSetKeyCallback(g_window, glfw_key_callback);
+    glfwSetCharCallback(g_window, glfw_char_callback);
     glfwSetMouseButtonCallback(g_window, glfw_mouse_button_callback);
     glfwSetScrollCallback(g_window, glfw_scroll_callback);
+    glfwSetCursorPosCallback(g_window, glfw_cursor_pos_callback);
     
     return 0;
 }
@@ -128,6 +144,10 @@ void host_ui_test_clear_blue(void) {
 int32_t host_ui_should_close(void) {
     if (!g_window) return 1;
     return glfwWindowShouldClose(g_window);
+}
+
+double host_ui_get_time(void) {
+    return glfwGetTime();
 }
 
 void host_ui_get_mouse_pos(double *x, double *y) {

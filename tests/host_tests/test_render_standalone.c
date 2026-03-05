@@ -35,7 +35,7 @@ int main(void) {
             // draw red rect
             host_render_draw_rect(100, 100, 200, 200, 0xFF0000FF);
             // draw text
-            host_render_draw_text(100, 350, "Hello Croft Rendering", 21, 0x00FF00FF);
+            host_render_draw_text(100, 350, "Hello Croft Rendering", 21, 36.0f, 0x00FF00FF);
             
             host_render_end_frame();
             host_ui_swap_buffers();

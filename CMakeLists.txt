@@ -179,6 +179,7 @@ if(CROFT_ENABLE_UI)
         src/scene/scene_node.c
         src/scene/node_viewport.c
         src/scene/node_code_block.c
+        src/scene/node_text_editor.c
     )
     # Tier 9: Accessibility Bridge (macOS MVP)
     if(APPLE)
@@ -254,6 +255,9 @@ if(CROFT_BUILD_TESTS)
         
         add_executable(test_zoom_standalone tests/host_tests/test_zoom_standalone.c)
         target_link_libraries(test_zoom_standalone croft)
+
+        add_executable(test_editor_standalone tests/host_tests/test_editor_standalone.c)
+        target_link_libraries(test_editor_standalone croft)
         
         target_include_directories(test_ui_window_standalone PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
         # We explicitly omit this from `add_test(NAME croft_tests)` to prevent headless CI server failures

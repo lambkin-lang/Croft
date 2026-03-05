@@ -162,6 +162,12 @@ void host_render_scale(float sx, float sy) {
     }
 }
 
+void host_render_clip_rect(float x, float y, float w, float h) {
+    if (state.canvas) {
+        state.canvas->clipRect(tgfx::Rect::MakeXYWH(x, y, w, h));
+    }
+}
+
 int32_t host_render_clear(uint32_t color_rgba) {
     if (!state.canvas) return -1;
     float r = ((color_rgba >> 24) & 0xFF) / 255.0f;
@@ -184,7 +190,7 @@ int32_t host_render_draw_rect(float x, float y, float w, float h, uint32_t color
     return 0;
 }
 
-int32_t host_render_draw_text(float x, float y, const char* text, uint32_t len, uint32_t color_rgba) {
+int32_t host_render_draw_text(float x, float y, const char* text, uint32_t len, float font_size, uint32_t color_rgba) {
     if (!state.canvas) return -1;
     tgfx::Paint paint;
     float r = ((color_rgba >> 24) & 0xFF) / 255.0f;
@@ -198,13 +204,55 @@ int32_t host_render_draw_text(float x, float y, const char* text, uint32_t len, 
         typeface = tgfx::Typeface::MakeFromName("", "");
     }
     
-    tgfx::Font font(typeface, 36.0f);
+    tgfx::Font font(typeface, font_size);
     std::string str(text, static_cast<size_t>(len));
     auto textBlob = tgfx::TextBlob::MakeFrom(str, font);
     if (textBlob) {
         state.canvas->drawTextBlob(textBlob, x, y, paint);
     }
     return 0;
+}
+
+float host_render_measure_text(const char* text, uint32_t len, float font_size) {
+    if (len == 0) return 0.0f;
+    auto typeface = tgfx::Typeface::MakeFromName("Helvetica", "");
+    if (!typeface) {
+        typeface = tgfx::Typeface::MakeFromName("", "");
+    }
+    
+    tgfx::Font font(typeface, font_size);
+    
+    float totalAdvance = 0.0f;
+    uint32_t i = 0;
+    while (i < len) {
+        uint8_t c = static_cast<uint8_t>(text[i]);
+        uint32_t codepoint = 0;
+        int bytes = 1;
+        if ((c & 0x80) == 0) {
+            codepoint = c;
+        } else if ((c & 0xE0) == 0xC0) {
+            if (i + 1 < len) {
+                codepoint = ((c & 0x1F) << 6) | (text[i+1] & 0x3F);
+                bytes = 2;
+            } else break;
+        } else if ((c & 0xF0) == 0xE0) {
+            if (i + 2 < len) {
+                codepoint = ((c & 0x0F) << 12) | ((text[i+1] & 0x3F) << 6) | (text[i+2] & 0x3F);
+                bytes = 3;
+            } else break;
+        } else if ((c & 0xF8) == 0xF0) {
+            if (i + 3 < len) {
+                codepoint = ((c & 0x07) << 18) | ((text[i+1] & 0x3F) << 12) | ((text[i+2] & 0x3F) << 6) | (text[i+3] & 0x3F);
+                bytes = 4;
+            } else break;
+        }
+        
+        tgfx::GlyphID glyphID = font.getGlyphID(codepoint);
+        totalAdvance += font.getAdvance(glyphID);
+        i += bytes;
+    }
+    
+    return totalAdvance;
 }
 
 int32_t host_render_end_frame(void) {

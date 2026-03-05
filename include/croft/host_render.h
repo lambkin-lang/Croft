@@ -29,6 +29,7 @@ void host_render_save(void);
 void host_render_restore(void);
 void host_render_translate(float dx, float dy);
 void host_render_scale(float sx, float sy);
+void host_render_clip_rect(float x, float y, float w, float h);
 
 /**
  * Clears the screen to the given RGBA color.
@@ -43,7 +44,10 @@ int32_t host_render_draw_rect(float x, float y, float w, float h, uint32_t color
 /**
  * Draws a shaped text string.
  */
-int32_t host_render_draw_text(float x, float y, const char* text, uint32_t len, uint32_t color_rgba);
+int32_t host_render_draw_text(float x, float y, const char* text, uint32_t len, float font_size, uint32_t color_rgba);
+
+// Computes the graphical width of the given utf8 text
+float host_render_measure_text(const char* text, uint32_t len, float font_size);
 
 /**
  * Flushes drawing commands to the GPU.

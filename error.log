@@ -1,0 +1,13 @@
+[0/4] Generating tgfx-vendor
+[2/4] Building C object CMakeFiles/croft.dir/src/scene/node_text_editor.c.o
+FAILED: [code=1] CMakeFiles/croft.dir/src/scene/node_text_editor.c.o 
+/usr/bin/cc -DSAPLING_HAMT_TESTING -DSAPLING_PAGE_SIZE=4096 -DSAPLING_THREADED -I/Users/mshonle/Projects/pubic-lambkin-lang/Croft/include -I/Users/mshonle/Projects/pubic-lambkin-lang/Croft/build -I/Users/mshonle/Projects/pubic-lambkin-lang/Croft/src -I/Users/mshonle/Projects/pubic-lambkin-lang/Croft/build/_deps/glfw-src/include -I/Users/mshonle/Projects/Tencent/tgfx/include -O3 -DNDEBUG -std=gnu11 -arch arm64 -MD -MT CMakeFiles/croft.dir/src/scene/node_text_editor.c.o -MF CMakeFiles/croft.dir/src/scene/node_text_editor.c.o.d -o CMakeFiles/croft.dir/src/scene/node_text_editor.c.o -c /Users/mshonle/Projects/pubic-lambkin-lang/Croft/src/scene/node_text_editor.c
+/Users/mshonle/Projects/pubic-lambkin-lang/Croft/src/scene/node_text_editor.c:48:5: error: call to undeclared function 'host_render_clip_rect'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+   48 |     host_render_clip_rect(0, 0, n->sx, n->sy);
+      |     ^
+/Users/mshonle/Projects/pubic-lambkin-lang/Croft/src/scene/node_text_editor.c:48:5: note: did you mean 'host_render_draw_rect'?
+/Users/mshonle/Projects/pubic-lambkin-lang/Croft/include/croft/host_render.h:41:9: note: 'host_render_draw_rect' declared here
+   41 | int32_t host_render_draw_rect(float x, float y, float w, float h, uint32_t color_rgba);
+      |         ^
+1 error generated.
+ninja: build stopped: subcommand failed.
