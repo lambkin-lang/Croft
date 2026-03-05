@@ -62,3 +62,6 @@ CMakeUserPresets.json
 # Tooling binaries
 tools/wit_codegen
 tools/wit_schema_check
+
+# Local run logs (intentionally unversioned)
+local_logs/

@@ -20,6 +20,31 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
+### Logged Local Runs
+
+Capture configure/build/test output to a commit-tagged, timestamped local log:
+
+```bash
+tools/run_logged.sh
+```
+
+Run any custom command and still log through `tee`:
+
+```bash
+tools/run_logged.sh -- ctest --test-dir build -R sapling_test_seq --output-on-failure
+```
+
+Review recent log outcomes:
+
+```bash
+tools/summarize_logs.sh
+```
+
+Notes:
+- Logs are written to `local_logs/`.
+- Filenames include `git describe --always --dirty --abbrev=7` and `date +%Y-%B-%d-%H%M%S`.
+- Older logs are pruned automatically (default keep: 40, override with `CROFT_LOG_KEEP` or `--keep`).
+
 ### Build Configurations
 
 ```bash
