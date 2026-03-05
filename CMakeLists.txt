@@ -168,11 +168,12 @@ if(CROFT_ENABLE_WASM)
 endif()
 
 if(CROFT_ENABLE_UI)
-    target_link_libraries(croft PUBLIC glfw tgfx)
-    add_dependencies(croft menu_wit_schema_gen)
+    add_library(croft_ui STATIC)
+    target_link_libraries(croft_ui PUBLIC croft glfw tgfx)
+    add_dependencies(croft_ui menu_wit_schema_gen)
     
     # Tier 5, 6, 7: Windowing, Rendering, and UI Scene Graph
-    target_sources(croft PRIVATE 
+    target_sources(croft_ui PRIVATE 
         ${MENU_WIT_GENERATED_C}
         src/host/host_ui.c
         src/host/host_render.cpp
@@ -183,11 +184,11 @@ if(CROFT_ENABLE_UI)
     )
     # Tier 9: Accessibility Bridge (macOS MVP)
     if(APPLE)
-        target_sources(croft PRIVATE src/host/mac/host_a11y.m src/host/mac/host_menu.m src/host/mac/host_gesture.m)
+        target_sources(croft_ui PRIVATE src/host/mac/host_a11y.m src/host/mac/host_menu.m src/host/mac/host_gesture.m)
         set_source_files_properties(src/host/mac/host_a11y.m src/host/mac/host_menu.m src/host/mac/host_gesture.m PROPERTIES COMPILE_FLAGS "-fobjc-arc")
-        target_link_libraries(croft PUBLIC "-framework AppKit")
+        target_link_libraries(croft_ui PUBLIC "-framework AppKit")
     else()
-        target_sources(croft PRIVATE src/host/host_a11y_stub.c)
+        target_sources(croft_ui PRIVATE src/host/host_a11y_stub.c)
     endif()
 endif()
 
@@ -233,31 +234,25 @@ if(CROFT_BUILD_TESTS)
     if(CROFT_ENABLE_UI)
         # ── Demo UI Window Integration ──────────────────────────────────
         add_executable(test_ui_window_standalone tests/host_tests/test_ui_window_standalone.c)
-        target_link_libraries(test_ui_window_standalone PRIVATE croft)
+        target_link_libraries(test_ui_window_standalone PRIVATE croft_ui)
 
         add_executable(test_render_standalone tests/host_tests/test_render_standalone.c)
-        target_link_libraries(test_render_standalone croft)
+        target_link_libraries(test_render_standalone PRIVATE croft_ui)
 
         add_executable(test_scene_standalone tests/host_tests/test_scene_standalone.c)
-        target_link_libraries(test_scene_standalone croft)
+        target_link_libraries(test_scene_standalone PRIVATE croft_ui)
         
         add_executable(test_a11y_standalone tests/host_tests/test_a11y_standalone.c)
-        target_link_libraries(test_a11y_standalone croft)
-        if(APPLE)
-            target_link_libraries(test_a11y_standalone "-framework AppKit")
-        endif()
+        target_link_libraries(test_a11y_standalone PRIVATE croft_ui)
         
         add_executable(test_menu_standalone tests/host_tests/test_menu_standalone.c)
-        target_link_libraries(test_menu_standalone croft)
-        if(APPLE)
-            target_link_libraries(test_menu_standalone "-framework AppKit")
-        endif()
+        target_link_libraries(test_menu_standalone PRIVATE croft_ui)
         
         add_executable(test_zoom_standalone tests/host_tests/test_zoom_standalone.c)
-        target_link_libraries(test_zoom_standalone croft)
+        target_link_libraries(test_zoom_standalone PRIVATE croft_ui)
 
         add_executable(test_editor_standalone tests/host_tests/test_editor_standalone.c)
-        target_link_libraries(test_editor_standalone croft)
+        target_link_libraries(test_editor_standalone PRIVATE croft_ui)
         
         target_include_directories(test_ui_window_standalone PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
         # We explicitly omit this from `add_test(NAME croft_tests)` to prevent headless CI server failures
