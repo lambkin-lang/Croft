@@ -36,6 +36,34 @@ struct SapTxnCtx {
     SapArenaAllocStats alloc_stats_base;
 };
 
+static void env_txn_link_locked(SapEnv *env, SapTxnCtx *txn)
+{
+    txn->env_prev = NULL;
+    txn->env_next = env->live_txns_head;
+    if (env->live_txns_head)
+        env->live_txns_head->env_prev = txn;
+    env->live_txns_head = txn;
+    env->live_txn_count++;
+}
+
+static int env_txn_is_live_locked(SapEnv *env, const SapTxnCtx *txn)
+{
+    for (SapTxnCtx *cur = env->live_txns_head; cur; cur = cur->env_next) {
+        if (cur == txn)
+            return 1;
+    }
+    return 0;
+}
+
+static int env_has_live_top_write_locked(SapEnv *env)
+{
+    for (SapTxnCtx *cur = env->live_txns_head; cur; cur = cur->env_next) {
+        if (!cur->parent && !(cur->flags & TXN_RDONLY))
+            return 1;
+    }
+    return 0;
+}
+
 static void env_txn_link(SapEnv *env, SapTxnCtx *txn)
 {
     if (!env || !txn)
@@ -43,12 +71,7 @@ static void env_txn_link(SapEnv *env, SapTxnCtx *txn)
 #ifdef SAPLING_THREADED
     pthread_mutex_lock(&env->list_mu);
 #endif
-    txn->env_prev = NULL;
-    txn->env_next = env->live_txns_head;
-    if (env->live_txns_head)
-        env->live_txns_head->env_prev = txn;
-    env->live_txns_head = txn;
-    env->live_txn_count++;
+    env_txn_link_locked(env, txn);
 #ifdef SAPLING_THREADED
     pthread_mutex_unlock(&env->list_mu);
 #endif
@@ -171,6 +194,7 @@ int sap_txn_set_subsystem_state(SapTxnCtx *txn, uint32_t sys_id, void *state) {
 SapTxnCtx *sap_txn_begin(SapEnv *env, SapTxnCtx *parent, unsigned int flags)
 {
     if (!env) return NULL;
+    if (parent && parent->env != env) return NULL;
     
     SapTxnCtx *txn = calloc(1, sizeof(SapTxnCtx));
     if (!txn) return NULL;
@@ -178,7 +202,30 @@ SapTxnCtx *sap_txn_begin(SapEnv *env, SapTxnCtx *parent, unsigned int flags)
     txn->env = env;
     txn->parent = parent;
     txn->flags = flags;
-    env_txn_link(env, txn);
+
+    int can_begin = 1;
+#ifdef SAPLING_THREADED
+    pthread_mutex_lock(&env->list_mu);
+#endif
+    if (parent) {
+        if (!env_txn_is_live_locked(env, parent)) {
+            can_begin = 0;
+        } else if ((parent->flags & TXN_RDONLY) && !(flags & TXN_RDONLY)) {
+            can_begin = 0;
+        }
+    } else if (!(flags & TXN_RDONLY) && env_has_live_top_write_locked(env)) {
+        can_begin = 0;
+    }
+    if (can_begin)
+        env_txn_link_locked(env, txn);
+#ifdef SAPLING_THREADED
+    pthread_mutex_unlock(&env->list_mu);
+#endif
+    if (!can_begin) {
+        free(txn);
+        return NULL;
+    }
+
     (void)sap_arena_alloc_stats(env->arena, &txn->alloc_stats_base);
     
     /* Initialize subsystem states */

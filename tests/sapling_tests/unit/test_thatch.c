@@ -667,7 +667,7 @@ static void test_wrong_owner_release(void) {
 
     SapTxnCtx *txn1 = sap_txn_begin(env, NULL, 0);
     CHECK(txn1 != NULL);
-    SapTxnCtx *txn2 = sap_txn_begin(env, NULL, 0);
+    SapTxnCtx *txn2 = sap_txn_begin(env, txn1, 0);
     CHECK(txn2 != NULL);
 
     ThatchRegion *region = NULL;

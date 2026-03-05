@@ -11,8 +11,8 @@
 SapEnv *g_env = NULL;
 SapTxnCtx *g_txn = NULL;
 
-#define seq_new() seq_new(g_env)
-#define seq_free(s) seq_free(g_env, s)
+#define seq_new() seq_new_txn(g_txn)
+#define seq_free(s) seq_free_txn(g_txn, s)
 #define seq_push_back(s, v) seq_push_back(g_txn, s, v)
 #define seq_push_front(s, v) seq_push_front(g_txn, s, v)
 #define seq_pop_back(s, val) seq_pop_back(g_txn, s, val)
@@ -21,7 +21,6 @@ SapTxnCtx *g_txn = NULL;
 #define seq_split_at(s, i, l, r) seq_split_at(g_txn, s, i, l, r)
 #define seq_reset(s) seq_reset(g_txn, s)
 
-#include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -51,6 +50,26 @@ static int g_pass = 0, g_fail = 0;
 
 static void print_summary(void) { printf("\nResults: %d passed, %d failed\n", g_pass, g_fail); }
 
+static void run_test_in_txn(void (*fn)(void), const char *name)
+{
+    g_txn = sap_txn_begin(g_env, NULL, 0);
+    if (!g_txn)
+    {
+        fprintf(stderr, "FAIL: sap_txn_begin failed for %s\n", name);
+        g_fail++;
+        return;
+    }
+    fn();
+    if (sap_txn_commit(g_txn) != ERR_OK)
+    {
+        fprintf(stderr, "FAIL: sap_txn_commit failed for %s\n", name);
+        g_fail++;
+    }
+    g_txn = NULL;
+}
+
+#define RUN_TEST(fn) run_test_in_txn((fn), #fn)
+
 /* ================================================================== */
 /* Helpers                                                              */
 /* ================================================================== */
@@ -78,9 +97,14 @@ static int seq_equals_array(Seq *seq, uint32_t *val, size_t n)
 static Seq *seq_from_array(uint32_t *val, size_t n)
 {
     Seq *s = seq_new();
-    assert(s);
     for (size_t i = 0; i < n; i++)
-        assert(seq_push_back(s, val[i]) == ERR_OK);
+    {
+        if (!s || seq_push_back(s, val[i]) != ERR_OK)
+        {
+            seq_free(s);
+            return NULL;
+        }
+    }
     return s;
 }
 
@@ -1356,48 +1380,46 @@ int main(void)
     sap_arena_init(&arena, &arena_opts);
     g_env = sap_env_create(arena, 4096);
     sap_seq_subsystem_init(g_env);
-    g_txn = sap_txn_begin(g_env, NULL, 0);
 
     printf("=== seq unit tests ===\n");
 
-    test_empty();
-    test_single();
-    test_push_pop_front();
-    test_push_pop_back();
-    test_alternating_push();
-    test_get();
-    test_concat_basic();
-    test_concat_empty();
-    test_concat_self_invalid();
-    test_concat_large();
-
-
-
-
-
-    test_split_at_basic();
-    test_split_at_large();
-    test_split_at_range();
-    test_large_push_pop();
-    test_large_push_front_pop_back();
-    test_concat_split_roundtrip();
-    test_free_non_empty();
-    test_mixed_ops();
-    test_concat_many();
-    test_split_concat_identity();
-    test_model_randomized();
-    test_invalid_args();
+    RUN_TEST(test_empty);
+    RUN_TEST(test_single);
+    RUN_TEST(test_push_pop_front);
+    RUN_TEST(test_push_pop_back);
+    RUN_TEST(test_alternating_push);
+    RUN_TEST(test_get);
+    RUN_TEST(test_concat_basic);
+    RUN_TEST(test_concat_empty);
+    RUN_TEST(test_concat_self_invalid);
+    RUN_TEST(test_concat_large);
+    RUN_TEST(test_split_at_basic);
+    RUN_TEST(test_split_at_large);
+    RUN_TEST(test_split_at_range);
+    RUN_TEST(test_large_push_pop);
+    RUN_TEST(test_large_push_front_pop_back);
+    RUN_TEST(test_concat_split_roundtrip);
+    RUN_TEST(test_free_non_empty);
+    RUN_TEST(test_mixed_ops);
+    RUN_TEST(test_concat_many);
+    RUN_TEST(test_split_concat_identity);
+    RUN_TEST(test_model_randomized);
+    RUN_TEST(test_invalid_args);
 #ifdef SAPLING_SEQ_TESTING
-    test_fault_injection_push();
-    test_fault_injection_concat();
-    test_fault_injection_split();
-    test_fault_injection_push_sweep();
-    test_fault_injection_push_front_sweep();
-    test_fault_injection_concat_sweep();
-    test_fault_injection_split_sweep();
-    test_fault_injection_reset_sweep();
+    RUN_TEST(test_fault_injection_push);
+    RUN_TEST(test_fault_injection_concat);
+    RUN_TEST(test_fault_injection_split);
+    RUN_TEST(test_fault_injection_push_sweep);
+    RUN_TEST(test_fault_injection_push_front_sweep);
+    RUN_TEST(test_fault_injection_concat_sweep);
+    RUN_TEST(test_fault_injection_split_sweep);
+    RUN_TEST(test_fault_injection_reset_sweep);
 #endif
 
     print_summary();
+    if (g_txn)
+        sap_txn_abort(g_txn);
+    sap_env_destroy(g_env);
+    sap_arena_destroy(arena);
     return g_fail ? 1 : 0;
 }
