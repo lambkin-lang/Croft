@@ -45,6 +45,35 @@ Notes:
 - Filenames include `git describe --always --dirty --abbrev=7` and `date +%Y-%B-%d-%H%M%S`.
 - Older logs are pruned automatically (default keep: 40, override with `CROFT_LOG_KEEP` or `--keep`).
 
+### GUI Binary Size Benchmark
+
+Track size of the primary GUI executable over time (default target: `test_editor_standalone`):
+
+```bash
+tools/benchmark_binary_size.sh
+```
+
+This produces:
+- Detailed run log: `local_logs/size_bench/runs/<timestamp>--<git>--<target>.log`
+- Append-only history: `local_logs/size_bench/history.csv`
+
+Each run records two profiles:
+- `debug` (`Debug`)
+- `optimized` (`MinSizeRel` + LTO + dead-strip + `-Os` by default)
+
+Useful options:
+
+```bash
+# Force more aggressive size optimization
+tools/benchmark_binary_size.sh --opt-level Oz
+
+# Benchmark a different GUI target
+tools/benchmark_binary_size.sh --target test_scene_standalone
+
+# Show latest benchmark rows
+tools/summarize_size_bench.sh --limit 20
+```
+
 ### Build Configurations
 
 ```bash
