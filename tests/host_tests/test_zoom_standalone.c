@@ -1,6 +1,7 @@
 #include "croft/host_ui.h"
 #include "croft/host_render.h"
 #include "croft/scene.h"
+#include "croft/host_gesture.h"
 #include <stdio.h>
 
 static int g_running = 1;
@@ -33,7 +34,31 @@ void on_ui_event(int32_t type, int32_t arg0, int32_t arg1) {
         g_root_vp.scroll_y = cy - (cy - g_root_vp.scroll_y) * scale_ratio;
         g_root_vp.scale = new_scale;
         
-        printf("Zooming! Scale: %.2f | Scroll Offset: (%.1f, %.1f)\n", 
+        printf("Zooming (Scroll)! Scale: %.2f | Scroll Offset: (%.1f, %.1f)\n", 
+               g_root_vp.scale, g_root_vp.scroll_x, g_root_vp.scroll_y);
+    }
+    else if (type == CROFT_UI_EVENT_ZOOM_GESTURE) {
+        // arg0 = magnification * 1000000
+        float delta = (float)arg0 / 1000000.0f;
+        
+        float old_scale = g_root_vp.scale;
+        float new_scale = old_scale * (1.0f + delta); // Native swipe gives true scale ratios
+        
+        if (new_scale < 0.1f) new_scale = 0.1f;
+        if (new_scale > 10.0f) new_scale = 10.0f;
+        
+        uint32_t fw, fh;
+        host_ui_get_framebuffer_size(&fw, &fh);
+        float cx = (float)fw / 2.0f;
+        float cy = (float)fh / 2.0f;
+        
+        float scale_ratio = new_scale / old_scale;
+        
+        g_root_vp.scroll_x = cx - (cx - g_root_vp.scroll_x) * scale_ratio;
+        g_root_vp.scroll_y = cy - (cy - g_root_vp.scroll_y) * scale_ratio;
+        g_root_vp.scale = new_scale;
+        
+        printf("Zooming (Pinch)!  Scale: %.2f | Scroll Offset: (%.1f, %.1f)\n", 
                g_root_vp.scale, g_root_vp.scroll_x, g_root_vp.scroll_y);
     } 
     else if (type == CROFT_UI_EVENT_MOUSE && arg0 == 0 && arg1 == 1) { // Left click press
@@ -62,6 +87,11 @@ int main(void) {
     if (host_ui_create_window(1000, 800, "Infinite Canvas MVP") != 0) return 1;
     if (host_render_init() != 0) return 1;
     
+    // Wire macOS native gestures to our callback!
+#ifdef __APPLE__
+    host_gesture_mac_init(host_ui_get_native_window(), (void *)on_ui_event);
+#endif
+
     host_ui_set_event_callback(on_ui_event);
     
     // Setup scene
