@@ -903,11 +903,12 @@ static void emit_c_fields(FILE *out, const WitRegistry *reg,
         return;
     }
     case TYPE_LIST:
-        if (!is_list_u8(reg, t)) {
-            codegen_die_type("unsupported list<T> (only list<u8> is supported)", resolved);
-        }
         fprintf(out, "%sconst uint8_t *%s_data;\n", indent, name);
         fprintf(out, "%suint32_t %s_len;\n", indent, name);
+        if (!is_list_u8(reg, t)) {
+            /* For generic list<T>, data points to encoded element bytes. */
+            fprintf(out, "%suint32_t %s_byte_len;\n", indent, name);
+        }
         return;
     case TYPE_OPTION:
         if (t->param_count < 1 || t->params[0] < 0) {
@@ -986,10 +987,12 @@ static void emit_variant_payload(FILE *out, const WitRegistry *reg,
         }
     }
     if (t->kind == TYPE_LIST) {
-        if (!is_list_u8(reg, t)) {
-            codegen_die_type("unsupported list<T> variant payload (only list<u8> is supported)", resolved);
+        if (is_list_u8(reg, t)) {
+            fprintf(out, "        struct { const uint8_t *data; uint32_t len; } %s;\n", case_name);
+        } else {
+            fprintf(out, "        struct { const uint8_t *data; uint32_t len; uint32_t byte_len; } %s;\n",
+                    case_name);
         }
-        fprintf(out, "        struct { const uint8_t *data; uint32_t len; } %s;\n", case_name);
         return;
     }
     if (t->kind == TYPE_OPTION || t->kind == TYPE_TUPLE || t->kind == TYPE_RESULT) {
@@ -1051,7 +1054,7 @@ static void emit_header(FILE *out, const WitRegistry *reg,
     fprintf(out, " *   option some: [TAG_OPTION_SOME 0x15][...inner...]\n");
     fprintf(out, " *   tuple:       [TAG_TUPLE   0x16][skip_len: 4 LE][...elements...]\n");
     fprintf(out, " *   list<u8>:    [TAG_BYTES   0x2C][len: 4 LE][data: len bytes]\n");
-    fprintf(out, " *   list<T!=u8>: currently unsupported by this codegen\n");
+    fprintf(out, " *   list<T!=u8>: [TAG_LIST    0x17][skip_len: 4 LE][count: 4 LE][encoded elements]\n");
     fprintf(out, " *   result ok:   [TAG_RESULT_OK  0x18][...ok value...]\n");
     fprintf(out, " *   result err:  [TAG_RESULT_ERR 0x19][...err value...]\n");
     fprintf(out, " *   sN/uN:       [TAG_SN/UN  0x20-0x27][data: N/8 bytes LE]\n");
@@ -1236,7 +1239,7 @@ static void emit_header(FILE *out, const WitRegistry *reg,
  * type expression.  `access` is the C expression to read the value from
  * (e.g., "val->payload" or "val->kind").
  *
- * For blob types (string/bytes/list<u8>) the access is the base name
+ * For blob types (string/bytes/list) the access is the base name
  * and we append sep+"data" / sep+"len".  For record fields sep="_"
  * (flat fields like val->X_data); for variant payloads sep="."
  * (struct members like val->val.X.data).
@@ -1308,13 +1311,36 @@ static void emit_write_type_expr(FILE *out, const WitRegistry *reg,
         return;
     }
     case TYPE_LIST:
-        if (!is_list_u8(reg, t)) {
-            codegen_die_type("unsupported list<T> writer (only list<u8> is supported)", resolved);
+        if (is_list_u8(reg, t)) {
+            /* list<u8> stays compact and wire-compatible with bytes. */
+            fprintf(out, "%sSAP_WIT_CHECK(thatch_write_tag(region, SAP_WIT_TAG_BYTES));\n", indent);
+            fprintf(out, "%sSAP_WIT_CHECK(thatch_write_data(region, &%s%slen, 4));\n", indent, access, sep);
+            fprintf(out, "%sSAP_WIT_CHECK(thatch_write_data(region, %s%sdata, %s%slen));\n", indent, access, sep, access, sep);
+            return;
         }
-        /* list<u8> same as bytes: TAG_BYTES + len + data */
-        fprintf(out, "%sSAP_WIT_CHECK(thatch_write_tag(region, SAP_WIT_TAG_BYTES));\n", indent);
-        fprintf(out, "%sSAP_WIT_CHECK(thatch_write_data(region, &%s%slen, 4));\n", indent, access, sep);
-        fprintf(out, "%sSAP_WIT_CHECK(thatch_write_data(region, %s%sdata, %s%slen));\n", indent, access, sep, access, sep);
+        /*
+         * Generic list<T> payloads are provided as encoded element bytes plus a count.
+         * We structurally validate count-vs-bytes using sap_wit_skip_value before writing.
+         */
+        fprintf(out, "%s{\n", indent);
+        fprintf(out, "%s    ThatchRegion _list_view;\n", indent);
+        fprintf(out, "%s    ThatchCursor _list_cur = 0;\n", indent);
+        fprintf(out, "%s    if (%s%sbyte_len > 0 && %s%sdata == NULL) return ERR_INVALID;\n", indent,
+                access, sep, access, sep);
+        fprintf(out, "%s    SAP_WIT_CHECK(thatch_region_init_readonly(&_list_view, %s%sdata, %s%sbyte_len));\n",
+                indent, access, sep, access, sep);
+        fprintf(out, "%s    for (uint32_t _i = 0; _i < %s%slen; _i++) {\n", indent, access, sep);
+        fprintf(out, "%s        SAP_WIT_CHECK(sap_wit_skip_value(&_list_view, &_list_cur));\n", indent);
+        fprintf(out, "%s    }\n", indent);
+        fprintf(out, "%s    if (_list_cur != %s%sbyte_len) return ERR_TYPE;\n", indent, access, sep);
+        fprintf(out, "%s    SAP_WIT_CHECK(thatch_write_tag(region, SAP_WIT_TAG_LIST));\n", indent);
+        fprintf(out, "%s    ThatchCursor _list_skip_loc;\n", indent);
+        fprintf(out, "%s    SAP_WIT_CHECK(thatch_reserve_skip(region, &_list_skip_loc));\n", indent);
+        fprintf(out, "%s    SAP_WIT_CHECK(thatch_write_data(region, &%s%slen, 4));\n", indent, access, sep);
+        fprintf(out, "%s    SAP_WIT_CHECK(thatch_write_data(region, %s%sdata, %s%sbyte_len));\n", indent,
+                access, sep, access, sep);
+        fprintf(out, "%s    SAP_WIT_CHECK(thatch_commit_skip(region, _list_skip_loc));\n", indent);
+        fprintf(out, "%s}\n", indent);
         return;
     case TYPE_OPTION: {
         if (t->param_count < 1 || t->params[0] < 0) {
@@ -1540,15 +1566,43 @@ static void emit_read_type_expr(FILE *out, const WitRegistry *reg,
         return;
     }
     case TYPE_LIST:
-        if (!is_list_u8(reg, t)) {
-            codegen_die_type("unsupported list<T> reader (only list<u8> is supported)", resolved);
+        if (is_list_u8(reg, t)) {
+            /* list<u8> same as bytes */
+            fprintf(out, "%s{ uint8_t tag; SAP_WIT_CHECK(thatch_read_tag(region, cursor, &tag));\n", indent);
+            fprintf(out, "%s  if (tag != SAP_WIT_TAG_BYTES && tag != SAP_WIT_TAG_STRING) return ERR_TYPE; }\n", indent);
+            fprintf(out, "%sSAP_WIT_CHECK(thatch_read_data(region, cursor, 4, &%s%slen));\n", indent, access, sep);
+            fprintf(out, "%s{ const void *p; SAP_WIT_CHECK(thatch_read_ptr(region, cursor, %s%slen, &p));\n", indent, access, sep);
+            fprintf(out, "%s  %s%sdata = (const uint8_t *)p; }\n", indent, access, sep);
+            return;
         }
-        /* list<u8> same as bytes */
-        fprintf(out, "%s{ uint8_t tag; SAP_WIT_CHECK(thatch_read_tag(region, cursor, &tag));\n", indent);
-        fprintf(out, "%s  if (tag != SAP_WIT_TAG_BYTES && tag != SAP_WIT_TAG_STRING) return ERR_TYPE; }\n", indent);
-        fprintf(out, "%sSAP_WIT_CHECK(thatch_read_data(region, cursor, 4, &%s%slen));\n", indent, access, sep);
-        fprintf(out, "%s{ const void *p; SAP_WIT_CHECK(thatch_read_ptr(region, cursor, %s%slen, &p));\n", indent, access, sep);
-        fprintf(out, "%s  %s%sdata = (const uint8_t *)p; }\n", indent, access, sep);
+        fprintf(out, "%s{\n", indent);
+        fprintf(out, "%s    uint8_t _list_tag;\n", indent);
+        fprintf(out, "%s    uint32_t _list_skip_len;\n", indent);
+        fprintf(out, "%s    uint32_t _list_remaining;\n", indent);
+        fprintf(out, "%s    ThatchCursor _list_segment_end;\n", indent);
+        fprintf(out, "%s    ThatchRegion _list_view;\n", indent);
+        fprintf(out, "%s    ThatchCursor _list_cur = 0;\n", indent);
+        fprintf(out, "%s    SAP_WIT_CHECK(thatch_read_tag(region, cursor, &_list_tag));\n", indent);
+        fprintf(out, "%s    if (_list_tag != SAP_WIT_TAG_LIST) return ERR_TYPE;\n", indent);
+        fprintf(out, "%s    SAP_WIT_CHECK(thatch_read_skip_len(region, cursor, &_list_skip_len));\n", indent);
+        fprintf(out, "%s    _list_remaining = thatch_region_used(region) - *cursor;\n", indent);
+        fprintf(out, "%s    if (_list_skip_len > _list_remaining) return ERR_RANGE;\n", indent);
+        fprintf(out, "%s    _list_segment_end = *cursor + _list_skip_len;\n", indent);
+        fprintf(out, "%s    SAP_WIT_CHECK(thatch_read_data(region, cursor, 4, &%s%slen));\n", indent,
+                access, sep);
+        fprintf(out, "%s    %s%sbyte_len = _list_segment_end - *cursor;\n", indent, access, sep);
+        fprintf(out, "%s    { const void *p;\n", indent);
+        fprintf(out, "%s      SAP_WIT_CHECK(thatch_read_ptr(region, cursor, %s%sbyte_len, &p));\n",
+                indent, access, sep);
+        fprintf(out, "%s      %s%sdata = (const uint8_t *)p; }\n", indent, access, sep);
+        fprintf(out, "%s    SAP_WIT_CHECK(thatch_region_init_readonly(&_list_view, %s%sdata, %s%sbyte_len));\n",
+                indent, access, sep, access, sep);
+        fprintf(out, "%s    for (uint32_t _i = 0; _i < %s%slen; _i++) {\n", indent, access, sep);
+        fprintf(out, "%s        SAP_WIT_CHECK(sap_wit_skip_value(&_list_view, &_list_cur));\n", indent);
+        fprintf(out, "%s    }\n", indent);
+        fprintf(out, "%s    if (_list_cur != %s%sbyte_len) return ERR_TYPE;\n", indent, access, sep);
+        fprintf(out, "%s    if (*cursor != _list_segment_end) return ERR_TYPE;\n", indent);
+        fprintf(out, "%s}\n", indent);
         return;
     case TYPE_OPTION: {
         if (t->param_count < 1 || t->params[0] < 0) {

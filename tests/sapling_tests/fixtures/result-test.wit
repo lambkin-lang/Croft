@@ -24,6 +24,16 @@ interface types {
     record test-result-carrier {
         result: test-apply-result,
     }
+
+    record test-list-row {
+        id: s32,
+        note: utf8,
+    }
+
+    record test-list-carrier {
+        ints: list<s32>,
+        rows: list<test-list-row>,
+    }
 }
 
 world result-test {

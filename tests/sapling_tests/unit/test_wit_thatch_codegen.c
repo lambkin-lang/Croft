@@ -1239,6 +1239,22 @@ static void test_tuple_skip_len_corrupted_in_validator(void) {
 /* Result<> round-trip tests (via test fixture)                       */
 /* ================================================================== */
 
+static int append_tagged_s32(uint8_t *buf, uint32_t cap, uint32_t *len_io, int32_t value) {
+    uint32_t pos;
+    uint32_t v;
+    if (!buf || !len_io) return ERR_INVALID;
+    pos = *len_io;
+    if (cap - pos < 5u) return ERR_FULL;
+    v = (uint32_t)value;
+    buf[pos + 0u] = SAP_WIT_TAG_S32;
+    buf[pos + 1u] = (uint8_t)(v & 0xFFu);
+    buf[pos + 2u] = (uint8_t)((v >> 8) & 0xFFu);
+    buf[pos + 3u] = (uint8_t)((v >> 16) & 0xFFu);
+    buf[pos + 4u] = (uint8_t)((v >> 24) & 0xFFu);
+    *len_io = pos + 5u;
+    return ERR_OK;
+}
+
 static void test_result_round_trip_ok(void) {
     printf("--- result<> round-trip OK ---\n");
     SapMemArena *a; SapEnv *e; SapTxnCtx *t; ThatchRegion *r;
@@ -1297,6 +1313,104 @@ static void test_result_round_trip_err(void) {
     ThatchCursor skip_cur = 0;
     CHECK(sap_wit_skip_value(r, &skip_cur) == ERR_OK);
     CHECK(skip_cur == N);
+
+    teardown(a, e, t);
+}
+
+static void test_result_list_round_trip(void) {
+    printf("--- result fixture list<T> round-trip ---\n");
+    SapMemArena *a; SapEnv *e; SapTxnCtx *t; ThatchRegion *r;
+    setup(&a, &e, &t, &r);
+
+    uint8_t ints_blob[64];
+    uint32_t ints_blob_len = 0;
+    CHECK(append_tagged_s32(ints_blob, sizeof(ints_blob), &ints_blob_len, 7) == ERR_OK);
+    CHECK(append_tagged_s32(ints_blob, sizeof(ints_blob), &ints_blob_len, -3) == ERR_OK);
+    CHECK(append_tagged_s32(ints_blob, sizeof(ints_blob), &ints_blob_len, 42) == ERR_OK);
+
+    ThatchRegion *rows_region = NULL;
+    CHECK(thatch_region_new(t, &rows_region) == ERR_OK);
+
+    const uint8_t note_a[] = "alpha";
+    const uint8_t note_b[] = "beta";
+    SapWitTestListRow row_a = {
+        .id = 1,
+        .note_data = note_a,
+        .note_len = 5,
+    };
+    SapWitTestListRow row_b = {
+        .id = 2,
+        .note_data = note_b,
+        .note_len = 4,
+    };
+    CHECK(sap_wit_write_test_list_row(rows_region, &row_a) == ERR_OK);
+    CHECK(sap_wit_write_test_list_row(rows_region, &row_b) == ERR_OK);
+
+    uint32_t rows_blob_len = thatch_region_used(rows_region);
+    ThatchCursor rows_raw_cur = 0;
+    const void *rows_blob = NULL;
+    CHECK(thatch_read_ptr(rows_region, &rows_raw_cur, rows_blob_len, &rows_blob) == ERR_OK);
+
+    SapWitTestListCarrier in = {
+        .ints_data = ints_blob,
+        .ints_len = 3,
+        .ints_byte_len = ints_blob_len,
+        .rows_data = (const uint8_t *)rows_blob,
+        .rows_len = 2,
+        .rows_byte_len = rows_blob_len,
+    };
+    CHECK(sap_wit_write_test_list_carrier(r, &in) == ERR_OK);
+    uint32_t total = thatch_region_used(r);
+
+    ThatchCursor read_cur = 0;
+    SapWitTestListCarrier out = {0};
+    CHECK(sap_wit_read_test_list_carrier(r, &read_cur, &out) == ERR_OK);
+    CHECK(read_cur == total);
+
+    CHECK(out.ints_len == 3);
+    CHECK(out.ints_byte_len == ints_blob_len);
+    CHECK(memcmp(out.ints_data, ints_blob, ints_blob_len) == 0);
+
+    CHECK(out.rows_len == 2);
+    CHECK(out.rows_byte_len == rows_blob_len);
+    CHECK(memcmp(out.rows_data, rows_blob, rows_blob_len) == 0);
+
+    ThatchRegion row_view;
+    CHECK(thatch_region_init_readonly(&row_view, out.rows_data, out.rows_byte_len) == ERR_OK);
+    ThatchCursor row_cur = 0;
+    SapWitTestListRow row_out = {0};
+    CHECK(sap_wit_read_test_list_row(&row_view, &row_cur, &row_out) == ERR_OK);
+    CHECK(row_out.id == 1);
+    CHECK(row_out.note_len == 5);
+    CHECK(memcmp(row_out.note_data, "alpha", 5) == 0);
+    CHECK(sap_wit_read_test_list_row(&row_view, &row_cur, &row_out) == ERR_OK);
+    CHECK(row_out.id == 2);
+    CHECK(row_out.note_len == 4);
+    CHECK(memcmp(row_out.note_data, "beta", 4) == 0);
+    CHECK(row_cur == out.rows_byte_len);
+
+    teardown(a, e, t);
+}
+
+static void test_result_list_count_mismatch_rejected(void) {
+    printf("--- result fixture list<T> count mismatch rejected ---\n");
+    SapMemArena *a; SapEnv *e; SapTxnCtx *t; ThatchRegion *r;
+    setup(&a, &e, &t, &r);
+
+    uint8_t ints_blob[16];
+    uint32_t ints_blob_len = 0;
+    CHECK(append_tagged_s32(ints_blob, sizeof(ints_blob), &ints_blob_len, 10) == ERR_OK);
+    CHECK(append_tagged_s32(ints_blob, sizeof(ints_blob), &ints_blob_len, 11) == ERR_OK);
+
+    SapWitTestListCarrier in = {
+        .ints_data = ints_blob,
+        .ints_len = 3, /* claims one extra element */
+        .ints_byte_len = ints_blob_len,
+        .rows_data = NULL,
+        .rows_len = 0,
+        .rows_byte_len = 0,
+    };
+    CHECK(sap_wit_write_test_list_carrier(r, &in) != ERR_OK);
 
     teardown(a, e, t);
 }
@@ -1395,6 +1509,8 @@ int main(void) {
     /* Result<> tests */
     test_result_round_trip_ok();
     test_result_round_trip_err();
+    test_result_list_round_trip();
+    test_result_list_count_mismatch_rejected();
     test_result_skip();
 
     printf("\nResults: %d passed, %d failed\n", passed, failed);
