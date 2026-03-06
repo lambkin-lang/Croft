@@ -15,6 +15,9 @@ from the initial seed to the complete host.
 See [docs/BUILD_DEPENDENCY_MATRIX.md](docs/BUILD_DEPENDENCY_MATRIX.md)
 for the reproducible external build closure, required checkouts, and
 reference repos that are intentionally not part of the build.
+See [docs/PRODUCT_FAMILY_PLAN.md](docs/PRODUCT_FAMILY_PLAN.md) for the
+current Croft/Lambkin boundary model, WIT plan, and phased implementation
+sequence intended to guide future sessions.
 See [docs/EXAMPLE_MATRIX.md](docs/EXAMPLE_MATRIX.md) for the current example
 ladder from foundation-only demos up through the text-editor shell.
 See [docs/EDITOR_FAMILY_ANALYSIS.md](docs/EDITOR_FAMILY_ANALYSIS.md) for the
