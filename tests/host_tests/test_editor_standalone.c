@@ -186,6 +186,7 @@ int main(int argc, char **argv) {
     
     host_render_terminate();
     host_ui_terminate();
+    text_editor_node_dispose(&g_editor);
     
     // Cleanup sapling
     text_free(g_env, text);

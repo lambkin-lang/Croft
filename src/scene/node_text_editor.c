@@ -1,109 +1,210 @@
 #include "croft/scene.h"
+#include "croft/editor_commands.h"
+#include "croft/host_ui.h"
 #include "croft/host_render.h"
 #include "croft/host_a11y.h"
+#include <sapling/txn.h>
 #include <sapling/text.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 
+enum {
+    CROFT_KEY_RELEASE = 0,
+    CROFT_KEY_BACKSPACE = 259,
+    CROFT_KEY_DELETE = 261,
+    CROFT_KEY_RIGHT = 262,
+    CROFT_KEY_LEFT = 263,
+    CROFT_KEY_DOWN = 264,
+    CROFT_KEY_UP = 265,
+    CROFT_KEY_HOME = 268,
+    CROFT_KEY_END = 269,
+    CROFT_KEY_ENTER = 257,
+    CROFT_KEY_KP_ENTER_OLD = 284,
+    CROFT_KEY_KP_ENTER = 335
+};
+
+static uint32_t text_editor_clamp_u32(uint32_t value, uint32_t min_value, uint32_t max_value) {
+    if (value < min_value) {
+        return min_value;
+    }
+    if (value > max_value) {
+        return max_value;
+    }
+    return value;
+}
+
+static void text_editor_sync_selection(text_editor_node *te) {
+    uint32_t max_offset = croft_editor_text_model_codepoint_length(&te->text_model);
+
+    if (te->sel_start > max_offset) {
+        te->sel_start = max_offset;
+    }
+    if (te->sel_end > max_offset) {
+        te->sel_end = max_offset;
+    }
+
+    te->selection = croft_editor_selection_from_offsets(&te->text_model, te->sel_start, te->sel_end);
+}
+
+static void text_editor_refresh_cache(text_editor_node *te) {
+    te->utf8_cache = te->text_model.utf8;
+    te->utf8_len = croft_editor_text_model_length(&te->text_model);
+    text_editor_sync_selection(te);
+}
+
 static void text_editor_sync_cache(text_editor_node *te) {
     if (!te->text_tree) {
-        if (te->utf8_cache) {
-            free(te->utf8_cache);
-            te->utf8_cache = NULL;
-        }
+        croft_editor_text_model_dispose(&te->text_model);
+        te->utf8_cache = NULL;
         te->utf8_len = 0;
+        te->sel_start = 0;
+        te->sel_end = 0;
+        te->preferred_column = 0;
+        te->selection = croft_editor_selection_create(
+            croft_editor_position_create(1, 1),
+            croft_editor_position_create(1, 1)
+        );
         return;
     }
-    
-    // For Phase 1 MVP, we export the entire string to a UTF-8 buffer and cache it.
-    size_t utf8_len_out = 0;
-    // We assume the text tree isn't full of non-codepoint handles that need literals/trees for now,
-    // or we resolve them with NULL meaning they fail. 
-    // We use the strict text_to_utf8 on just the code points.
-    text_utf8_length((Text*)te->text_tree, &utf8_len_out);
-    
-    char *new_cache = (char *)malloc(utf8_len_out + 1);
-    if (new_cache) {
-        text_to_utf8((Text*)te->text_tree, (uint8_t*)new_cache, utf8_len_out + 1, &utf8_len_out);
+
+    {
+        size_t utf8_len_out = 0;
+        char* new_cache = NULL;
+
+        if (text_utf8_length((Text*)te->text_tree, &utf8_len_out) != 0) {
+            return;
+        }
+
+        new_cache = (char*)malloc(utf8_len_out + 1u);
+        if (!new_cache) {
+            return;
+        }
+        if (text_to_utf8((Text*)te->text_tree,
+                         (uint8_t*)new_cache,
+                         utf8_len_out + 1u,
+                         &utf8_len_out) != 0) {
+            free(new_cache);
+            return;
+        }
         new_cache[utf8_len_out] = '\0';
-        
-        if (te->utf8_cache) free(te->utf8_cache);
-        te->utf8_cache = new_cache;
-        te->utf8_len = (uint32_t)utf8_len_out;
+        if (croft_editor_text_model_set_text(&te->text_model, new_cache, utf8_len_out) == CROFT_EDITOR_OK) {
+            text_editor_refresh_cache(te);
+        }
+        free(new_cache);
+    }
+}
+
+static void text_editor_set_selection(text_editor_node* te,
+                                      uint32_t anchor_offset,
+                                      uint32_t active_offset,
+                                      int reset_preferred_column) {
+    te->sel_start = anchor_offset;
+    te->sel_end = active_offset;
+    if (reset_preferred_column) {
+        te->preferred_column = 0;
+    }
+    text_editor_sync_selection(te);
+}
+
+static void text_editor_collapse_selection(text_editor_node* te,
+                                           uint32_t offset,
+                                           int preserve_preferred_column) {
+    te->sel_start = offset;
+    te->sel_end = offset;
+    if (!preserve_preferred_column) {
+        te->preferred_column = 0;
+    }
+    text_editor_sync_selection(te);
+}
+
+static void text_editor_selection_bounds(const text_editor_node* te,
+                                         uint32_t* out_min,
+                                         uint32_t* out_max) {
+    uint32_t start = te->sel_start;
+    uint32_t end = te->sel_end;
+    if (start <= end) {
+        *out_min = start;
+        *out_max = end;
+    } else {
+        *out_min = end;
+        *out_max = start;
+    }
+}
+
+static void text_editor_delete_range(SapTxnCtx* txn,
+                                     text_editor_node* te,
+                                     uint32_t start_offset,
+                                     uint32_t end_offset) {
+    uint32_t count = end_offset - start_offset;
+    uint32_t i;
+
+    for (i = 0; i < count; i++) {
+        text_delete(txn, te->text_tree, start_offset, NULL);
     }
 }
 
 static void text_editor_draw(scene_node *n, render_ctx *rc) {
     text_editor_node *te = (text_editor_node *)n;
-    
-    // Draw background
+    uint32_t line_count;
+    uint32_t selection_min = 0;
+    uint32_t selection_max = 0;
+    uint32_t cursor_offset = te->sel_end;
+    uint32_t line_number;
+
     host_render_draw_rect(0, 0, n->sx, n->sy, rc->bg_color);
-    
-    if (!te->utf8_cache || te->utf8_len == 0) return;
-    
-    // Save coordinate system before clipping
+
     host_render_save();
-    
-    // Clip strictly to the text editor bounding box to prevent text scrolling out
     host_render_clip_rect(0, 0, n->sx, n->sy);
-    
-    // Translate text by the scroll offset
     host_render_translate(te->scroll_x, te->scroll_y);
-    
-    // Naive line-by-line render
-    const char *line_start = te->utf8_cache;
-    const char *end = te->utf8_cache + te->utf8_len;
-    float current_y = te->font_size; // Baseline
-    
-    while (line_start < end) {
-        const char *newline = strchr(line_start, '\n');
-        size_t len = newline ? (size_t)(newline - line_start) : (size_t)(end - line_start);
-        
-        // Culling: only draw if inside the viewport rect
-        if (current_y + te->scroll_y >= 0 && current_y - te->font_size + te->scroll_y <= n->sy) {
-            uint32_t line_start_idx = (uint32_t)(line_start - te->utf8_cache);
-            uint32_t line_end_idx = line_start_idx + (uint32_t)len;
-            
-            uint32_t s_min = te->sel_start < te->sel_end ? te->sel_start : te->sel_end;
-            uint32_t s_max = te->sel_start > te->sel_end ? te->sel_start : te->sel_end;
-            
-            if (s_min != s_max && s_min < line_end_idx && s_max > line_start_idx) {
-                uint32_t h_start = s_min > line_start_idx ? s_min : line_start_idx;
-                uint32_t h_end = s_max < line_end_idx ? s_max : line_end_idx;
-                float x1 = host_render_measure_text(line_start, h_start - line_start_idx, te->font_size);
-                float x2 = host_render_measure_text(line_start, h_end - line_start_idx, te->font_size);
-                // Draw selection highlight blue: 0x4B9CE2FF (opaque blue)
-                // Y runs from baseline down? Wait, rect draws from top-left.
+
+    text_editor_selection_bounds(te, &selection_min, &selection_max);
+    line_count = croft_editor_text_model_line_count(&te->text_model);
+
+    for (line_number = 1; line_number <= line_count; line_number++) {
+        uint32_t line_start_offset = croft_editor_text_model_line_start_offset(&te->text_model, line_number);
+        uint32_t line_end_offset = croft_editor_text_model_line_end_offset(&te->text_model, line_number);
+        uint32_t line_start_byte = croft_editor_text_model_byte_offset_at(&te->text_model, line_start_offset);
+        uint32_t line_len_bytes = 0;
+        const char* line_text = croft_editor_text_model_line_utf8(&te->text_model, line_number, &line_len_bytes);
+        float current_y = te->font_size + ((float)(line_number - 1u) * te->line_height);
+
+        if (current_y + te->scroll_y >= 0.0f && current_y - te->font_size + te->scroll_y <= n->sy) {
+            if (selection_min != selection_max
+                    && selection_min < line_end_offset
+                    && selection_max > line_start_offset) {
+                uint32_t highlight_start = selection_min > line_start_offset ? selection_min : line_start_offset;
+                uint32_t highlight_end = selection_max < line_end_offset ? selection_max : line_end_offset;
+                uint32_t highlight_start_bytes =
+                    croft_editor_text_model_byte_offset_at(&te->text_model, highlight_start) - line_start_byte;
+                uint32_t highlight_end_bytes =
+                    croft_editor_text_model_byte_offset_at(&te->text_model, highlight_end) - line_start_byte;
+                float x1 = host_render_measure_text(line_text, highlight_start_bytes, te->font_size);
+                float x2 = host_render_measure_text(line_text, highlight_end_bytes, te->font_size);
                 host_render_draw_rect(x1, current_y - te->font_size, x2 - x1, te->line_height, 0x4B9CE2FF);
             }
-            if (s_min == s_max && s_min >= line_start_idx && s_min <= line_end_idx) { // Cursor is here
-                // Blink at 1Hz (500ms on, 500ms off)
-                // Need fmod from math.h, but we can avoid it with cast:
+
+            if (selection_min == selection_max
+                    && cursor_offset >= line_start_offset
+                    && cursor_offset <= line_end_offset) {
                 int millis = (int)(rc->time * 1000.0);
                 if ((millis / 500) % 2 == 0) {
-                    float cx = host_render_measure_text(line_start, s_min - line_start_idx, te->font_size);
-                    // Draw a 2px wide cursor
-                    host_render_draw_rect(cx, current_y - te->font_size, 2.0f, te->line_height, 0x000000FF);
+                    uint32_t cursor_bytes =
+                        croft_editor_text_model_byte_offset_at(&te->text_model, cursor_offset) - line_start_byte;
+                    float cursor_x = host_render_measure_text(line_text, cursor_bytes, te->font_size);
+                    host_render_draw_rect(cursor_x, current_y - te->font_size, 2.0f, te->line_height, 0x000000FF);
                 }
             }
-            
-            // Draw baseline guideline
+
             host_render_draw_rect(0, current_y, n->sx, 1.0f, 0x0000FF33);
-            
-            if (len > 0) {
-                host_render_draw_text(0, current_y, line_start, (uint32_t)len, te->font_size, rc->fg_color);
+
+            if (line_len_bytes > 0u) {
+                host_render_draw_text(0, current_y, line_text, line_len_bytes, te->font_size, rc->fg_color);
             }
         }
-        
-        current_y += te->line_height;
-        if (!newline) break;
-        line_start = newline + 1;
     }
-    
-    // Draw vertical margin guideline at X=0
+
     host_render_draw_rect(0, 0, 1.0f, n->sy, 0x0000FF33);
-    
     host_render_restore();
 }
 
@@ -118,57 +219,58 @@ static void text_editor_update_accessibility(scene_node *n) {
 }
 
 static uint32_t text_editor_hit_index(text_editor_node *te, float lx, float ly) {
-    if (!te->utf8_cache || te->utf8_len == 0) return 0;
-    
+    uint32_t line_number;
+    uint32_t line_start_offset;
+    uint32_t line_end_offset;
+    uint32_t line_start_byte;
+    uint32_t line_len_bytes = 0;
+    const char* line_text;
+    uint32_t best_offset;
+    uint32_t offset;
+    float best_distance;
+
     float doc_x = lx - te->scroll_x;
     float doc_y = ly - te->scroll_y;
-    
-    if (doc_y < 0) return 0;
-    
-    uint32_t line_index = (uint32_t)(doc_y / te->line_height);
-    
-    const char *p = te->utf8_cache;
-    const char *end = p + te->utf8_len;
-    uint32_t current_line = 0;
-    while (p < end && current_line < line_index) {
-        const char *nl = strchr(p, '\n');
-        if (!nl) { p = end; break; }
-        p = nl + 1;
-        current_line++;
+
+    if (doc_y < 0.0f) {
+        return 0;
     }
-    if (p >= end) return te->utf8_len;
-    
-    const char *line_start = p;
-    const char *nl = strchr(p, '\n');
-    size_t line_len = nl ? (size_t)(nl - p) : (size_t)(end - p);
-    
-    uint32_t best_idx = 0;
-    float prev_width = 0.0f;
-    for (uint32_t i = 0; i <= line_len; i++) {
-        float width = host_render_measure_text(line_start, i, te->font_size);
-        if (width >= doc_x) {
-            if (i > 0 && (doc_x - prev_width) < (width - doc_x)) {
-                best_idx = i - 1;
-            } else {
-                best_idx = i;
-            }
-            break;
+
+    line_number = (uint32_t)(doc_y / te->line_height) + 1u;
+    line_number = text_editor_clamp_u32(
+        line_number,
+        1u,
+        croft_editor_text_model_line_count(&te->text_model)
+    );
+    line_start_offset = croft_editor_text_model_line_start_offset(&te->text_model, line_number);
+    line_end_offset = croft_editor_text_model_line_end_offset(&te->text_model, line_number);
+    line_start_byte = croft_editor_text_model_byte_offset_at(&te->text_model, line_start_offset);
+    line_text = croft_editor_text_model_line_utf8(&te->text_model, line_number, &line_len_bytes);
+
+    best_offset = line_start_offset;
+    best_distance = doc_x < 0.0f ? -doc_x : doc_x;
+    for (offset = line_start_offset; offset <= line_end_offset; offset++) {
+        uint32_t byte_length =
+            croft_editor_text_model_byte_offset_at(&te->text_model, offset) - line_start_byte;
+        float width = host_render_measure_text(line_text, byte_length, te->font_size);
+        float distance = width >= doc_x ? (width - doc_x) : (doc_x - width);
+        if (offset == line_start_offset || distance <= best_distance) {
+            best_distance = distance;
+            best_offset = offset;
         }
-        prev_width = width;
-        best_idx = i;
     }
-    
-    return (uint32_t)(line_start - te->utf8_cache) + best_idx;
+
+    return best_offset;
 }
 
 static void text_editor_mouse_event(scene_node *n, int action, float local_x, float local_y) {
     text_editor_node *te = (text_editor_node *)n;
     if (action == 1) { // Down
+        uint32_t hit_index = text_editor_hit_index(te, local_x, local_y);
         te->is_selecting = 1;
-        te->sel_start = text_editor_hit_index(te, local_x, local_y);
-        te->sel_end = te->sel_start;
+        text_editor_set_selection(te, hit_index, hit_index, 1);
     } else if (action == 3 && te->is_selecting) { // Drag
-        te->sel_end = text_editor_hit_index(te, local_x, local_y);
+        text_editor_set_selection(te, te->sel_start, text_editor_hit_index(te, local_x, local_y), 1);
     } else if (action == 0 || action == 2) { // Up
         te->is_selecting = 0;
     }
@@ -176,89 +278,158 @@ static void text_editor_mouse_event(scene_node *n, int action, float local_x, fl
 
 static void text_editor_char_event(scene_node *n, uint32_t codepoint) {
     text_editor_node *te = (text_editor_node *)n;
+    SapTxnCtx *txn;
+    uint32_t selection_min = 0;
+    uint32_t selection_max = 0;
+
     if (!te->text_tree || !te->env) {
-        printf("DEBUG: char_event failed due to missing text_tree or env\n");
         return;
     }
-    
-    SapTxnCtx *txn = sap_txn_begin(te->env, NULL, 0);
+
+    txn = sap_txn_begin(te->env, NULL, 0);
     if (!txn) {
-        printf("DEBUG: char_event failed to begin txn\n");
         return;
     }
-    
-    // Delete selection if any
-    if (te->sel_start != te->sel_end) {
-        uint32_t s_min = te->sel_start < te->sel_end ? te->sel_start : te->sel_end;
-        uint32_t s_max = te->sel_start > te->sel_end ? te->sel_start : te->sel_end;
-        uint32_t count = s_max - s_min;
-        for (uint32_t i = 0; i < count; i++) {
-            text_delete(txn, te->text_tree, s_min, NULL);
-        }
-        te->sel_start = s_min;
-        te->sel_end = s_min;
+
+    text_editor_selection_bounds(te, &selection_min, &selection_max);
+    if (selection_min != selection_max) {
+        text_editor_delete_range(txn, te, selection_min, selection_max);
+        te->sel_start = selection_min;
+        te->sel_end = selection_min;
     }
-    
-    int err = text_insert(txn, te->text_tree, te->sel_start, codepoint);
-    if (err != 0) {
-        printf("DEBUG: text_insert failed with err=%d\n", err);
+
+    if (text_insert(txn, te->text_tree, te->sel_end, codepoint) != 0) {
+        sap_txn_abort(txn);
+        return;
     }
     sap_txn_commit(txn);
-    
-    te->sel_start++;
-    te->sel_end = te->sel_start;
-    
+
+    te->sel_end++;
+    te->sel_start = te->sel_end;
+    te->preferred_column = 0;
     text_editor_sync_cache(te);
 }
 
 static void text_editor_key_event(scene_node *n, int key, int action) {
     text_editor_node *te = (text_editor_node *)n;
-    if (action == 0) return; // ignore release
-    
-    if (key == 259) { // GLFW_KEY_BACKSPACE
+    uint32_t modifiers;
+    int selecting;
+    int word_mode;
+
+    if (action == CROFT_KEY_RELEASE) {
+        return;
+    }
+
+    modifiers = host_ui_get_modifiers();
+    selecting = (modifiers & CROFT_UI_MOD_SHIFT) != 0u;
+    word_mode = (modifiers & (CROFT_UI_MOD_ALT | CROFT_UI_MOD_CONTROL)) != 0u;
+
+    if (key == CROFT_KEY_BACKSPACE || key == CROFT_KEY_DELETE) {
         SapTxnCtx *txn = sap_txn_begin(te->env, NULL, 0);
-        if (!txn) return;
-        
-        if (te->sel_start != te->sel_end) {
-            uint32_t s_min = te->sel_start < te->sel_end ? te->sel_start : te->sel_end;
-            uint32_t s_max = te->sel_start > te->sel_end ? te->sel_start : te->sel_end;
-            uint32_t count = s_max - s_min;
-            for (uint32_t i = 0; i < count; i++) {
-                text_delete(txn, te->text_tree, s_min, NULL);
-            }
-            te->sel_start = s_min;
-            te->sel_end = s_min;
-        } else if (te->sel_start > 0) {
-            te->sel_start--;
-            te->sel_end = te->sel_start;
-            int err = text_delete(txn, te->text_tree, te->sel_start, NULL);
-            if (err != 0) {
-                printf("DEBUG: text_delete failed with err=%d\n", err);
-            }
+        uint32_t delete_start = 0;
+        uint32_t delete_end = 0;
+        int has_delete = 0;
+
+        if (!txn) {
+            return;
         }
-        
+
+        if (word_mode) {
+            has_delete = (key == CROFT_KEY_BACKSPACE)
+                ? croft_editor_command_delete_word_left_range(&te->text_model,
+                                                              te->sel_start,
+                                                              te->sel_end,
+                                                              &delete_start,
+                                                              &delete_end)
+                : croft_editor_command_delete_word_right_range(&te->text_model,
+                                                               te->sel_start,
+                                                               te->sel_end,
+                                                               &delete_start,
+                                                               &delete_end);
+        } else {
+            has_delete = (key == CROFT_KEY_BACKSPACE)
+                ? croft_editor_command_delete_left_range(&te->text_model,
+                                                         te->sel_start,
+                                                         te->sel_end,
+                                                         &delete_start,
+                                                         &delete_end)
+                : croft_editor_command_delete_right_range(&te->text_model,
+                                                          te->sel_start,
+                                                          te->sel_end,
+                                                          &delete_start,
+                                                          &delete_end);
+        }
+
+        if (has_delete) {
+            text_editor_delete_range(txn, te, delete_start, delete_end);
+            text_editor_collapse_selection(te, delete_start, 0);
+        }
         sap_txn_commit(txn);
         text_editor_sync_cache(te);
-    }
-    else if (key == 263) { // GLFW_KEY_LEFT
-        if (te->sel_start > 0) {
-            te->sel_start--;
-            te->sel_end = te->sel_start;
+    } else if (key == CROFT_KEY_LEFT) {
+        if (word_mode) {
+            croft_editor_command_move_word_left(&te->text_model,
+                                                &te->sel_start,
+                                                &te->sel_end,
+                                                &te->preferred_column,
+                                                selecting);
+        } else {
+            croft_editor_command_move_left(&te->text_model,
+                                           &te->sel_start,
+                                           &te->sel_end,
+                                           &te->preferred_column,
+                                           selecting);
         }
-    }
-    else if (key == 262) { // GLFW_KEY_RIGHT
-        if (te->sel_start < te->utf8_len) { // simplified for single-code-point characters MVP
-            te->sel_start++;
-            te->sel_end = te->sel_start;
+        text_editor_sync_selection(te);
+    } else if (key == CROFT_KEY_RIGHT) {
+        if (word_mode) {
+            croft_editor_command_move_word_right(&te->text_model,
+                                                 &te->sel_start,
+                                                 &te->sel_end,
+                                                 &te->preferred_column,
+                                                 selecting);
+        } else {
+            croft_editor_command_move_right(&te->text_model,
+                                            &te->sel_start,
+                                            &te->sel_end,
+                                            &te->preferred_column,
+                                            selecting);
         }
-    }
-    else if (key == 257 || key == 284) { // GLFW_KEY_ENTER / KP_ENTER
+        text_editor_sync_selection(te);
+    } else if (key == CROFT_KEY_UP || key == CROFT_KEY_DOWN) {
+        if (key == CROFT_KEY_UP) {
+            croft_editor_command_move_up(&te->text_model,
+                                         &te->sel_start,
+                                         &te->sel_end,
+                                         &te->preferred_column,
+                                         selecting);
+        } else {
+            croft_editor_command_move_down(&te->text_model,
+                                           &te->sel_start,
+                                           &te->sel_end,
+                                           &te->preferred_column,
+                                           selecting);
+        }
+        text_editor_sync_selection(te);
+    } else if (key == CROFT_KEY_HOME) {
+        croft_editor_command_move_home(&te->text_model,
+                                       &te->sel_start,
+                                       &te->sel_end,
+                                       &te->preferred_column,
+                                       selecting);
+        text_editor_sync_selection(te);
+    } else if (key == CROFT_KEY_END) {
+        croft_editor_command_move_end(&te->text_model,
+                                      &te->sel_start,
+                                      &te->sel_end,
+                                      &te->preferred_column,
+                                      selecting);
+        text_editor_sync_selection(te);
+    } else if (key == CROFT_KEY_ENTER
+            || key == CROFT_KEY_KP_ENTER_OLD
+            || key == CROFT_KEY_KP_ENTER) {
         text_editor_char_event(n, '\n');
     }
-    
-    // Ensure terminal cursor doesn't magically blink out of existence on moving past end of line
-    if (te->sel_start > te->utf8_len) te->sel_start = te->utf8_len;
-    if (te->sel_end > te->utf8_len) te->sel_end = te->utf8_len;
 }
 
 static scene_node_vtbl text_editor_vtbl = {
@@ -282,6 +453,15 @@ void text_editor_node_init(text_editor_node *n, struct SapEnv *env, float x, flo
     n->utf8_len = 0;
     n->font_size = 36.0f;     // Match tgfx default in host_render
     n->line_height = 42.0f;
+    n->sel_start = 0;
+    n->sel_end = 0;
+    n->preferred_column = 0;
+    n->is_selecting = 0;
+    croft_editor_text_model_init(&n->text_model);
+    n->selection = croft_editor_selection_create(
+        croft_editor_position_create(1, 1),
+        croft_editor_position_create(1, 1)
+    );
     
     text_editor_sync_cache(n);
     
@@ -296,4 +476,16 @@ void text_editor_node_init(text_editor_node *n, struct SapEnv *env, float x, flo
 void text_editor_node_set_text(text_editor_node *n, struct Text *text_tree) {
     n->text_tree = text_tree;
     text_editor_sync_cache(n);
+}
+
+void text_editor_node_dispose(text_editor_node *n) {
+    if (!n) {
+        return;
+    }
+    croft_editor_text_model_dispose(&n->text_model);
+    n->utf8_cache = NULL;
+    n->utf8_len = 0;
+    n->sel_start = 0;
+    n->sel_end = 0;
+    n->preferred_column = 0;
 }

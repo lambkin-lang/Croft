@@ -16,6 +16,12 @@ extern "C" {
 #define CROFT_UI_EVENT_CURSOR_POS    5
 #define CROFT_UI_EVENT_CHAR          6
 
+/* Modifier mask bits */
+#define CROFT_UI_MOD_SHIFT    (1u << 0)
+#define CROFT_UI_MOD_CONTROL  (1u << 1)
+#define CROFT_UI_MOD_ALT      (1u << 2)
+#define CROFT_UI_MOD_SUPER    (1u << 3)
+
 /* Event callback signature */
 typedef void (*host_ui_event_cb_t)(int32_t event_type, int32_t arg0, int32_t arg1);
 
@@ -64,6 +70,7 @@ double host_ui_get_time(void);
 
 void host_ui_get_mouse_pos(double *x, double *y);
 int32_t host_ui_get_mouse_button(int32_t button);
+uint32_t host_ui_get_modifiers(void);
 void host_ui_set_user_data(void *data);
 void *host_ui_get_user_data(void);
 

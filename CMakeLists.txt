@@ -476,12 +476,26 @@ croft_register_artifact(sapling datastore
     TAGS tier3 tier4 sapling runner wasi datastore persistent-text
 )
 
+add_library(croft_editor_core STATIC src/editor/editor_text_model.c)
+croft_apply_public_includes(croft_editor_core)
+croft_register_artifact(croft_editor_core editor
+    TAGS tier8 editor text-model selection position range line-index
+)
+
+add_library(croft_editor_commands STATIC src/editor/editor_commands.c)
+croft_apply_public_includes(croft_editor_commands)
+target_link_libraries(croft_editor_commands PUBLIC croft_editor_core)
+croft_register_artifact(croft_editor_commands editor
+    TAGS tier8 editor commands cursor movement word-ops
+    DEPENDS croft_editor_core
+)
+
 add_library(croft_editor_document STATIC src/editor/editor_document.c)
 croft_apply_public_includes(croft_editor_document)
-target_link_libraries(croft_editor_document PUBLIC croft_fs sapling)
+target_link_libraries(croft_editor_document PUBLIC croft_editor_core croft_fs sapling)
 croft_register_artifact(croft_editor_document editor
     TAGS tier8 editor document sapling filesystem
-    DEPENDS croft_fs sapling
+    DEPENDS croft_editor_core croft_fs sapling
 )
 
 # ── Optional Croft artifacts ───────────────────────────────────────────
@@ -572,6 +586,8 @@ if(CROFT_GLFW_TARGET AND CROFT_TGFX_TARGET AND CROFT_TGFX_REQUEST_OPENGL)
     target_link_libraries(croft_scene_text_editor_tgfx_opengl
         PUBLIC
             croft_scene_core_tgfx_opengl
+            croft_editor_core
+            croft_editor_commands
             sapling
     )
     croft_register_artifact(croft_scene_text_editor_tgfx_opengl scene
@@ -615,6 +631,8 @@ if(APPLE AND CROFT_GLFW_TARGET AND CROFT_TGFX_TARGET AND CROFT_TGFX_REQUEST_META
     target_link_libraries(croft_scene_text_editor_tgfx_metal
         PUBLIC
             croft_scene_core_tgfx_metal
+            croft_editor_core
+            croft_editor_commands
             sapling
     )
     croft_register_artifact(croft_scene_text_editor_tgfx_metal scene
@@ -656,6 +674,8 @@ if(APPLE AND TARGET croft_ui_glfw_metal)
     target_link_libraries(croft_scene_text_editor_metal_native
         PUBLIC
             croft_scene_core_metal_native
+            croft_editor_core
+            croft_editor_commands
             sapling
     )
     croft_register_artifact(croft_scene_text_editor_metal_native scene
@@ -1001,9 +1021,9 @@ endif()
 if(CROFT_BUILD_TESTS)
     enable_testing()
 
-    add_executable(test_croft tests/test_main.c tests/test_queue.c tests/host_tests/test_fs.c)
+    add_executable(test_croft tests/test_main.c tests/test_queue.c tests/host_tests/test_fs.c tests/test_editor_text_model.c tests/test_editor_commands.c)
     target_include_directories(test_croft PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
-    target_link_libraries(test_croft PRIVATE croft)
+    target_link_libraries(test_croft PRIVATE croft croft_editor_commands)
     add_test(NAME croft_tests COMMAND test_croft)
 
     if(TARGET croft_wasm_wasm3 AND TARGET wasm_guest_gen)

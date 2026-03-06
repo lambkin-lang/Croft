@@ -212,6 +212,14 @@ extern int test_queue_basic(void);
 extern int test_queue_multi_producer(void);
 extern int test_queue_backpressure(void);
 extern int test_queue_unbind(void);
+extern int test_editor_text_model_offsets(void);
+extern int test_editor_text_model_multibyte(void);
+extern int test_editor_text_model_selection(void);
+extern int test_editor_text_model_word_ranges(void);
+extern int test_editor_commands_word_moves(void);
+extern int test_editor_commands_word_deletes(void);
+extern int test_editor_commands_vertical_column_memory(void);
+extern int test_editor_commands_shift_word_selection(void);
 
 extern void run_test_fs(int argc, char **argv);
 
@@ -260,6 +268,18 @@ int main(void)
     RUN_TEST(test_queue_multi_producer);
     RUN_TEST(test_queue_backpressure);
     RUN_TEST(test_queue_unbind);
+
+    printf("\n[editor_text_model]\n");
+    RUN_TEST(test_editor_text_model_offsets);
+    RUN_TEST(test_editor_text_model_multibyte);
+    RUN_TEST(test_editor_text_model_selection);
+    RUN_TEST(test_editor_text_model_word_ranges);
+
+    printf("\n[editor_commands]\n");
+    RUN_TEST(test_editor_commands_word_moves);
+    RUN_TEST(test_editor_commands_word_deletes);
+    RUN_TEST(test_editor_commands_vertical_column_memory);
+    RUN_TEST(test_editor_commands_shift_word_selection);
 
     printf("\n[host_fs]\n");
     RUN_TEST(run_tier2_fs_tests);

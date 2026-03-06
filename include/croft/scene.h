@@ -2,6 +2,7 @@
 #define CROFT_SCENE_H
 
 #include "croft/platform.h"
+#include "croft/editor_text_model.h"
 
 //
 // Render Context
@@ -105,10 +106,14 @@ typedef struct text_editor_node {
     float line_height;
     uint32_t sel_start;
     uint32_t sel_end;
+    uint32_t preferred_column;
     int is_selecting;
+    croft_editor_text_model text_model;
+    croft_editor_selection selection;
 } text_editor_node;
 
 void text_editor_node_init(text_editor_node *n, struct SapEnv *env, float x, float y, float sx, float sy, struct Text *text_tree);
 void text_editor_node_set_text(text_editor_node *n, struct Text *text_tree);
+void text_editor_node_dispose(text_editor_node *n);
 
 #endif // CROFT_SCENE_H

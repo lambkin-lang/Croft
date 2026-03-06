@@ -13,6 +13,24 @@
 
 static GLFWwindow *g_window = NULL;
 static host_ui_event_cb_t g_event_cb = NULL;
+static uint32_t g_modifier_mask = 0;
+
+static uint32_t croft_ui_map_glfw_modifiers(int mods) {
+    uint32_t mask = 0;
+    if (mods & GLFW_MOD_SHIFT) {
+        mask |= CROFT_UI_MOD_SHIFT;
+    }
+    if (mods & GLFW_MOD_CONTROL) {
+        mask |= CROFT_UI_MOD_CONTROL;
+    }
+    if (mods & GLFW_MOD_ALT) {
+        mask |= CROFT_UI_MOD_ALT;
+    }
+    if (mods & GLFW_MOD_SUPER) {
+        mask |= CROFT_UI_MOD_SUPER;
+    }
+    return mask;
+}
 
 /* -- GLFW Callbacks -- */
 
@@ -23,7 +41,7 @@ static void glfw_error_callback(int error, const char* description) {
 static void glfw_key_callback(GLFWwindow* window, int key, int scancode, int action, int mods) {
     (void)window;
     (void)scancode;
-    (void)mods;
+    g_modifier_mask = croft_ui_map_glfw_modifiers(mods);
     
     if (g_event_cb) {
         g_event_cb(CROFT_UI_EVENT_KEY, key, action); /* action: 0=release, 1=press, 2=repeat */
@@ -32,7 +50,7 @@ static void glfw_key_callback(GLFWwindow* window, int key, int scancode, int act
 
 static void glfw_mouse_button_callback(GLFWwindow* window, int button, int action, int mods) {
     (void)window;
-    (void)mods;
+    g_modifier_mask = croft_ui_map_glfw_modifiers(mods);
     
     if (g_event_cb) {
         /* Encodes button in arg0, action in arg1 */
@@ -93,6 +111,7 @@ void host_ui_terminate(void) {
         glfwDestroyWindow(g_window);
         g_window = NULL;
     }
+    g_modifier_mask = 0;
     glfwTerminate();
 }
 
@@ -178,6 +197,10 @@ void host_ui_get_mouse_pos(double *x, double *y) {
 int32_t host_ui_get_mouse_button(int32_t button) {
     if (!g_window) return 0;
     return glfwGetMouseButton(g_window, button) == GLFW_PRESS;
+}
+
+uint32_t host_ui_get_modifiers(void) {
+    return g_modifier_mask;
 }
 
 void host_ui_set_user_data(void *data) {
