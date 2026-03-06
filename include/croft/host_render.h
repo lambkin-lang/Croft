@@ -9,8 +9,8 @@ extern "C" {
 #endif
 
 /**
- * Initializes the hardware-accelerated rendering context (tgfx/Skia).
- * Assumes a valid UI window (GLFW context) is active on the current thread.
+ * Initializes the hardware-accelerated rendering context (tgfx).
+ * Assumes a valid UI window is available for the selected backend.
  * Returns 0 on success, < 0 on failure.
  */
 int32_t host_render_init(void);

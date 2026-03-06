@@ -1,0 +1,275 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WORKSPACE_ROOT="$(cd "${SELF_DIR}/.." && pwd)"
+LOCK_FILE="${SELF_DIR}/deps.lock.sh"
+BOOTSTRAP_ROOT="${WORKSPACE_ROOT}/local_deps"
+OFFLINE=0
+REFRESH=0
+
+usage() {
+    cat <<'EOF'
+Usage:
+  tools/bootstrap_deps.sh [options]
+
+Stages pinned Croft dependencies into local_deps/ and generates:
+  local_deps/croft-deps.cmake
+  local_deps/env.sh
+
+The tgfx dependency is consumed from a prepared external checkout instead of
+being cloned into local_deps/. The miniaudio dependency is staged as a pinned
+header file because Croft consumes miniaudio as a header-only input.
+
+Options:
+  --root <dir>   Override output root (default: ./local_deps)
+  --offline      Refuse all network access; require existing staged repos
+  --refresh      Force git fetch and tgfx dependency sync even if already staged
+  --help         Show this help
+EOF
+}
+
+log() {
+    printf '%s\n' "$*"
+}
+
+die() {
+    printf 'ERROR: %s\n' "$*" >&2
+    exit 1
+}
+
+require_cmd() {
+    command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
+}
+
+require_dir() {
+    [ -d "$1" ] || die "required directory missing: $1"
+}
+
+require_file() {
+    [ -f "$1" ] || die "required file missing: $1"
+}
+
+abs_path() {
+    case "$1" in
+        /*) printf '%s\n' "$1" ;;
+        *) printf '%s/%s\n' "$WORKSPACE_ROOT" "$1" ;;
+    esac
+}
+
+ensure_clean_repo() {
+    local dir="$1"
+    if [ -n "$(git -C "$dir" status --porcelain --untracked-files=no 2>/dev/null)" ]; then
+        die "refusing to update dirty checkout: $dir"
+    fi
+}
+
+clone_or_update_repo() {
+    local name="$1"
+    local repo="$2"
+    local ref="$3"
+    local dest="$4"
+    local current_ref=""
+
+    if [ -e "$dest" ] && [ ! -d "$dest/.git" ]; then
+        die "$name destination exists but is not a git checkout: $dest"
+    fi
+
+    if [ -d "$dest/.git" ]; then
+        ensure_clean_repo "$dest"
+        current_ref="$(git -C "$dest" rev-parse HEAD)"
+        if [ "$current_ref" = "$ref" ] && [ "$REFRESH" -eq 0 ]; then
+            log "$name already pinned at $ref"
+            return
+        fi
+    else
+        [ "$OFFLINE" -eq 0 ] || die "$name is not staged and --offline was requested"
+        log "Cloning $name from $repo"
+        git clone "$repo" "$dest"
+    fi
+
+    [ "$OFFLINE" -eq 0 ] || die "$name is not at pinned revision $ref and --offline was requested"
+
+    log "Fetching $name updates"
+    git -C "$dest" fetch --tags --prune origin
+
+    if ! git -C "$dest" rev-parse --verify "${ref}^{commit}" >/dev/null 2>&1; then
+        git -C "$dest" fetch origin "$ref"
+    fi
+
+    git -C "$dest" checkout --detach "$ref"
+
+    current_ref="$(git -C "$dest" rev-parse HEAD)"
+    [ "$current_ref" = "$ref" ] || die "$name checkout did not land on pinned revision $ref"
+}
+
+use_prepared_tgfx_repo() {
+    local dir="$1"
+    local current_ref=""
+
+    require_dir "$dir"
+    require_dir "$dir/.git"
+    require_file "$dir/CMakeLists.txt"
+    require_file "$dir/sync_deps.sh"
+    ensure_clean_repo "$dir"
+
+    current_ref="$(git -C "$dir" rev-parse HEAD)"
+    [ "$current_ref" = "$TGFX_REF" ] || die "tgfx checkout at $dir is $current_ref but expected $TGFX_REF"
+
+    log "Using prepared tgfx checkout at $dir"
+}
+
+stage_miniaudio_header() {
+    local dest_dir="$1"
+    local stamp_dir="$2"
+    local header_path="${dest_dir}/miniaudio.h"
+    local stamp_file="${stamp_dir}/miniaudio-${MINIAUDIO_REF}.stamp"
+    local temp_file=""
+
+    if [ -d "${dest_dir}/.git" ]; then
+        log "Removing stale git checkout at ${dest_dir}"
+        rm -rf "$dest_dir"
+    fi
+
+    if [ "$REFRESH" -eq 0 ] && [ -f "$header_path" ] && [ -f "$stamp_file" ]; then
+        log "miniaudio header already pinned at $MINIAUDIO_REF"
+        return
+    fi
+
+    [ "$OFFLINE" -eq 0 ] || die "miniaudio header is not staged and --offline was requested"
+
+    mkdir -p "$dest_dir"
+    temp_file="${header_path}.tmp"
+
+    log "Downloading miniaudio header from ${MINIAUDIO_HEADER_URL}"
+    curl --fail --location --silent --show-error "${MINIAUDIO_HEADER_URL}" -o "$temp_file"
+    [ -s "$temp_file" ] || die "downloaded miniaudio header was empty"
+    mv "$temp_file" "$header_path"
+    : > "$stamp_file"
+}
+
+sync_tgfx() {
+    local tgfx_dir="$1"
+    local stamp_dir="$2"
+    local stamp_file="${stamp_dir}/tgfx-sync-${TGFX_REF}.stamp"
+
+    require_file "${tgfx_dir}/sync_deps.sh"
+
+    if [ "$REFRESH" -eq 0 ] && [ -f "$stamp_file" ]; then
+        log "tgfx dependencies already synced for $TGFX_REF"
+        return
+    fi
+
+    [ "$OFFLINE" -eq 0 ] || die "tgfx dependency sync requires network unless a matching stamp already exists"
+
+    log "Running tgfx sync_deps.sh"
+    (
+        cd "$tgfx_dir"
+        ./sync_deps.sh
+    )
+    : > "$stamp_file"
+}
+
+write_cmake_cache() {
+    local out="$1"
+    local tgfx_dir="$2"
+    local wasm3_dir="$3"
+    local miniaudio_dir="$4"
+
+    cat >"$out" <<EOF
+# Generated by tools/bootstrap_deps.sh
+set(CROFT_GLFW_SOURCE_DIR "" CACHE PATH "Bootstrapped GLFW source override" FORCE)
+set(CROFT_GLFW_ROOT "${GLFW_ROOT}" CACHE PATH "Bootstrapped GLFW install root" FORCE)
+set(CROFT_TGFX_SOURCE_DIR "${tgfx_dir}" CACHE PATH "Bootstrapped tgfx checkout" FORCE)
+set(CROFT_WASM3_SOURCE_DIR "${wasm3_dir}" CACHE PATH "Bootstrapped wasm3 checkout" FORCE)
+set(CROFT_MINIAUDIO_SOURCE_DIR "${miniaudio_dir}" CACHE PATH "Bootstrapped miniaudio include root" FORCE)
+set(CROFT_FETCH_WASM3 OFF CACHE BOOL "Disable FetchContent after bootstrap" FORCE)
+set(CROFT_FETCH_MINIAUDIO OFF CACHE BOOL "Disable FetchContent after bootstrap" FORCE)
+set(CMAKE_PROGRAM_PATH "${WABT_BIN}" CACHE STRING "Bootstrapped tool search path" FORCE)
+EOF
+}
+
+write_env_script() {
+    local out="$1"
+
+    cat >"$out" <<EOF
+#!/usr/bin/env bash
+export PATH="${WABT_BIN}:\$PATH"
+export CROFT_GLFW_ROOT="${GLFW_ROOT}"
+EOF
+}
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --root)
+            [ "$#" -ge 2 ] || die "missing value for --root"
+            BOOTSTRAP_ROOT="$(abs_path "$2")"
+            shift 2
+            ;;
+        --offline)
+            OFFLINE=1
+            shift
+            ;;
+        --refresh)
+            REFRESH=1
+            shift
+            ;;
+        --help|-h)
+            usage
+            exit 0
+            ;;
+        *)
+            die "unknown argument: $1"
+            ;;
+    esac
+done
+
+require_file "$LOCK_FILE"
+# shellcheck source=/dev/null
+. "$LOCK_FILE"
+
+require_cmd git
+require_cmd cmake
+require_cmd node
+require_cmd curl
+
+require_dir "$GLFW_ROOT"
+require_dir "$WABT_BIN"
+require_file "${WABT_BIN}/wat2wasm"
+
+SRC_ROOT="${BOOTSTRAP_ROOT}/src"
+STAMP_ROOT="${BOOTSTRAP_ROOT}/stamps"
+mkdir -p "$SRC_ROOT" "$STAMP_ROOT"
+
+TGFX_DIR="${TGFX_SOURCE_DIR}"
+WASM3_DIR="${SRC_ROOT}/wasm3"
+MINIAUDIO_DIR="${SRC_ROOT}/miniaudio"
+
+use_prepared_tgfx_repo "$TGFX_DIR"
+clone_or_update_repo "wasm3" "$WASM3_REPO" "$WASM3_REF" "$WASM3_DIR"
+stage_miniaudio_header "$MINIAUDIO_DIR" "$STAMP_ROOT"
+
+require_file "${TGFX_DIR}/CMakeLists.txt"
+require_file "${WASM3_DIR}/CMakeLists.txt"
+require_file "${MINIAUDIO_DIR}/miniaudio.h"
+
+sync_tgfx "$TGFX_DIR" "$STAMP_ROOT"
+
+write_cmake_cache "${BOOTSTRAP_ROOT}/croft-deps.cmake" "$TGFX_DIR" "$WASM3_DIR" "$MINIAUDIO_DIR"
+write_env_script "${BOOTSTRAP_ROOT}/env.sh"
+chmod +x "${BOOTSTRAP_ROOT}/env.sh"
+
+log
+log "Bootstrap complete."
+log "Pinned revisions:"
+log "  tgfx      ${TGFX_REF}"
+log "  wasm3     ${WASM3_REF}"
+log "  miniaudio ${MINIAUDIO_REF} (header)"
+log
+log "Generated:"
+log "  ${BOOTSTRAP_ROOT}/croft-deps.cmake"
+log "  ${BOOTSTRAP_ROOT}/env.sh"
+log
+log "Next steps:"
+log "  source ${BOOTSTRAP_ROOT}/env.sh"
+log "  cmake -S ${WORKSPACE_ROOT} -B ${WORKSPACE_ROOT}/build -C ${BOOTSTRAP_ROOT}/croft-deps.cmake"

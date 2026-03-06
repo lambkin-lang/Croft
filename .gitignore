@@ -67,3 +67,6 @@ tools/wit_schema_check
 
 # Local run logs (intentionally unversioned)
 local_logs/
+
+# Local dependency bootstrap output
+local_deps/

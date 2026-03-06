@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.15)
 project(croft C CXX OBJC OBJCXX)
 
+include(FetchContent)
+
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 
@@ -10,13 +12,26 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 option(CROFT_BUILD_TESTS "Build the test suite" ON)
 option(CROFT_FAIL_ON_MISSING_OPTIONAL_DEPS
        "Treat unresolved optional subsystem dependencies as configure errors" OFF)
+option(CROFT_FETCH_WASM3 "Fetch wasm3 with FetchContent when no local/source install is provided" ON)
+option(CROFT_FETCH_MINIAUDIO
+       "Fetch miniaudio with FetchContent when no local header path is provided" ON)
 
 set(CROFT_GLFW_SOURCE_DIR "" CACHE PATH "Path to a local GLFW checkout")
+set(CROFT_GLFW_ROOT "/opt/homebrew/Cellar/glfw/3.4" CACHE PATH
+    "Path to an installed GLFW prefix")
 set(CROFT_TGFX_SOURCE_DIR "/Users/mshonle/Projects/Tencent/tgfx" CACHE PATH
     "Path to a local tgfx checkout")
 set(CROFT_WASM3_SOURCE_DIR "" CACHE PATH "Path to a local wasm3 checkout")
+set(CROFT_WASM3_GIT_REPOSITORY "https://github.com/wasm3/wasm3.git" CACHE STRING
+    "Git repository used when FetchContent downloads wasm3")
+set(CROFT_WASM3_GIT_TAG "main" CACHE STRING
+    "Git ref used when FetchContent downloads wasm3")
 set(CROFT_WABT_SOURCE_DIR "" CACHE PATH "Path to a local WABT checkout")
 set(CROFT_MINIAUDIO_SOURCE_DIR "" CACHE PATH "Path to the directory containing miniaudio.h")
+set(CROFT_MINIAUDIO_GIT_REPOSITORY "https://github.com/mackron/miniaudio.git" CACHE STRING
+    "Git repository used when FetchContent downloads miniaudio")
+set(CROFT_MINIAUDIO_GIT_TAG "master" CACHE STRING
+    "Git ref used when FetchContent downloads miniaudio")
 
 function(croft_optional_missing label reason)
     if(CROFT_FAIL_ON_MISSING_OPTIONAL_DEPS)
@@ -122,20 +137,41 @@ if(CROFT_GLFW_SOURCE_DIR)
     else()
         croft_optional_missing("glfw" "CROFT_GLFW_SOURCE_DIR does not contain CMakeLists.txt: ${CROFT_GLFW_SOURCE_DIR}")
     endif()
-else()
-    find_package(glfw3 CONFIG QUIET)
+elseif(CROFT_GLFW_ROOT)
+    find_path(CROFT_GLFW_INCLUDE_DIR GLFW/glfw3.h
+        PATHS "${CROFT_GLFW_ROOT}/include"
+        NO_DEFAULT_PATH
+    )
+    find_library(CROFT_GLFW_LIBRARY NAMES glfw glfw3
+        PATHS "${CROFT_GLFW_ROOT}/lib"
+        NO_DEFAULT_PATH
+    )
+    if(CROFT_GLFW_INCLUDE_DIR AND CROFT_GLFW_LIBRARY)
+        add_library(croft_dep_glfw UNKNOWN IMPORTED)
+        set_target_properties(croft_dep_glfw PROPERTIES
+            IMPORTED_LOCATION "${CROFT_GLFW_LIBRARY}"
+            INTERFACE_INCLUDE_DIRECTORIES "${CROFT_GLFW_INCLUDE_DIR}"
+        )
+        set(CROFT_GLFW_TARGET croft_dep_glfw)
+    endif()
 endif()
 
-if(TARGET glfw)
-    set(CROFT_GLFW_TARGET glfw)
-elseif(TARGET glfw3::glfw)
-    add_library(croft_dep_glfw INTERFACE)
-    target_link_libraries(croft_dep_glfw INTERFACE glfw3::glfw)
-    set(CROFT_GLFW_TARGET croft_dep_glfw)
-elseif(TARGET glfw3)
-    set(CROFT_GLFW_TARGET glfw3)
-elseif(NOT CROFT_GLFW_SOURCE_DIR)
-    croft_optional_missing("glfw" "set CROFT_GLFW_SOURCE_DIR or install a package that exports glfw")
+if(NOT CROFT_GLFW_TARGET)
+    find_package(glfw3 CONFIG QUIET)
+    if(TARGET glfw)
+        set(CROFT_GLFW_TARGET glfw)
+    elseif(TARGET glfw3::glfw)
+        add_library(croft_dep_glfw_pkg INTERFACE)
+        target_link_libraries(croft_dep_glfw_pkg INTERFACE glfw3::glfw)
+        set(CROFT_GLFW_TARGET croft_dep_glfw_pkg)
+    elseif(TARGET glfw3)
+        set(CROFT_GLFW_TARGET glfw3)
+    endif()
+endif()
+
+if(NOT CROFT_GLFW_TARGET)
+    croft_optional_missing("glfw"
+        "set CROFT_GLFW_SOURCE_DIR, install glfw, or provide CROFT_GLFW_ROOT (current: ${CROFT_GLFW_ROOT})")
 endif()
 
 set(CROFT_TGFX_TARGET "")
@@ -178,6 +214,17 @@ if(CROFT_WASM3_SOURCE_DIR)
 else()
     find_path(CROFT_WASM3_INCLUDE_DIR wasm3.h)
     find_library(CROFT_WASM3_LIBRARY NAMES m3)
+    if(NOT (CROFT_WASM3_INCLUDE_DIR AND CROFT_WASM3_LIBRARY) AND CROFT_FETCH_WASM3)
+        set(BUILD_WASI NONE CACHE STRING "Disable built-in WASI to use custom Sapling WASI shim" FORCE)
+        set(d3_compiler OFF CACHE BOOL "Disable wasm3 compiler" FORCE)
+        set(d3_extensions OFF CACHE BOOL "Disable wasm3 extensions" FORCE)
+        FetchContent_Declare(wasm3
+            GIT_REPOSITORY "${CROFT_WASM3_GIT_REPOSITORY}"
+            GIT_TAG "${CROFT_WASM3_GIT_TAG}"
+            GIT_SHALLOW TRUE
+        )
+        FetchContent_MakeAvailable(wasm3)
+    endif()
 endif()
 
 if(TARGET m3)
@@ -189,8 +236,10 @@ elseif(CROFT_WASM3_INCLUDE_DIR AND CROFT_WASM3_LIBRARY)
         INTERFACE_INCLUDE_DIRECTORIES "${CROFT_WASM3_INCLUDE_DIR}"
     )
     set(CROFT_WASM3_TARGET croft_dep_wasm3)
-elseif(NOT CROFT_WASM3_SOURCE_DIR)
-    croft_optional_missing("wasm3" "set CROFT_WASM3_SOURCE_DIR or install libm3 + headers")
+elseif(NOT CROFT_WASM3_SOURCE_DIR AND NOT CROFT_FETCH_WASM3)
+    croft_optional_missing("wasm3" "set CROFT_WASM3_SOURCE_DIR, install libm3 + headers, or enable CROFT_FETCH_WASM3")
+elseif(NOT TARGET m3)
+    croft_optional_missing("wasm3" "FetchContent did not produce the expected m3 target")
 endif()
 
 set(CROFT_MINIAUDIO_INCLUDE_DIR "")
@@ -201,9 +250,28 @@ if(CROFT_MINIAUDIO_SOURCE_DIR)
         croft_optional_missing("miniaudio" "CROFT_MINIAUDIO_SOURCE_DIR does not contain miniaudio.h: ${CROFT_MINIAUDIO_SOURCE_DIR}")
     endif()
 else()
-    find_path(CROFT_MINIAUDIO_INCLUDE_DIR miniaudio.h)
+    if(CROFT_FETCH_MINIAUDIO)
+        FetchContent_Declare(miniaudio
+            GIT_REPOSITORY "${CROFT_MINIAUDIO_GIT_REPOSITORY}"
+            GIT_TAG "${CROFT_MINIAUDIO_GIT_TAG}"
+            GIT_SHALLOW TRUE
+        )
+        FetchContent_GetProperties(miniaudio)
+        if(NOT miniaudio_POPULATED)
+            FetchContent_Populate(miniaudio)
+        endif()
+        find_path(CROFT_MINIAUDIO_INCLUDE_DIR miniaudio.h
+            PATHS
+                "${miniaudio_SOURCE_DIR}"
+                "${miniaudio_SOURCE_DIR}/include"
+            NO_DEFAULT_PATH
+        )
+    else()
+        find_path(CROFT_MINIAUDIO_INCLUDE_DIR miniaudio.h)
+    endif()
     if(NOT CROFT_MINIAUDIO_INCLUDE_DIR)
-        croft_optional_missing("miniaudio" "set CROFT_MINIAUDIO_SOURCE_DIR or install miniaudio.h")
+        croft_optional_missing("miniaudio"
+            "set CROFT_MINIAUDIO_SOURCE_DIR, install miniaudio.h, or enable CROFT_FETCH_MINIAUDIO")
     endif()
 endif()
 
@@ -342,6 +410,17 @@ if(CROFT_GLFW_TARGET)
         TAGS tier5 ui glfw opengl
         DEPENDS croft_foundation
     )
+
+    if(APPLE)
+        add_library(croft_ui_glfw_metal STATIC src/host/host_ui.c)
+        croft_apply_public_includes(croft_ui_glfw_metal)
+        target_compile_definitions(croft_ui_glfw_metal PRIVATE CROFT_HOST_UI_GLFW_NO_API=1)
+        target_link_libraries(croft_ui_glfw_metal PUBLIC croft_foundation ${CROFT_GLFW_TARGET})
+        croft_register_artifact(croft_ui_glfw_metal ui
+            TAGS tier5 ui glfw metal macos
+            DEPENDS croft_foundation
+        )
+    endif()
 endif()
 
 if(CROFT_GLFW_TARGET AND CROFT_TGFX_TARGET)
@@ -379,6 +458,48 @@ if(CROFT_GLFW_TARGET AND CROFT_TGFX_TARGET)
         TAGS tier7 scene text-editor tgfx opengl sapling
         DEPENDS croft_scene_core_tgfx_opengl sapling
     )
+
+    if(APPLE AND TARGET croft_ui_glfw_metal)
+        add_library(croft_render_tgfx_metal STATIC src/host/host_render_metal.mm)
+        set_source_files_properties(src/host/host_render_metal.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+        croft_apply_public_includes(croft_render_tgfx_metal)
+        target_link_libraries(croft_render_tgfx_metal
+            PUBLIC
+                croft_ui_glfw_metal
+                ${CROFT_TGFX_TARGET}
+                "-framework AppKit"
+                "-framework Metal"
+                "-framework QuartzCore"
+        )
+        croft_register_artifact(croft_render_tgfx_metal render
+            TAGS tier6 render tgfx metal macos
+            DEPENDS croft_ui_glfw_metal
+        )
+
+        add_library(croft_scene_core_tgfx_metal STATIC
+            src/scene/scene_node.c
+            src/scene/node_viewport.c
+            src/scene/node_code_block.c
+        )
+        croft_apply_public_includes(croft_scene_core_tgfx_metal)
+        target_link_libraries(croft_scene_core_tgfx_metal PUBLIC croft_render_tgfx_metal)
+        croft_register_artifact(croft_scene_core_tgfx_metal scene
+            TAGS tier7 scene tgfx metal macos
+            DEPENDS croft_render_tgfx_metal
+        )
+
+        add_library(croft_scene_text_editor_tgfx_metal STATIC src/scene/node_text_editor.c)
+        croft_apply_public_includes(croft_scene_text_editor_tgfx_metal)
+        target_link_libraries(croft_scene_text_editor_tgfx_metal
+            PUBLIC
+                croft_scene_core_tgfx_metal
+                sapling
+        )
+        croft_register_artifact(croft_scene_text_editor_tgfx_metal scene
+            TAGS tier7 scene text-editor tgfx metal macos sapling
+            DEPENDS croft_scene_core_tgfx_metal sapling
+        )
+    endif()
 endif()
 
 if(APPLE)
@@ -412,6 +533,52 @@ if(APPLE)
             DEPENDS croft_ui_glfw_opengl
         )
     endif()
+
+    if(TARGET croft_ui_glfw_metal)
+        add_library(croft_gesture_macos_metal STATIC src/host/mac/host_gesture.m)
+        croft_apply_public_includes(croft_gesture_macos_metal)
+        set_source_files_properties(src/host/mac/host_gesture.m PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+        target_link_libraries(croft_gesture_macos_metal PUBLIC croft_ui_glfw_metal "-framework AppKit")
+        croft_register_artifact(croft_gesture_macos_metal gesture
+            TAGS ui gesture macos native metal
+            DEPENDS croft_ui_glfw_metal
+        )
+    endif()
+endif()
+
+set(CROFT_EXAMPLE_UI_TARGET "")
+if(APPLE AND TARGET croft_ui_glfw_metal)
+    set(CROFT_EXAMPLE_UI_TARGET croft_ui_glfw_metal)
+elseif(TARGET croft_ui_glfw_opengl)
+    set(CROFT_EXAMPLE_UI_TARGET croft_ui_glfw_opengl)
+endif()
+
+set(CROFT_EXAMPLE_RENDER_TARGET "")
+if(APPLE AND TARGET croft_render_tgfx_metal)
+    set(CROFT_EXAMPLE_RENDER_TARGET croft_render_tgfx_metal)
+elseif(TARGET croft_render_tgfx_opengl)
+    set(CROFT_EXAMPLE_RENDER_TARGET croft_render_tgfx_opengl)
+endif()
+
+set(CROFT_EXAMPLE_SCENE_TARGET "")
+if(APPLE AND TARGET croft_scene_core_tgfx_metal)
+    set(CROFT_EXAMPLE_SCENE_TARGET croft_scene_core_tgfx_metal)
+elseif(TARGET croft_scene_core_tgfx_opengl)
+    set(CROFT_EXAMPLE_SCENE_TARGET croft_scene_core_tgfx_opengl)
+endif()
+
+set(CROFT_EXAMPLE_EDITOR_TARGET "")
+if(APPLE AND TARGET croft_scene_text_editor_tgfx_metal)
+    set(CROFT_EXAMPLE_EDITOR_TARGET croft_scene_text_editor_tgfx_metal)
+elseif(TARGET croft_scene_text_editor_tgfx_opengl)
+    set(CROFT_EXAMPLE_EDITOR_TARGET croft_scene_text_editor_tgfx_opengl)
+endif()
+
+set(CROFT_EXAMPLE_GESTURE_TARGET "")
+if(APPLE AND TARGET croft_gesture_macos_metal)
+    set(CROFT_EXAMPLE_GESTURE_TARGET croft_gesture_macos_metal)
+elseif(TARGET croft_gesture_macos)
+    set(CROFT_EXAMPLE_GESTURE_TARGET croft_gesture_macos)
 endif()
 
 # ── Tests ───────────────────────────────────────────────────────────────
@@ -468,57 +635,57 @@ if(CROFT_BUILD_TESTS)
         add_dependencies(test_croft wasm_guest_gen)
     endif()
 
-    if(TARGET croft_ui_glfw_opengl)
+    if(CROFT_EXAMPLE_UI_TARGET)
         add_executable(test_ui_window_standalone tests/host_tests/test_ui_window_standalone.c)
-        target_link_libraries(test_ui_window_standalone PRIVATE croft_ui_glfw_opengl)
+        target_link_libraries(test_ui_window_standalone PRIVATE ${CROFT_EXAMPLE_UI_TARGET})
     endif()
 
-    if(TARGET croft_render_tgfx_opengl)
+    if(CROFT_EXAMPLE_RENDER_TARGET)
         add_executable(test_render_standalone tests/host_tests/test_render_standalone.c)
-        target_link_libraries(test_render_standalone PRIVATE croft_render_tgfx_opengl)
+        target_link_libraries(test_render_standalone PRIVATE ${CROFT_EXAMPLE_RENDER_TARGET})
     endif()
 
-    if(TARGET croft_scene_core_tgfx_opengl)
+    if(CROFT_EXAMPLE_SCENE_TARGET)
         add_executable(test_scene_standalone tests/host_tests/test_scene_standalone.c)
         target_link_libraries(test_scene_standalone PRIVATE
-            croft_scene_core_tgfx_opengl
+            ${CROFT_EXAMPLE_SCENE_TARGET}
             croft_a11y_stub
         )
 
         add_executable(test_zoom_standalone tests/host_tests/test_zoom_standalone.c)
         target_link_libraries(test_zoom_standalone PRIVATE
-            croft_scene_core_tgfx_opengl
+            ${CROFT_EXAMPLE_SCENE_TARGET}
             croft_a11y_stub
         )
-        if(TARGET croft_gesture_macos)
-            target_link_libraries(test_zoom_standalone PRIVATE croft_gesture_macos)
+        if(CROFT_EXAMPLE_GESTURE_TARGET)
+            target_link_libraries(test_zoom_standalone PRIVATE ${CROFT_EXAMPLE_GESTURE_TARGET})
         endif()
     endif()
 
-    if(TARGET croft_scene_text_editor_tgfx_opengl)
+    if(CROFT_EXAMPLE_EDITOR_TARGET)
         add_executable(test_editor_standalone tests/host_tests/test_editor_standalone.c)
         target_link_libraries(test_editor_standalone PRIVATE
-            croft_scene_text_editor_tgfx_opengl
+            ${CROFT_EXAMPLE_EDITOR_TARGET}
             croft_a11y_stub
             croft_fs
         )
-        if(TARGET croft_gesture_macos)
-            target_link_libraries(test_editor_standalone PRIVATE croft_gesture_macos)
+        if(CROFT_EXAMPLE_GESTURE_TARGET)
+            target_link_libraries(test_editor_standalone PRIVATE ${CROFT_EXAMPLE_GESTURE_TARGET})
         endif()
     endif()
 
-    if(TARGET croft_a11y_macos AND TARGET croft_scene_core_tgfx_opengl)
+    if(TARGET croft_a11y_macos AND CROFT_EXAMPLE_SCENE_TARGET)
         add_executable(test_a11y_standalone tests/host_tests/test_a11y_standalone.c)
         target_link_libraries(test_a11y_standalone PRIVATE
-            croft_scene_core_tgfx_opengl
+            ${CROFT_EXAMPLE_SCENE_TARGET}
             croft_a11y_macos
         )
     endif()
 
-    if(TARGET croft_menu_macos AND TARGET croft_ui_glfw_opengl)
+    if(TARGET croft_menu_macos AND CROFT_EXAMPLE_UI_TARGET)
         add_executable(test_menu_standalone tests/host_tests/test_menu_standalone.c)
         target_link_libraries(test_menu_standalone PRIVATE
-            croft_ui_glfw_opengl
+            ${CROFT_EXAMPLE_UI_TARGET}
             croft_menu_macos
         )
     endif()

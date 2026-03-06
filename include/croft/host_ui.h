@@ -37,19 +37,17 @@ void host_ui_terminate(void);
 int32_t host_ui_create_window(uint32_t width, uint32_t height, const char *title);
 
 /**
- * Gets the actual pixel size of the window's framebuffer. Required for rendering backends 
- * like tgfx/OpenGL on High-DPI/Retina screens.
+ * Gets the actual pixel size of the window's drawable surface.
  */
 void host_ui_get_framebuffer_size(uint32_t *w, uint32_t *h);
 
 /**
- * Reads a single pixel's RGBA format from the current OpenGL Context/Framebuffer. 
- * Allows debugging unit tests headlessly.
+ * Reads a single pixel from the current drawable when the active UI backend supports it.
  */
 void host_ui_read_pixel(uint32_t x, uint32_t y, uint8_t *r, uint8_t *g, uint8_t *b, uint8_t *a);
 
 /**
- * Debugging function to clear the native window to blue using raw OpenGL.
+ * Debugging function for backends that expose a direct native clear path.
  */
 void host_ui_test_clear_blue(void);
 
@@ -75,7 +73,7 @@ void *host_ui_get_user_data(void);
 void host_ui_poll_events(void);
 
 /**
- * Swaps the rendering buffers.
+ * Completes presentation for the active UI backend when required.
  */
 void host_ui_swap_buffers(void);
 

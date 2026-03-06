@@ -73,12 +73,16 @@ int32_t host_ui_init(void) {
         return -1;
     }
     
-    /* Request a modern OpenGL Core context, used by tgfx/Skia later */
+#ifdef CROFT_HOST_UI_GLFW_NO_API
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+#else
+    /* Request a modern OpenGL Core context, used by tgfx later */
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 #ifdef __APPLE__
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
+#endif
 #endif
 
     return 0;
@@ -102,8 +106,10 @@ int32_t host_ui_create_window(uint32_t width, uint32_t height, const char *title
         return -1;
     }
     
+#ifndef CROFT_HOST_UI_GLFW_NO_API
     glfwMakeContextCurrent(g_window);
     glfwSwapInterval(1); /* Enable VSync */
+#endif
     
     /* Register input callbacks */
     glfwSetKeyCallback(g_window, glfw_key_callback);
@@ -128,17 +134,28 @@ void host_ui_get_framebuffer_size(uint32_t *w, uint32_t *h) {
 }
 
 void host_ui_read_pixel(uint32_t x, uint32_t y, uint8_t *r, uint8_t *g, uint8_t *b, uint8_t *a) {
+#ifdef CROFT_HOST_UI_GLFW_NO_API
+    (void)x;
+    (void)y;
+    if (r) *r = 0;
+    if (g) *g = 0;
+    if (b) *b = 0;
+    if (a) *a = 0;
+#else
     uint8_t pixel[4] = {0, 0, 0, 0};
     glReadPixels(x, y, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, pixel);
     if (r) *r = pixel[0];
     if (g) *g = pixel[1];
     if (b) *b = pixel[2];
     if (a) *a = pixel[3];
+#endif
 }
 
 void host_ui_test_clear_blue(void) {
+#ifndef CROFT_HOST_UI_GLFW_NO_API
     glClearColor(0.0f, 0.0f, 1.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
+#endif
 }
 
 int32_t host_ui_should_close(void) {
@@ -179,9 +196,13 @@ void host_ui_poll_events(void) {
 }
 
 void host_ui_swap_buffers(void) {
+#ifndef CROFT_HOST_UI_GLFW_NO_API
     if (g_window) {
         glfwSwapBuffers(g_window);
     }
+#else
+    (void)g_window;
+#endif
 }
 
 void host_ui_set_event_callback(host_ui_event_cb_t cb) {
