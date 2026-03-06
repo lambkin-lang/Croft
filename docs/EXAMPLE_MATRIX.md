@@ -19,10 +19,10 @@ cmake --build build --target croft_examples
 
 | Target | Focus | Required Croft artifacts |
 | --- | --- | --- |
-| `example_foundation_threads` | Foundation-only worker thread, timing, and logging | `croft_foundation` |
-| `example_messaging_roundtrip` | Validated message envelope round-trip over the host queue | `croft_messaging` |
+| `example_foundation_threads` | Foundation-only worker thread, timing, and logging | `croft_host_log`, `croft_host_time`, `croft_host_thread` |
+| `example_messaging_roundtrip` | Validated message envelope round-trip over the host queue | `croft_msg_frame`, `croft_host_queue` |
 | `example_fs_inspect` | Host filesystem access and resource-path discovery | `croft_fs` |
-| `example_sapling_text` | Sapling text clone-on-write editing with no GUI | `sapling` |
+| `example_sapling_text` | Sapling text clone-on-write editing over the single-thread linear arena profile | `sapling_core` |
 | `example_wasm_guest` | Embedded Wasm guest bridged into Croft host imports | `croft_wasm_wasm3` |
 | `example_ui_window_opengl` | Window only; OpenGL-capable GLFW context and no renderer | `croft_ui_glfw_opengl` |
 | `example_ui_window_metal` | Window only; no-API GLFW window for the Metal path | `croft_ui_glfw_metal` |
@@ -43,6 +43,9 @@ Notes:
 
 - The UI-only and window+menu examples are explicit backend datapoints, so they
   can be benchmarked without dragging in tgfx.
+- `example_sapling_text` now uses `sapling_core` and the linear arena backing,
+  so it is the current smallest in-tree proof point for the Wasm-aligned
+  datastore/text side.
 - `example_render_canvas_metal_native` is the first direct-Metal proof point.
   It uses the same host window path as the tgfx Metal examples, but replaces
   tgfx with a bespoke Metal renderer so the solver can eventually choose a much

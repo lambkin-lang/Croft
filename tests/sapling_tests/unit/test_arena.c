@@ -191,6 +191,50 @@ static void test_arena_backing_strategy_switch(void)
     CHECK(custom_ctx.free_calls == custom_ctx.alloc_successes);
 }
 
+static void test_arena_linear_backing(void)
+{
+    SapMemArena *arena = NULL;
+    SapArenaOptions opts = {
+        .type = SAP_ARENA_BACKING_LINEAR,
+        .page_size = 4096u
+    };
+    void *page1 = NULL;
+    void *page2 = NULL;
+    void *page3 = NULL;
+    void *node1 = NULL;
+    uint32_t pgno1 = 0u;
+    uint32_t pgno2 = 0u;
+    uint32_t pgno3 = 0u;
+    uint32_t node1_id = 0u;
+
+    opts.cfg.linear.initial_bytes = 12u * 1024u;
+    opts.cfg.linear.max_bytes = 12u * 1024u;
+
+    printf("Test: linear backing\n");
+    CHECK(sap_arena_init(&arena, &opts) == ERR_OK);
+
+    CHECK(sap_arena_alloc_page(arena, &page1, &pgno1) == ERR_OK);
+    CHECK(sap_arena_alloc_page(arena, &page2, &pgno2) == ERR_OK);
+    CHECK(pgno1 == 1u);
+    CHECK(pgno2 == 2u);
+    CHECK(page1 != NULL);
+    CHECK(page2 != NULL);
+    CHECK((uintptr_t)page2 > (uintptr_t)page1);
+
+    CHECK(sap_arena_alloc_node(arena, 128u, &node1, &node1_id) == ERR_OK);
+    CHECK(node1_id == 3u);
+    CHECK(node1 != NULL);
+    CHECK(sap_arena_resolve(arena, node1_id) == node1);
+
+    CHECK(sap_arena_free_page(arena, pgno1) == ERR_OK);
+    CHECK(sap_arena_alloc_page(arena, &page3, &pgno3) == ERR_OK);
+    CHECK(pgno3 == pgno1);
+    CHECK(page3 == page1);
+
+    CHECK(sap_arena_alloc_page(arena, &page3, &pgno3) == ERR_OOM);
+    sap_arena_destroy(arena);
+}
+
 static void test_arena_exhaustion_behavior(void)
 {
     SapMemArena *arena = NULL;
@@ -398,6 +442,7 @@ int main(void)
     test_arena_alloc_page();
     test_arena_alloc_node();
     test_arena_backing_strategy_switch();
+    test_arena_linear_backing();
     test_arena_exhaustion_behavior();
     test_arena_fragmentation_reuse();
     test_allocator_telemetry_and_budget();

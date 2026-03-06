@@ -143,8 +143,9 @@ Direct CMake `FetchContent` remains as a fallback path for `wasm3` and
 
 Typical targets include:
 
-- `croft_foundation`, `croft_thatch_core`, `croft_wire_runtime`, `croft_messaging`, `croft_fs`
-- `sapling`
+- `croft_foundation`, `croft_host_log`, `croft_host_time`, `croft_host_thread`
+- `croft_msg_frame`, `croft_host_queue`, `croft_messaging`, `croft_fs`
+- `sapling_core`, `sapling`
 - `croft_wasm_wasm3`
 - `croft_ui_glfw_opengl`, `croft_ui_glfw_metal` (macOS)
 - `croft_render_tgfx_opengl`, `croft_render_tgfx_metal` (macOS)
@@ -210,7 +211,7 @@ The `tools/benchmark_editor_families.sh` helper automates that comparison.
 Build specific artifacts directly when needed:
 
 ```bash
-cmake --build build --target croft_foundation sapling
+cmake --build build --target croft_foundation sapling_core sapling
 cmake --build build --target croft_ui_glfw_opengl croft_render_tgfx_opengl
 ```
 

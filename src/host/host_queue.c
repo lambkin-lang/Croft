@@ -5,7 +5,6 @@
 #include "croft/host_queue.h"
 #include "croft/host_messaging.h"
 #include "croft/host_thread.h"
-#include "croft/host_log.h"
 #include <stdlib.h>
 #include <string.h>
 

@@ -57,8 +57,10 @@ int main(void) {
     int rc;
 
     memset(&opts, 0, sizeof(opts));
-    opts.type = SAP_ARENA_BACKING_MALLOC;
+    opts.type = SAP_ARENA_BACKING_LINEAR;
     opts.page_size = 4096;
+    opts.cfg.linear.initial_bytes = 64u * 1024u;
+    opts.cfg.linear.max_bytes = 512u * 1024u;
 
     rc = sap_arena_init(&arena, &opts);
     if (rc != ERR_OK) {

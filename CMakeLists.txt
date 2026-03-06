@@ -388,26 +388,34 @@ else()
 endif()
 
 # ── Tier 0/1/2 artifacts ───────────────────────────────────────────────
-set(TIER0_SOURCES
-    src/host/host_log.c
-    src/host/host_time.c
-    src/host/host_thread.c
-)
-
-set(TIER1_SOURCES
-    src/host/host_queue.c
-    src/host/host_messaging.c
-)
-
-set(TIER2_SOURCES
-    src/host/host_fs.c
-)
-
-add_library(croft_foundation STATIC ${TIER0_SOURCES})
+add_library(croft_foundation STATIC src/runtime/croft_foundation.c)
 croft_apply_public_includes(croft_foundation)
-target_link_libraries(croft_foundation PUBLIC Threads::Threads)
 croft_register_artifact(croft_foundation foundation
-    TAGS tier0 foundation threads log time
+    TAGS tier0 foundation base host-neutral
+)
+
+add_library(croft_host_log STATIC src/host/host_log.c)
+croft_apply_public_includes(croft_host_log)
+target_link_libraries(croft_host_log PUBLIC croft_foundation)
+croft_register_artifact(croft_host_log host
+    TAGS tier0 host log
+    DEPENDS croft_foundation
+)
+
+add_library(croft_host_time STATIC src/host/host_time.c)
+croft_apply_public_includes(croft_host_time)
+target_link_libraries(croft_host_time PUBLIC croft_foundation)
+croft_register_artifact(croft_host_time host
+    TAGS tier0 host time
+    DEPENDS croft_foundation
+)
+
+add_library(croft_host_thread STATIC src/host/host_thread.c)
+croft_apply_public_includes(croft_host_thread)
+target_link_libraries(croft_host_thread PUBLIC croft_foundation Threads::Threads)
+croft_register_artifact(croft_host_thread host
+    TAGS tier0 host threads
+    DEPENDS croft_foundation
 )
 
 add_library(croft_thatch_core STATIC src/runtime/thatch_core.c)
@@ -428,16 +436,34 @@ croft_register_artifact(croft_wire_runtime wire
     DEPENDS croft_thatch_core
 )
 
-add_library(croft_messaging STATIC ${TIER1_SOURCES})
-add_dependencies(croft_messaging wit_schema_gen)
-croft_apply_public_includes(croft_messaging)
-target_link_libraries(croft_messaging PUBLIC croft_foundation croft_wire_runtime)
-croft_register_artifact(croft_messaging messaging
-    TAGS tier1 messaging queue dbi-schema
+add_library(croft_msg_frame STATIC src/host/host_messaging.c)
+add_dependencies(croft_msg_frame wit_schema_gen)
+croft_apply_public_includes(croft_msg_frame)
+target_link_libraries(croft_msg_frame PUBLIC croft_foundation croft_wire_runtime)
+croft_register_artifact(croft_msg_frame messaging
+    TAGS tier1 messaging wire envelope dbi-schema
     DEPENDS croft_foundation croft_wire_runtime
 )
 
-add_library(croft_fs STATIC ${TIER2_SOURCES})
+add_library(croft_host_queue STATIC src/host/host_queue.c)
+add_dependencies(croft_host_queue wit_schema_gen)
+croft_apply_public_includes(croft_host_queue)
+target_link_libraries(croft_host_queue PUBLIC croft_foundation croft_host_thread croft_msg_frame)
+croft_register_artifact(croft_host_queue host
+    TAGS tier1 host queue messaging
+    DEPENDS croft_foundation croft_host_thread croft_msg_frame
+)
+
+add_library(croft_messaging STATIC src/runtime/croft_messaging.c)
+add_dependencies(croft_messaging wit_schema_gen)
+croft_apply_public_includes(croft_messaging)
+target_link_libraries(croft_messaging PUBLIC croft_msg_frame croft_host_queue)
+croft_register_artifact(croft_messaging messaging
+    TAGS tier1 messaging queue dbi-schema
+    DEPENDS croft_msg_frame croft_host_queue
+)
+
+add_library(croft_fs STATIC src/host/host_fs.c)
 croft_apply_public_includes(croft_fs)
 target_link_libraries(croft_fs PUBLIC croft_foundation)
 croft_register_artifact(croft_fs filesystem
@@ -445,17 +471,54 @@ croft_register_artifact(croft_fs filesystem
     DEPENDS croft_foundation
 )
 
-add_library(croft STATIC ${TIER0_SOURCES} ${TIER1_SOURCES} ${TIER2_SOURCES})
+add_library(croft STATIC src/runtime/croft_aggregate.c)
 add_dependencies(croft wit_schema_gen)
 croft_apply_public_includes(croft)
-target_link_libraries(croft PUBLIC Threads::Threads croft_wire_runtime)
+target_link_libraries(croft
+    PUBLIC
+        croft_foundation
+        croft_host_log
+        croft_host_time
+        croft_host_thread
+        croft_msg_frame
+        croft_host_queue
+        croft_fs
+        croft_wire_runtime
+)
 croft_register_artifact(croft aggregate
-    TAGS tier0 tier1 tier2 foundation messaging filesystem compatibility
-    DEPENDS croft_wire_runtime
+    TAGS tier0 tier1 tier2 foundation host messaging filesystem compatibility
+    DEPENDS
+        croft_foundation
+        croft_host_log
+        croft_host_time
+        croft_host_thread
+        croft_msg_frame
+        croft_host_queue
+        croft_fs
+        croft_wire_runtime
 )
 
 # ── Library: Sapling ────────────────────────────────────────────────────
 file(GLOB SAPLING_SOURCES CONFIGURE_DEPENDS "src/sapling/*.c" "src/runner/*.c" "src/wasi/*.c")
+
+add_library(sapling_core STATIC ${SAPLING_SOURCES} ${WIT_GENERATED_C})
+add_dependencies(sapling_core wit_schema_gen)
+target_include_directories(sapling_core
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
+        $<INSTALL_INTERFACE:include>
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+target_compile_definitions(sapling_core PUBLIC SAPLING_PAGE_SIZE=4096)
+target_link_libraries(sapling_core PUBLIC croft_thatch_core)
+if(CROFT_BUILD_TESTS)
+    target_compile_definitions(sapling_core PRIVATE SAPLING_HAMT_TESTING)
+endif()
+croft_register_artifact(sapling_core datastore
+    TAGS tier3 tier4 sapling core single-thread linear-memory
+)
 
 add_library(sapling STATIC ${SAPLING_SOURCES} ${WIT_GENERATED_C})
 add_dependencies(sapling wit_schema_gen)
@@ -473,7 +536,7 @@ if(CROFT_BUILD_TESTS)
     target_compile_definitions(sapling PRIVATE SAPLING_HAMT_TESTING)
 endif()
 croft_register_artifact(sapling datastore
-    TAGS tier3 tier4 sapling runner wasi datastore persistent-text
+    TAGS tier3 tier4 sapling threaded runner wasi datastore persistent-text
 )
 
 add_library(croft_editor_core STATIC src/editor/editor_text_model.c)
@@ -492,10 +555,10 @@ croft_register_artifact(croft_editor_commands editor
 
 add_library(croft_editor_document STATIC src/editor/editor_document.c)
 croft_apply_public_includes(croft_editor_document)
-target_link_libraries(croft_editor_document PUBLIC croft_editor_core croft_fs sapling)
+target_link_libraries(croft_editor_document PUBLIC croft_editor_core croft_fs sapling_core)
 croft_register_artifact(croft_editor_document editor
     TAGS tier8 editor document sapling filesystem
-    DEPENDS croft_editor_core croft_fs sapling
+    DEPENDS croft_editor_core croft_fs sapling_core
 )
 
 # ── Optional Croft artifacts ───────────────────────────────────────────
@@ -503,15 +566,15 @@ if(CROFT_WASM3_TARGET)
     add_library(croft_wasm_wasm3 STATIC src/host/host_wasm.c)
     croft_apply_public_includes(croft_wasm_wasm3)
     target_link_libraries(croft_wasm_wasm3
-        PUBLIC
-            croft_foundation
-            croft_fs
         PRIVATE
+            croft_host_log
+            croft_host_time
+            croft_fs
             ${CROFT_WASM3_TARGET}
     )
     croft_register_artifact(croft_wasm_wasm3 wasm
         TAGS tier4 wasm wasm3 host
-        DEPENDS croft_foundation croft_fs
+        DEPENDS croft_host_log croft_host_time croft_fs
     )
 endif()
 
@@ -536,23 +599,23 @@ croft_register_artifact(croft_a11y_stub accessibility
 if(CROFT_GLFW_TARGET)
     add_library(croft_ui_glfw_opengl STATIC src/host/host_ui.c)
     croft_apply_public_includes(croft_ui_glfw_opengl)
-    target_link_libraries(croft_ui_glfw_opengl PUBLIC croft_foundation ${CROFT_GLFW_TARGET})
+    target_link_libraries(croft_ui_glfw_opengl PUBLIC croft_host_log ${CROFT_GLFW_TARGET})
     if(APPLE)
         target_compile_definitions(croft_ui_glfw_opengl PRIVATE GL_SILENCE_DEPRECATION)
     endif()
     croft_register_artifact(croft_ui_glfw_opengl ui
         TAGS tier5 ui glfw opengl
-        DEPENDS croft_foundation
+        DEPENDS croft_host_log
     )
 
     if(APPLE)
         add_library(croft_ui_glfw_metal STATIC src/host/host_ui.c)
         croft_apply_public_includes(croft_ui_glfw_metal)
         target_compile_definitions(croft_ui_glfw_metal PRIVATE CROFT_HOST_UI_GLFW_NO_API=1)
-        target_link_libraries(croft_ui_glfw_metal PUBLIC croft_foundation ${CROFT_GLFW_TARGET})
+        target_link_libraries(croft_ui_glfw_metal PUBLIC croft_host_log ${CROFT_GLFW_TARGET})
         croft_register_artifact(croft_ui_glfw_metal ui
             TAGS tier5 ui glfw metal macos
-            DEPENDS croft_foundation
+            DEPENDS croft_host_log
         )
     endif()
 endif()
@@ -588,11 +651,11 @@ if(CROFT_GLFW_TARGET AND CROFT_TGFX_TARGET AND CROFT_TGFX_REQUEST_OPENGL)
             croft_scene_core_tgfx_opengl
             croft_editor_document
             croft_editor_commands
-            sapling
+            sapling_core
     )
     croft_register_artifact(croft_scene_text_editor_tgfx_opengl scene
         TAGS tier7 scene text-editor tgfx opengl sapling
-        DEPENDS croft_scene_core_tgfx_opengl sapling
+        DEPENDS croft_scene_core_tgfx_opengl sapling_core
     )
 endif()
 
@@ -633,11 +696,11 @@ if(APPLE AND CROFT_GLFW_TARGET AND CROFT_TGFX_TARGET AND CROFT_TGFX_REQUEST_META
             croft_scene_core_tgfx_metal
             croft_editor_document
             croft_editor_commands
-            sapling
+            sapling_core
     )
     croft_register_artifact(croft_scene_text_editor_tgfx_metal scene
         TAGS tier7 scene text-editor tgfx metal macos sapling
-        DEPENDS croft_scene_core_tgfx_metal sapling
+        DEPENDS croft_scene_core_tgfx_metal sapling_core
     )
 endif()
 
@@ -676,11 +739,11 @@ if(APPLE AND TARGET croft_ui_glfw_metal)
             croft_scene_core_metal_native
             croft_editor_document
             croft_editor_commands
-            sapling
+            sapling_core
     )
     croft_register_artifact(croft_scene_text_editor_metal_native scene
         TAGS tier7 scene text-editor metal native-direct macos sapling
-        DEPENDS croft_scene_core_metal_native sapling
+        DEPENDS croft_scene_core_metal_native sapling_core
     )
 endif()
 
@@ -819,16 +882,16 @@ endif()
 # ── Examples ─────────────────────────────────────────────────────────
 croft_add_example(example_foundation_threads
     SOURCES examples/foundation_threads.c
-    LINKS croft_foundation
-    REQUIRES croft_foundation
+    LINKS croft_host_log croft_host_time croft_host_thread
+    REQUIRES croft_host_log croft_host_time croft_host_thread
     TAGS foundation threads time log
     FOCUS "Foundation-only threaded work and timing."
 )
 
 croft_add_example(example_messaging_roundtrip
     SOURCES examples/messaging_roundtrip.c
-    LINKS croft_messaging
-    REQUIRES croft_messaging
+    LINKS croft_host_queue
+    REQUIRES croft_msg_frame croft_host_queue
     TAGS messaging queue wire roundtrip
     FOCUS "Validated message framing and queue round-trip without Sapling."
 )
@@ -843,8 +906,8 @@ croft_add_example(example_fs_inspect
 
 croft_add_example(example_sapling_text
     SOURCES examples/sapling_text.c
-    LINKS sapling
-    REQUIRES sapling
+    LINKS sapling_core
+    REQUIRES sapling_core
     TAGS sapling text transactions persistent
     FOCUS "Sapling text clone-on-write editing without any GUI."
 )
@@ -1023,7 +1086,15 @@ if(CROFT_BUILD_TESTS)
 
     add_executable(test_croft tests/test_main.c tests/test_queue.c tests/host_tests/test_fs.c tests/test_editor_text_model.c tests/test_editor_document.c tests/test_editor_commands.c)
     target_include_directories(test_croft PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
-    target_link_libraries(test_croft PRIVATE croft croft_editor_document croft_editor_commands)
+    target_link_libraries(test_croft
+        PRIVATE
+            croft_host_queue
+            croft_editor_document
+            croft_editor_commands
+    )
+    if(NOT TARGET croft_wasm_wasm3)
+        target_link_libraries(test_croft PRIVATE croft_host_log croft_host_time)
+    endif()
     add_test(NAME croft_tests COMMAND test_croft)
 
     if(TARGET croft_wasm_wasm3 AND TARGET wasm_guest_gen)
@@ -1097,7 +1168,7 @@ if(CROFT_BUILD_TESTS)
     endif()
 
     add_executable(test_fuzz_messaging tests/host_tests/test_fuzz_messaging.c)
-    target_link_libraries(test_fuzz_messaging PRIVATE croft)
+    target_link_libraries(test_fuzz_messaging PRIVATE croft_host_queue)
 
     # Sapling test suite (each file has its own main)
     file(GLOB SAPLING_UNIT_TESTS CONFIGURE_DEPENDS

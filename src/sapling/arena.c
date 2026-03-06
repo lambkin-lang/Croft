@@ -1,31 +1,43 @@
 #include "sapling/arena.h"
 #include "common/arena_alloc_internal.h"
+
 #include <stdlib.h>
 #include <string.h>
+
+#ifndef SAPLING_PAGE_SIZE
+#define SAPLING_PAGE_SIZE 4096
+#endif
 
 struct SapMemArena {
     SapArenaOptions opts;
     SapArenaAllocStats stats;
     SapArenaAllocBudget budget;
-    
-    /* For SAP_ARENA_BACKING_MALLOC: track malloc'd chunks to avoid leaks */
+
+    /* Slot table for page/node references. */
     void **malloc_chunks;
+    uint32_t *chunk_sizes;
     uint32_t chunk_count;
     uint32_t chunk_capacity;
-    
-    /* Simple free stack for page numbers */
+
+    /* Simple free stack for page numbers. */
     uint32_t *free_pgnos;
     uint32_t free_pgno_count;
     uint32_t free_pgno_capacity;
 
-    /* Next available pgno if free list is empty */
+    /* Next available pgno if the free list is empty. */
     uint32_t next_pgno;
+
+    /* Stable contiguous backing for SAP_ARENA_BACKING_LINEAR. */
+    uint8_t *linear_storage;
+    uint64_t linear_used_bytes;
+    uint64_t linear_capacity_bytes;
 };
 
 static int arena_is_slot_backed(const SapMemArena *arena)
 {
     return arena && (arena->opts.type == SAP_ARENA_BACKING_MALLOC ||
-                     arena->opts.type == SAP_ARENA_BACKING_CUSTOM);
+                     arena->opts.type == SAP_ARENA_BACKING_CUSTOM ||
+                     arena->opts.type == SAP_ARENA_BACKING_LINEAR);
 }
 
 static uint64_t arena_active_slots_raw(const SapMemArena *arena)
@@ -50,6 +62,7 @@ static uint64_t arena_active_slots_raw(const SapMemArena *arena)
 static void arena_refresh_active_stats(SapMemArena *arena)
 {
     uint64_t active = 0;
+
     if (!arena)
         return;
     active = arena_active_slots_raw(arena);
@@ -61,6 +74,7 @@ static void arena_refresh_active_stats(SapMemArena *arena)
 static int arena_budget_reject_active_slots(SapMemArena *arena)
 {
     uint64_t max_slots = 0;
+
     if (!arena)
         return 0;
     max_slots = arena->budget.max_active_slots;
@@ -73,12 +87,117 @@ static int arena_budget_reject_active_slots(SapMemArena *arena)
     return 0;
 }
 
+static int arena_resize_slot_tables(SapMemArena *arena, uint32_t min_capacity)
+{
+    void **new_chunks = NULL;
+    uint32_t *new_sizes = NULL;
+    uint32_t old_capacity = 0;
+    uint32_t new_capacity = 0;
+
+    if (!arena)
+        return ERR_INVALID;
+    if (arena->chunk_capacity >= min_capacity)
+        return ERR_OK;
+
+    old_capacity = arena->chunk_capacity;
+    new_capacity = old_capacity == 0u ? 16u : old_capacity;
+    while (new_capacity < min_capacity) {
+        if (new_capacity > UINT32_MAX / 2u) {
+            new_capacity = min_capacity;
+            break;
+        }
+        new_capacity *= 2u;
+    }
+
+    new_chunks = calloc((size_t)new_capacity, sizeof(void *));
+    if (!new_chunks)
+        return ERR_OOM;
+    new_sizes = calloc((size_t)new_capacity, sizeof(uint32_t));
+    if (!new_sizes) {
+        free(new_chunks);
+        return ERR_OOM;
+    }
+
+    if (arena->malloc_chunks) {
+        memcpy(new_chunks, arena->malloc_chunks, (size_t)old_capacity * sizeof(void *));
+        free(arena->malloc_chunks);
+    }
+    if (arena->chunk_sizes) {
+        memcpy(new_sizes, arena->chunk_sizes, (size_t)old_capacity * sizeof(uint32_t));
+        free(arena->chunk_sizes);
+    }
+
+    arena->malloc_chunks = new_chunks;
+    arena->chunk_sizes = new_sizes;
+    arena->chunk_capacity = new_capacity;
+    return ERR_OK;
+}
+
+static int arena_push_free_pgno(SapMemArena *arena, uint32_t pgno)
+{
+    uint32_t new_cap = 0;
+    uint32_t *new_free = NULL;
+
+    if (!arena)
+        return ERR_INVALID;
+
+    if (arena->free_pgno_count == arena->free_pgno_capacity) {
+        new_cap = arena->free_pgno_capacity == 0u ? 16u : arena->free_pgno_capacity * 2u;
+        new_free = realloc(arena->free_pgnos, (size_t)new_cap * sizeof(uint32_t));
+        if (!new_free)
+            return ERR_OOM;
+        arena->free_pgnos = new_free;
+        arena->free_pgno_capacity = new_cap;
+    }
+
+    arena->free_pgnos[arena->free_pgno_count++] = pgno;
+    return ERR_OK;
+}
+
+static void arena_release_slot_claim(SapMemArena *arena, uint32_t slot, int from_free_list)
+{
+    if (!arena)
+        return;
+
+    if (!from_free_list && slot + 1u == arena->next_pgno) {
+        arena->next_pgno--;
+        return;
+    }
+
+    (void)arena_push_free_pgno(arena, slot);
+}
+
+static int arena_linear_alloc_bytes(SapMemArena *arena, uint32_t size, uint32_t alignment, void **ptr_out)
+{
+    uint64_t mask = 0;
+    uint64_t aligned = 0;
+
+    if (!arena || !ptr_out || !arena->linear_storage)
+        return ERR_INVALID;
+
+    if (alignment == 0u)
+        alignment = 1u;
+    mask = (uint64_t)alignment - 1u;
+    aligned = (arena->linear_used_bytes + mask) & ~mask;
+    if (aligned > arena->linear_capacity_bytes ||
+        (uint64_t)size > arena->linear_capacity_bytes - aligned) {
+        return ERR_OOM;
+    }
+
+    *ptr_out = arena->linear_storage + aligned;
+    memset(*ptr_out, 0, size);
+    arena->linear_used_bytes = aligned + (uint64_t)size;
+    return ERR_OK;
+}
+
 int sap_arena_init(SapMemArena **arena_out, const SapArenaOptions *opts)
 {
+    SapMemArena *a = NULL;
+
     if (!arena_out || !opts)
         return ERR_INVALID;
 
-    SapMemArena *a = malloc(sizeof(SapMemArena));
+    a = malloc(sizeof(SapMemArena));
     if (!a)
         return ERR_OOM;
 
@@ -86,50 +205,87 @@ int sap_arena_init(SapMemArena **arena_out, const SapArenaOptions *opts)
     memset(&a->stats, 0, sizeof(a->stats));
     memset(&a->budget, 0, sizeof(a->budget));
     a->malloc_chunks = NULL;
+    a->chunk_sizes = NULL;
     a->chunk_count = 0;
     a->chunk_capacity = 0;
-
     a->free_pgnos = NULL;
     a->free_pgno_count = 0;
     a->free_pgno_capacity = 0;
-
     a->next_pgno = 1; /* pgno 0 is typically reserved or root */
+    a->linear_storage = NULL;
+    a->linear_used_bytes = 0u;
+    a->linear_capacity_bytes = 0u;
+
+    if (a->opts.type == SAP_ARENA_BACKING_LINEAR) {
+        uint32_t eff_page_size = a->opts.page_size ? a->opts.page_size : SAPLING_PAGE_SIZE;
+        uint64_t initial_bytes = a->opts.cfg.linear.initial_bytes;
+        uint64_t max_bytes = a->opts.cfg.linear.max_bytes;
+
+        if (max_bytes != 0u && initial_bytes > max_bytes) {
+            free(a);
+            return ERR_INVALID;
+        }
+        if (max_bytes == 0u)
+            max_bytes = initial_bytes;
+        if (max_bytes == 0u)
+            max_bytes = (uint64_t)eff_page_size;
+        if (max_bytes > (uint64_t)SIZE_MAX) {
+            free(a);
+            return ERR_OOM;
+        }
+
+        a->linear_storage = malloc((size_t)max_bytes);
+        if (!a->linear_storage) {
+            free(a);
+            return ERR_OOM;
+        }
+        memset(a->linear_storage, 0, (size_t)max_bytes);
+        a->linear_capacity_bytes = max_bytes;
+    }
+
     arena_refresh_active_stats(a);
-
     *arena_out = a;
-
     return ERR_OK;
 }
 
 void sap_arena_destroy(SapMemArena *arena)
 {
-    if (arena) {
-        if (arena->opts.type == SAP_ARENA_BACKING_MALLOC) {
-            for (uint32_t i = 0; i < arena->chunk_count; i++) {
-                free(arena->malloc_chunks[i]);
-            }
-            free(arena->malloc_chunks);
-        } else if (arena->opts.type == SAP_ARENA_BACKING_CUSTOM) {
-            uint32_t eff_page_size = arena->opts.page_size ? arena->opts.page_size : SAPLING_PAGE_SIZE;
-            for (uint32_t i = 0; i < arena->chunk_count; i++) {
-                if (arena->malloc_chunks[i] && arena->opts.cfg.custom.free_page) {
-                    arena->opts.cfg.custom.free_page(arena->opts.cfg.custom.ctx, arena->malloc_chunks[i], eff_page_size);
-                }
-            }
-            free(arena->malloc_chunks);
-        }
-        
-        free(arena->free_pgnos);
-        free(arena);
-    }
-}
+    if (!arena)
+        return;
 
-#ifndef SAPLING_PAGE_SIZE
-#define SAPLING_PAGE_SIZE 4096
-#endif
+    if (arena->opts.type == SAP_ARENA_BACKING_MALLOC) {
+        uint32_t i;
+        for (i = 0; i < arena->chunk_count; i++) {
+            free(arena->malloc_chunks[i]);
+        }
+    } else if (arena->opts.type == SAP_ARENA_BACKING_CUSTOM) {
+        uint32_t eff_page_size = arena->opts.page_size ? arena->opts.page_size : SAPLING_PAGE_SIZE;
+        uint32_t i;
+        for (i = 0; i < arena->chunk_count; i++) {
+            if (arena->malloc_chunks[i] && arena->opts.cfg.custom.free_page) {
+                arena->opts.cfg.custom.free_page(arena->opts.cfg.custom.ctx,
+                                                 arena->malloc_chunks[i],
+                                                 eff_page_size);
+            }
+        }
+    }
+
+    free(arena->malloc_chunks);
+    free(arena->chunk_sizes);
+    free(arena->free_pgnos);
+    free(arena->linear_storage);
+    free(arena);
+}
 
 int sap_arena_alloc_page(SapMemArena *arena, void **page_out, uint32_t *pgno_out)
 {
+    uint32_t pgno = 0u;
+    uint32_t eff_page_size = 0u;
+    int from_free_list = 0;
+    int rc = ERR_OK;
+    void *page = NULL;
+    uint64_t linear_used_before = 0u;
+
     if (!arena || !page_out || !pgno_out)
         return ERR_INVALID;
 
@@ -139,80 +295,67 @@ int sap_arena_alloc_page(SapMemArena *arena, void **page_out, uint32_t *pgno_out
         return ERR_OOM;
     }
 
-    uint32_t pgno;
-    int from_free_list = 0;
-    if (arena->free_pgno_count > 0) {
+    if (arena->free_pgno_count > 0u) {
         pgno = arena->free_pgnos[--arena->free_pgno_count];
         from_free_list = 1;
     } else {
         pgno = arena->next_pgno++;
     }
 
-    if (arena->opts.type == SAP_ARENA_BACKING_MALLOC || arena->opts.type == SAP_ARENA_BACKING_CUSTOM) {
-        void *page = NULL;
-        uint32_t eff_page_size = arena->opts.page_size ? arena->opts.page_size : SAPLING_PAGE_SIZE;
-        
-        if (from_free_list && pgno < arena->chunk_count && arena->malloc_chunks[pgno]) {
+    eff_page_size = arena->opts.page_size ? arena->opts.page_size : SAPLING_PAGE_SIZE;
+    linear_used_before = arena->linear_used_bytes;
+
+    if (arena->opts.type == SAP_ARENA_BACKING_MALLOC ||
+        arena->opts.type == SAP_ARENA_BACKING_CUSTOM ||
+        arena->opts.type == SAP_ARENA_BACKING_LINEAR) {
+        if (from_free_list &&
+            pgno < arena->chunk_count &&
+            arena->malloc_chunks[pgno] &&
+            arena->chunk_sizes[pgno] >= eff_page_size) {
             page = arena->malloc_chunks[pgno];
             memset(page, 0, eff_page_size);
+        } else if (arena->opts.type == SAP_ARENA_BACKING_MALLOC) {
+            page = calloc(1, eff_page_size);
+        } else if (arena->opts.type == SAP_ARENA_BACKING_CUSTOM) {
+            if (!arena->opts.cfg.custom.alloc_page)
+                return ERR_INVALID;
+            page = arena->opts.cfg.custom.alloc_page(arena->opts.cfg.custom.ctx, eff_page_size);
         } else {
-            if (arena->opts.type == SAP_ARENA_BACKING_MALLOC) {
-                page = calloc(1, eff_page_size);
-            } else {
-                if (!arena->opts.cfg.custom.alloc_page) return ERR_INVALID;
-                page = arena->opts.cfg.custom.alloc_page(arena->opts.cfg.custom.ctx, eff_page_size);
-            }
-            
-            if (!page) {
-                if (!from_free_list && pgno == arena->next_pgno - 1) {
-                    arena->next_pgno--;
-                } else if (arena->free_pgno_count < arena->free_pgno_capacity) {
-                    arena->free_pgnos[arena->free_pgno_count++] = pgno;
-                }
-                arena->stats.page_alloc_oom++;
-                return ERR_OOM;
-            }
-
-            if (arena->chunk_count == arena->chunk_capacity) {
-                uint32_t old_cap = arena->chunk_capacity;
-                uint32_t new_cap = old_cap == 0 ? 16 : old_cap * 2;
-                void **new_chunks = realloc(arena->malloc_chunks, new_cap * sizeof(void*));
-                if (!new_chunks) {
-                    if (arena->opts.type == SAP_ARENA_BACKING_MALLOC) free(page);
-                    else if (arena->opts.cfg.custom.free_page) arena->opts.cfg.custom.free_page(arena->opts.cfg.custom.ctx, page, eff_page_size);
-                    if (!from_free_list && pgno == arena->next_pgno - 1) arena->next_pgno--;
-                    else if (arena->free_pgno_count < arena->free_pgno_capacity) arena->free_pgnos[arena->free_pgno_count++] = pgno;
-                    arena->stats.page_alloc_oom++;
-                    return ERR_OOM;
-                }
-                memset((uint8_t *)new_chunks + old_cap * sizeof(void*), 0, (new_cap - old_cap) * sizeof(void*));
-                arena->malloc_chunks = new_chunks;
-                arena->chunk_capacity = new_cap;
-            }
-
-            if (pgno >= arena->chunk_capacity) {
-                 uint32_t old_cap = arena->chunk_capacity;
-                 uint32_t new_cap = pgno + 16;
-                 void **new_chunks = realloc(arena->malloc_chunks, new_cap * sizeof(void*));
-                 if (!new_chunks) {
-                     if (arena->opts.type == SAP_ARENA_BACKING_MALLOC) free(page);
-                     else if (arena->opts.cfg.custom.free_page) arena->opts.cfg.custom.free_page(arena->opts.cfg.custom.ctx, page, eff_page_size);
-                     if (!from_free_list && pgno == arena->next_pgno - 1) arena->next_pgno--;
-                     else if (arena->free_pgno_count < arena->free_pgno_capacity) arena->free_pgnos[arena->free_pgno_count++] = pgno;
-                     arena->stats.page_alloc_oom++;
-                     return ERR_OOM;
-                 }
-                 memset((uint8_t *)new_chunks + old_cap * sizeof(void*), 0, (new_cap - old_cap) * sizeof(void*));
-                 arena->malloc_chunks = new_chunks;
-                 arena->chunk_capacity = new_cap;
-            }
-            
-            arena->malloc_chunks[pgno] = page;
-            if (pgno >= arena->chunk_count) {
-                arena->chunk_count = pgno + 1;
-            }
+            rc = arena_linear_alloc_bytes(arena, eff_page_size, eff_page_size, &page);
+            if (rc != ERR_OK)
+                page = NULL;
         }
-        
+
+        if (!page) {
+            arena_release_slot_claim(arena, pgno, from_free_list);
+            arena->stats.page_alloc_oom++;
+            return ERR_OOM;
+        }
+
+        if (!(from_free_list &&
+              pgno < arena->chunk_count &&
+              arena->malloc_chunks[pgno] == page &&
+              arena->chunk_sizes[pgno] >= eff_page_size)) {
+            rc = arena_resize_slot_tables(arena, pgno + 1u);
+            if (rc != ERR_OK) {
+                if (arena->opts.type == SAP_ARENA_BACKING_MALLOC) {
+                    free(page);
+                } else if (arena->opts.type == SAP_ARENA_BACKING_CUSTOM &&
+                           arena->opts.cfg.custom.free_page) {
+                    arena->opts.cfg.custom.free_page(arena->opts.cfg.custom.ctx, page, eff_page_size);
+                } else if (arena->opts.type == SAP_ARENA_BACKING_LINEAR) {
+                    arena->linear_used_bytes = linear_used_before;
+                }
+                arena_release_slot_claim(arena, pgno, from_free_list);
+                arena->stats.page_alloc_oom++;
+                return rc;
+            }
+            arena->malloc_chunks[pgno] = page;
+            arena->chunk_sizes[pgno] = eff_page_size;
+            if (pgno >= arena->chunk_count)
+                arena->chunk_count = pgno + 1u;
+        }
+
         *page_out = page;
         *pgno_out = pgno;
         arena->stats.page_alloc_ok++;
@@ -220,7 +363,7 @@ int sap_arena_alloc_page(SapMemArena *arena, void **page_out, uint32_t *pgno_out
         return ERR_OK;
     }
 
-    return ERR_INVALID; /* STUB for other backends */
+    return ERR_INVALID;
 }
 
 int sap_arena_free_page(SapMemArena *arena, uint32_t pgno)
@@ -229,16 +372,9 @@ int sap_arena_free_page(SapMemArena *arena, uint32_t pgno)
         return ERR_INVALID;
     arena->stats.page_free_calls++;
 
-    if (arena->free_pgno_count == arena->free_pgno_capacity) {
-        uint32_t new_cap = arena->free_pgno_capacity == 0 ? 16 : arena->free_pgno_capacity * 2;
-        uint32_t *new_free = realloc(arena->free_pgnos, new_cap * sizeof(uint32_t));
-        if (!new_free)
-            return ERR_OOM; /* Cannot track free page, leak it */
-        arena->free_pgnos = new_free;
-        arena->free_pgno_capacity = new_cap;
-    }
+    if (arena_push_free_pgno(arena, pgno) != ERR_OK)
+        return ERR_OOM;
 
-    arena->free_pgnos[arena->free_pgno_count++] = pgno;
     arena->stats.page_free_ok++;
     arena_refresh_active_stats(arena);
     return ERR_OK;
@@ -246,13 +382,17 @@ int sap_arena_free_page(SapMemArena *arena, uint32_t pgno)
 
 int sap_arena_free_page_ptr(SapMemArena *arena, void *page)
 {
-    if (!arena || !page) return ERR_INVALID;
+    uint32_t i = 0u;
 
-    if (arena->opts.type == SAP_ARENA_BACKING_MALLOC || arena->opts.type == SAP_ARENA_BACKING_CUSTOM) {
-        for (uint32_t i = 1; i < arena->chunk_count; i++) {
-            if (arena->malloc_chunks[i] == page) {
+    if (!arena || !page)
+        return ERR_INVALID;
+
+    if (arena->opts.type == SAP_ARENA_BACKING_MALLOC ||
+        arena->opts.type == SAP_ARENA_BACKING_CUSTOM ||
+        arena->opts.type == SAP_ARENA_BACKING_LINEAR) {
+        for (i = 1u; i < arena->chunk_count; i++) {
+            if (arena->malloc_chunks[i] == page)
                 return sap_arena_free_page(arena, i);
-            }
         }
     }
     return ERR_NOT_FOUND;
@@ -260,6 +400,11 @@ int sap_arena_free_page_ptr(SapMemArena *arena, void *page)
 
 int sap_arena_alloc_node(SapMemArena *arena, uint32_t size, void **node_out, uint32_t *nodeno_out)
 {
+    void *node = NULL;
+    uint32_t nodeno = 0u;
+    int rc = ERR_OK;
+    uint64_t linear_used_before = 0u;
+
     if (!arena || !node_out || !nodeno_out)
         return ERR_INVALID;
 
@@ -269,101 +414,82 @@ int sap_arena_alloc_node(SapMemArena *arena, uint32_t size, void **node_out, uin
         return ERR_OOM;
     }
 
-    if (arena->opts.type == SAP_ARENA_BACKING_MALLOC || arena->opts.type == SAP_ARENA_BACKING_CUSTOM) {
-        void *node;
-        if (arena->opts.type == SAP_ARENA_BACKING_MALLOC) {
-            node = calloc(1, size);
-        } else {
-            if (!arena->opts.cfg.custom.alloc_page) return ERR_INVALID;
-            node = arena->opts.cfg.custom.alloc_page(arena->opts.cfg.custom.ctx, size);
-            if (node) memset(node, 0, size);
-        }
-        if (!node) {
-            arena->stats.node_alloc_oom++;
-            return ERR_OOM;
-        }
-
-        if (arena->chunk_count == arena->chunk_capacity) {
-            uint32_t old_cap = arena->chunk_capacity;
-            uint32_t new_cap = old_cap == 0 ? 16 : old_cap * 2;
-            void **new_chunks = realloc(arena->malloc_chunks, new_cap * sizeof(void*));
-            if (!new_chunks) {
-                if (arena->opts.type == SAP_ARENA_BACKING_MALLOC) free(node);
-                else if (arena->opts.cfg.custom.free_page) arena->opts.cfg.custom.free_page(arena->opts.cfg.custom.ctx, node, size);
-                arena->stats.node_alloc_oom++;
-                return ERR_OOM;
-            }
-            memset((uint8_t *)new_chunks + old_cap * sizeof(void*), 0, (new_cap - old_cap) * sizeof(void*));
-            arena->malloc_chunks = new_chunks;
-            arena->chunk_capacity = new_cap;
-        }
-
-        uint32_t nodeno = arena->next_pgno++;
-        if (nodeno >= arena->chunk_capacity) {
-            uint32_t old_cap = arena->chunk_capacity;
-            uint32_t new_cap = nodeno + 16;
-            void **new_chunks = realloc(arena->malloc_chunks, new_cap * sizeof(void*));
-            if (!new_chunks) {
-                if (arena->opts.type == SAP_ARENA_BACKING_MALLOC) free(node);
-                else if (arena->opts.cfg.custom.free_page) arena->opts.cfg.custom.free_page(arena->opts.cfg.custom.ctx, node, size);
-                arena->next_pgno--;
-                arena->stats.node_alloc_oom++;
-                return ERR_OOM;
-            }
-            memset((uint8_t *)new_chunks + old_cap * sizeof(void*), 0, (new_cap - old_cap) * sizeof(void*));
-            arena->malloc_chunks = new_chunks;
-            arena->chunk_capacity = new_cap;
-        }
-
-        arena->malloc_chunks[nodeno] = node;
-        if (nodeno >= arena->chunk_count) {
-            arena->chunk_count = nodeno + 1;
-        }
-
-        *node_out = node;
-        *nodeno_out = nodeno;
-        arena->stats.node_alloc_ok++;
-        arena_refresh_active_stats(arena);
-        return ERR_OK;
+    linear_used_before = arena->linear_used_bytes;
+    if (arena->opts.type == SAP_ARENA_BACKING_MALLOC) {
+        node = calloc(1, size);
+    } else if (arena->opts.type == SAP_ARENA_BACKING_CUSTOM) {
+        if (!arena->opts.cfg.custom.alloc_page)
+            return ERR_INVALID;
+        node = arena->opts.cfg.custom.alloc_page(arena->opts.cfg.custom.ctx, size);
+        if (node)
+            memset(node, 0, size);
+    } else if (arena->opts.type == SAP_ARENA_BACKING_LINEAR) {
+        rc = arena_linear_alloc_bytes(arena, size, (uint32_t)_Alignof(max_align_t), &node);
+        if (rc != ERR_OK)
+            node = NULL;
+    } else {
+        return ERR_INVALID;
     }
 
-    return ERR_INVALID;
+    if (!node) {
+        arena->stats.node_alloc_oom++;
+        return ERR_OOM;
+    }
+
+    nodeno = arena->next_pgno++;
+    rc = arena_resize_slot_tables(arena, nodeno + 1u);
+    if (rc != ERR_OK) {
+        if (arena->opts.type == SAP_ARENA_BACKING_MALLOC) {
+            free(node);
+        } else if (arena->opts.type == SAP_ARENA_BACKING_CUSTOM &&
+                   arena->opts.cfg.custom.free_page) {
+            arena->opts.cfg.custom.free_page(arena->opts.cfg.custom.ctx, node, size);
+        } else if (arena->opts.type == SAP_ARENA_BACKING_LINEAR) {
+            arena->linear_used_bytes = linear_used_before;
+        }
+        arena->next_pgno--;
+        arena->stats.node_alloc_oom++;
+        return rc;
+    }
+
+    arena->malloc_chunks[nodeno] = node;
+    arena->chunk_sizes[nodeno] = size;
+    if (nodeno >= arena->chunk_count)
+        arena->chunk_count = nodeno + 1u;
+
+    *node_out = node;
+    *nodeno_out = nodeno;
+    arena->stats.node_alloc_ok++;
+    arena_refresh_active_stats(arena);
+    return ERR_OK;
 }
 
 int sap_arena_free_node(SapMemArena *arena, uint32_t nodeno, uint32_t size)
 {
+    void *p = NULL;
+
     (void)size;
-    /*
-     * Free a node's memory and return its slot ID to the free_pgnos list
-     * so that sap_arena_active_pages stays accurate and the slot can be
-     * reused by future allocations.
-     */
     if (!arena)
         return ERR_INVALID;
     arena->stats.node_free_calls++;
 
-    if (arena->opts.type == SAP_ARENA_BACKING_MALLOC || arena->opts.type == SAP_ARENA_BACKING_CUSTOM) {
+    if (arena->opts.type == SAP_ARENA_BACKING_MALLOC ||
+        arena->opts.type == SAP_ARENA_BACKING_CUSTOM ||
+        arena->opts.type == SAP_ARENA_BACKING_LINEAR) {
         if (nodeno < arena->chunk_count && arena->malloc_chunks[nodeno]) {
-            void *p = arena->malloc_chunks[nodeno];
-            arena->malloc_chunks[nodeno] = NULL;
+            p = arena->malloc_chunks[nodeno];
             if (arena->opts.type == SAP_ARENA_BACKING_MALLOC) {
+                arena->malloc_chunks[nodeno] = NULL;
+                arena->chunk_sizes[nodeno] = 0u;
                 free(p);
-            } else if (arena->opts.cfg.custom.free_page) {
-                arena->opts.cfg.custom.free_page(arena->opts.cfg.custom.ctx, p, size);
+            } else if (arena->opts.type == SAP_ARENA_BACKING_CUSTOM) {
+                arena->malloc_chunks[nodeno] = NULL;
+                arena->chunk_sizes[nodeno] = 0u;
+                if (arena->opts.cfg.custom.free_page)
+                    arena->opts.cfg.custom.free_page(arena->opts.cfg.custom.ctx, p, size);
             }
-            /* Track the freed slot so sap_arena_active_pages is accurate
-             * and the slot can be reused by future allocations. */
-            if (arena->free_pgno_count == arena->free_pgno_capacity) {
-                uint32_t new_cap = arena->free_pgno_capacity == 0 ? 16 : arena->free_pgno_capacity * 2;
-                uint32_t *new_free = realloc(arena->free_pgnos, new_cap * sizeof(uint32_t));
-                if (new_free) {
-                    arena->free_pgnos = new_free;
-                    arena->free_pgno_capacity = new_cap;
-                }
-            }
-            if (arena->free_pgno_count < arena->free_pgno_capacity) {
-                arena->free_pgnos[arena->free_pgno_count++] = nodeno;
-            }
+            if (arena_push_free_pgno(arena, nodeno) != ERR_OK)
+                return ERR_OOM;
             arena->stats.node_free_ok++;
             arena_refresh_active_stats(arena);
             return ERR_OK;
@@ -375,29 +501,34 @@ int sap_arena_free_node(SapMemArena *arena, uint32_t nodeno, uint32_t size)
 
 int sap_arena_free_node_ptr(SapMemArena *arena, void *node, uint32_t size)
 {
-    if (!arena || !node) return ERR_INVALID;
+    uint32_t i = 0u;
 
-    if (arena->opts.type == SAP_ARENA_BACKING_MALLOC || arena->opts.type == SAP_ARENA_BACKING_CUSTOM) {
-        for (uint32_t i = 1; i < arena->chunk_count; i++) {
-            if (arena->malloc_chunks[i] == node) {
+    if (!arena || !node)
+        return ERR_INVALID;
+
+    if (arena->opts.type == SAP_ARENA_BACKING_MALLOC ||
+        arena->opts.type == SAP_ARENA_BACKING_CUSTOM ||
+        arena->opts.type == SAP_ARENA_BACKING_LINEAR) {
+        for (i = 1u; i < arena->chunk_count; i++) {
+            if (arena->malloc_chunks[i] == node)
                 return sap_arena_free_node(arena, i, size);
-            }
         }
         return ERR_NOT_FOUND;
     }
 
-    (void)size;
     return ERR_INVALID;
 }
 
 void *sap_arena_resolve(SapMemArena *arena, uint32_t p_or_n_no)
 {
-    if (!arena) return NULL;
-    
-    if (arena->opts.type == SAP_ARENA_BACKING_MALLOC || arena->opts.type == SAP_ARENA_BACKING_CUSTOM) {
-        if (p_or_n_no < arena->chunk_count) {
+    if (!arena)
+        return NULL;
+
+    if (arena->opts.type == SAP_ARENA_BACKING_MALLOC ||
+        arena->opts.type == SAP_ARENA_BACKING_CUSTOM ||
+        arena->opts.type == SAP_ARENA_BACKING_LINEAR) {
+        if (p_or_n_no < arena->chunk_count)
             return arena->malloc_chunks[p_or_n_no];
-        }
     }
     return NULL;
 }
@@ -467,7 +598,6 @@ int sap_arena_alloc_stats_diff(const SapArenaAllocStats *start, const SapArenaAl
     DIFF_FIELD(budget_reject_scratch_bytes);
     DIFF_FIELD(budget_reject_txn_vec_bytes);
 
-    /* snapshots for current/high-water are absolute and monotonic on end */
     delta_out->active_slots_current = end->active_slots_current;
     delta_out->active_slots_high_water = end->active_slots_high_water;
     return ERR_OK;
@@ -531,7 +661,7 @@ void sap_arena_alloc_note_scratch(SapMemArena *arena, uint64_t requested_bytes,
 }
 
 void sap_arena_alloc_note_txn_vec(SapMemArena *arena, uint64_t requested_bytes,
-                                  uint64_t granted_bytes, int ok)
+                                  uint64_t allocated_bytes, int ok)
 {
     if (!arena)
         return;
@@ -539,7 +669,7 @@ void sap_arena_alloc_note_txn_vec(SapMemArena *arena, uint64_t requested_bytes,
     arena->stats.txn_vec_bytes_requested += requested_bytes;
     if (ok) {
         arena->stats.txn_vec_reserve_ok++;
-        arena->stats.txn_vec_bytes_allocated += granted_bytes;
+        arena->stats.txn_vec_bytes_allocated += allocated_bytes;
     } else {
         arena->stats.txn_vec_reserve_oom++;
     }

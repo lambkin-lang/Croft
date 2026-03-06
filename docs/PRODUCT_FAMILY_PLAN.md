@@ -165,6 +165,17 @@ need to be split or renamed to make the boundaries honest.
 | `runner` + `wasi/shim` | Split protocol core from host execution shell | Keep replay/message/intent logic common; keep clocks/sleep/host execution separate |
 | `croft_wasm_wasm3` | Keep as host runtime only | Treat embedded Wasm execution as a host feature, not the common runtime |
 
+Current status:
+
+- `croft_foundation` now anchors the host-neutral base artifact.
+- `croft_host_log`, `croft_host_time`, `croft_host_thread`, `croft_msg_frame`,
+  and `croft_host_queue` now exist as separate host/service artifacts.
+- `sapling_core` now exists as the single-thread profile, and
+  `example_sapling_text` now exercises the linear arena backing through that
+  target.
+- The remaining cleanup is to keep pushing consumers onto the narrower targets
+  and to continue splitting common support from host adapters above this layer.
+
 ## World Plan
 
 The first world set should be explicit and small:
@@ -256,14 +267,10 @@ These should remain clearly on the host side:
 
 The next concrete implementation work should happen in this order:
 
-1. Split `croft_foundation` into a true common base and separate host service
-   artifacts.
-2. Implement the Sapling linear-memory arena path and a single-threaded build
-   profile.
-3. Split editor document core from file-backed loading/saving.
-4. Add the first common WIT interfaces and generated C bindings around
+1. Split editor document core from file-backed loading/saving.
+2. Add the first common WIT interfaces and generated C bindings around
    `text`, `db`, `txn`, and `mailbox`.
-5. Create the first Wasm-aligned common-core sample programs using those
+3. Create the first Wasm-aligned common-core sample programs using those
    generated interfaces.
 
 ## Resume Checklist For Future Sessions
