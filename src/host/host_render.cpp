@@ -1,5 +1,6 @@
 #include "croft/host_render.h"
 #include <tgfx/gpu/opengl/GLDevice.h>
+#define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 #include <tgfx/gpu/opengl/GLTypes.h>
 #include <tgfx/core/Surface.h>
