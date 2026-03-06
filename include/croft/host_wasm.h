@@ -30,11 +30,10 @@ void host_wasm_destroy(host_wasm_ctx_t *ctx);
 uint8_t *host_wasm_get_memory(host_wasm_ctx_t *ctx, uint32_t *out_size);
 
 /**
- * Call a Wasm exported function by name.
- * `argc` specifies the number of `uint64_t` arguments in `argv`. 
- * Wasm3 expects raw 64-bit values for integers in its `CallWithArgs` variants or typed arrays.
+ * Call a Wasm exported function by name using Wasm3 argv-style string arguments.
+ * `argc` specifies the number of string arguments in `argv`.
  */
-int32_t host_wasm_call(host_wasm_ctx_t *ctx, const char *func_name, int argc, const void *argv_ptrs[]);
+int32_t host_wasm_call(host_wasm_ctx_t *ctx, const char *func_name, int argc, const char *argv[]);
 
 /**
  * Implementation of `SapWasiGuestLogicV0` compliant callback.

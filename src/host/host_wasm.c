@@ -22,9 +22,9 @@ struct host_wasm_ctx {
 /* ------------------------------------------------------------------ */
 
 m3ApiRawFunction(m3_croft_host_log) {
+    m3ApiGetArg(int32_t, level);
     m3ApiGetArgMem(const uint8_t *, ptr);
     m3ApiGetArg(uint32_t, len);
-    m3ApiGetArg(int32_t, level);
 
     /* Validate bounds */
     m3ApiCheckMem(ptr, len);
@@ -123,7 +123,7 @@ uint8_t *host_wasm_get_memory(host_wasm_ctx_t *ctx, uint32_t *out_size) {
     return mem;
 }
 
-int32_t host_wasm_call(host_wasm_ctx_t *ctx, const char *func_name, int argc, const void *argv_ptrs[]) {
+int32_t host_wasm_call(host_wasm_ctx_t *ctx, const char *func_name, int argc, const char *argv[]) {
     if (!ctx || !ctx->runtime || !func_name) return -1;
     
     IM3Function func;
@@ -133,7 +133,7 @@ int32_t host_wasm_call(host_wasm_ctx_t *ctx, const char *func_name, int argc, co
         return -1;
     }
 
-    res = m3_Call(func, argc, argv_ptrs);
+    res = m3_CallArgv(func, (uint32_t)argc, argv);
     if (res) {
         host_log(CROFT_LOG_ERROR, res, (uint32_t)strlen(res));
         /* Print backtrace */

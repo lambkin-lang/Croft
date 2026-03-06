@@ -15,6 +15,8 @@ from the initial seed to the complete host.
 See [docs/BUILD_DEPENDENCY_MATRIX.md](docs/BUILD_DEPENDENCY_MATRIX.md)
 for the reproducible external build closure, required checkouts, and
 reference repos that are intentionally not part of the build.
+See [docs/EXAMPLE_MATRIX.md](docs/EXAMPLE_MATRIX.md) for the current example
+ladder from foundation-only demos up through the text-editor shell.
 
 ## Building
 
@@ -27,6 +29,8 @@ ctest --test-dir build --output-on-failure
 Croft now emits a set of static libraries and records them in
 `build/croft-artifacts.json`. Lambkin can treat that manifest as the universe of
 available mix-ins for constraint solving and final link selection.
+Croft also records the current example targets in `build/croft-examples.json`
+and `build/croft-example-targets.txt`.
 
 ### Logged Local Runs
 
@@ -53,21 +57,24 @@ Notes:
 - Filenames include `git describe --always --dirty --abbrev=7` and `date +%Y-%B-%d-%H%M%S`.
 - Older logs are pruned automatically (default keep: 40, override with `CROFT_LOG_KEEP` or `--keep`).
 
-### GUI Binary Size Benchmark
+### Example Binary Size Benchmark
 
-Track size of the primary GUI executable over time (default target: `test_editor_standalone`):
+Track size of the example set in a release-oriented profile:
 
 ```bash
 tools/benchmark_binary_size.sh
 ```
 
 This produces:
-- Detailed run log: `local_logs/size_bench/runs/<timestamp>--<git>--<target>.log`
+- Detailed run log: `local_logs/size_bench/runs/<timestamp>--<git>--<targets>.log`
 - Append-only history: `local_logs/size_bench/history.csv`
 
-Each run records two profiles:
-- `debug` (`Debug`)
-- `optimized` (`MinSizeRel` + LTO + dead-strip + `-Os` by default)
+By default the script:
+
+- Uses `local_deps/croft-deps.cmake` when present, so dependency paths do not need to be re-expressed as environment variables.
+- Configures Croft with `CROFT_BUILD_TESTS=OFF`.
+- Reads the example target list from `build-size-opt/croft-example-targets.txt`.
+- Records the optimized `MinSizeRel` profile with `-g0`, LTO, and dead-strip.
 
 Useful options:
 
@@ -75,8 +82,11 @@ Useful options:
 # Force more aggressive size optimization
 tools/benchmark_binary_size.sh --opt-level Oz
 
-# Benchmark a different GUI target
-tools/benchmark_binary_size.sh --target test_scene_standalone
+# Benchmark one specific example
+tools/benchmark_binary_size.sh --target example_scene_graph
+
+# Compare optimized sizes against Debug
+tools/benchmark_binary_size.sh --compare-debug
 
 # Show latest benchmark rows
 tools/summarize_size_bench.sh --limit 20
@@ -134,6 +144,34 @@ Typical targets include:
 
 On macOS, the standalone GPU-based example executables now prefer the Metal
 artifacts when those variants are available.
+
+### Example Targets
+
+Examples are first-class sample programs, separate from the unit and
+integration tests. They are defined as explicit build targets and can be built
+as a group:
+
+```bash
+cmake --build build --target croft_examples
+```
+
+Representative examples include:
+
+- `example_foundation_threads`
+- `example_messaging_roundtrip`
+- `example_fs_inspect`
+- `example_sapling_text`
+- `example_wasm_guest`
+- `example_ui_window`
+- `example_render_canvas`
+- `example_scene_graph`
+- `example_zoom_canvas`
+- `example_editor_text`
+- `example_a11y_tree`
+- `example_menu_bar`
+- `example_audio_tone`
+
+The intended ladder is documented in [docs/EXAMPLE_MATRIX.md](docs/EXAMPLE_MATRIX.md).
 
 Build specific artifacts directly when needed:
 

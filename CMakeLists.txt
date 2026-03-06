@@ -68,6 +68,12 @@ function(croft_json_array out_var)
     set(${out_var} "[${joined}]" PARENT_SCOPE)
 endfunction()
 
+function(croft_json_string out_var value)
+    string(REPLACE "\\" "\\\\" escaped "${value}")
+    string(REPLACE "\"" "\\\"" escaped "${escaped}")
+    set(${out_var} "\"${escaped}\"" PARENT_SCOPE)
+endfunction()
+
 function(croft_register_artifact target kind)
     cmake_parse_arguments(ART "" "" "TAGS;DEPENDS" ${ARGN})
     croft_json_array(tags_json ${ART_TAGS})
@@ -75,6 +81,36 @@ function(croft_register_artifact target kind)
     set(entry "    {\n      \"name\": \"${target}\",\n      \"kind\": \"${kind}\",\n      \"tags\": ${tags_json},\n      \"depends\": ${depends_json}\n    }")
     set_property(GLOBAL APPEND PROPERTY CROFT_ARTIFACT_ENTRIES "${entry}")
     set_property(GLOBAL APPEND PROPERTY CROFT_INSTALL_TARGETS "${target}")
+endfunction()
+
+function(croft_register_example target)
+    cmake_parse_arguments(EXAMPLE "" "FOCUS" "TAGS;REQUIRES" ${ARGN})
+    croft_json_string(focus_json "${EXAMPLE_FOCUS}")
+    croft_json_array(tags_json ${EXAMPLE_TAGS})
+    croft_json_array(requires_json ${EXAMPLE_REQUIRES})
+    set(entry "    {\n      \"name\": \"${target}\",\n      \"focus\": ${focus_json},\n      \"tags\": ${tags_json},\n      \"requires\": ${requires_json}\n    }")
+    set_property(GLOBAL APPEND PROPERTY CROFT_EXAMPLE_ENTRIES "${entry}")
+    set_property(GLOBAL APPEND PROPERTY CROFT_EXAMPLE_TARGETS "${target}")
+endfunction()
+
+function(croft_add_example target)
+    cmake_parse_arguments(EXAMPLE "" "FOCUS" "SOURCES;LINKS;REQUIRES;TAGS;COMPILE_DEFINITIONS" ${ARGN})
+    add_executable(${target} EXCLUDE_FROM_ALL ${EXAMPLE_SOURCES})
+    target_include_directories(${target} PRIVATE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
+    )
+    if(EXAMPLE_LINKS)
+        target_link_libraries(${target} PRIVATE ${EXAMPLE_LINKS})
+    endif()
+    if(EXAMPLE_COMPILE_DEFINITIONS)
+        target_compile_definitions(${target} PRIVATE ${EXAMPLE_COMPILE_DEFINITIONS})
+    endif()
+    croft_register_example(${target}
+        FOCUS "${EXAMPLE_FOCUS}"
+        TAGS ${EXAMPLE_TAGS}
+        REQUIRES ${EXAMPLE_REQUIRES}
+    )
 endfunction()
 
 # pthreads
@@ -581,6 +617,187 @@ elseif(TARGET croft_gesture_macos)
     set(CROFT_EXAMPLE_GESTURE_TARGET croft_gesture_macos)
 endif()
 
+# ── Shared Wasm guest tooling for examples/tests ─────────────────────
+unset(CROFT_WAT2WASM_TOOL)
+set(CROFT_WAT2WASM_DEP "")
+if(TARGET croft_wasm_wasm3)
+    if(CROFT_WABT_SOURCE_DIR)
+        if(EXISTS "${CROFT_WABT_SOURCE_DIR}/CMakeLists.txt")
+            set(BUILD_TESTS OFF CACHE BOOL "Disable WABT tests" FORCE)
+            set(BUILD_TOOLS ON CACHE BOOL "Enable WABT tools" FORCE)
+            set(BUILD_LIBWASM OFF CACHE BOOL "Disable WABT shared library" FORCE)
+            add_subdirectory("${CROFT_WABT_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/_deps/wabt" EXCLUDE_FROM_ALL)
+        else()
+            croft_optional_missing("wabt" "CROFT_WABT_SOURCE_DIR does not contain CMakeLists.txt: ${CROFT_WABT_SOURCE_DIR}")
+        endif()
+    else()
+        unset(CROFT_WAT2WASM_TOOL)
+        unset(CROFT_WAT2WASM_TOOL CACHE)
+        find_program(CROFT_WAT2WASM_TOOL wat2wasm HINTS ${CMAKE_PROGRAM_PATH})
+    endif()
+
+    if(TARGET wat2wasm)
+        set(CROFT_WAT2WASM_TOOL wat2wasm)
+        set(CROFT_WAT2WASM_DEP wat2wasm)
+    elseif(NOT CROFT_WAT2WASM_TOOL AND NOT CROFT_WABT_SOURCE_DIR)
+        croft_optional_missing("wabt" "set CROFT_WABT_SOURCE_DIR or install wat2wasm to enable host Wasm examples/tests")
+    endif()
+endif()
+
+if(TARGET croft_wasm_wasm3 AND CROFT_WAT2WASM_TOOL)
+    set(WASM_GUEST_BIN "${CMAKE_CURRENT_BINARY_DIR}/examples/dummy_guest.wasm")
+    add_custom_command(
+        OUTPUT ${WASM_GUEST_BIN}
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/examples"
+        COMMAND ${CROFT_WAT2WASM_TOOL} "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/dummy_guest.wat"
+                                     -o ${WASM_GUEST_BIN}
+        DEPENDS ${CROFT_WAT2WASM_DEP} "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/dummy_guest.wat"
+        COMMENT "Compiling dummy_guest.wat to Wasm..."
+    )
+    add_custom_target(wasm_guest_gen DEPENDS ${WASM_GUEST_BIN})
+endif()
+
+# ── Examples ─────────────────────────────────────────────────────────
+croft_add_example(example_foundation_threads
+    SOURCES examples/foundation_threads.c
+    LINKS croft_foundation
+    REQUIRES croft_foundation
+    TAGS foundation threads time log
+    FOCUS "Foundation-only threaded work and timing."
+)
+
+croft_add_example(example_messaging_roundtrip
+    SOURCES examples/messaging_roundtrip.c
+    LINKS croft_messaging
+    REQUIRES croft_messaging
+    TAGS messaging queue wire roundtrip
+    FOCUS "Validated message framing and queue round-trip without Sapling."
+)
+
+croft_add_example(example_fs_inspect
+    SOURCES examples/fs_inspect.c
+    LINKS croft_fs
+    REQUIRES croft_fs
+    TAGS filesystem io host
+    FOCUS "Filesystem access and resource-path discovery."
+)
+
+croft_add_example(example_sapling_text
+    SOURCES examples/sapling_text.c
+    LINKS sapling
+    REQUIRES sapling
+    TAGS sapling text transactions persistent
+    FOCUS "Sapling text clone-on-write editing without any GUI."
+)
+
+if(TARGET wasm_guest_gen)
+    croft_add_example(example_wasm_guest
+        SOURCES examples/wasm_guest.c
+        LINKS croft_wasm_wasm3
+        REQUIRES croft_wasm_wasm3
+        TAGS wasm wasm3 guest host-bridge
+        COMPILE_DEFINITIONS DUMMY_GUEST_WASM_PATH="${WASM_GUEST_BIN}"
+        FOCUS "Embedded Wasm guest calling back into Croft host APIs."
+    )
+    add_dependencies(example_wasm_guest wasm_guest_gen)
+endif()
+
+if(CROFT_EXAMPLE_UI_TARGET)
+    croft_add_example(example_ui_window
+        SOURCES tests/host_tests/test_ui_window_standalone.c
+        LINKS ${CROFT_EXAMPLE_UI_TARGET}
+        REQUIRES ${CROFT_EXAMPLE_UI_TARGET}
+        TAGS ui window glfw
+        FOCUS "Windowing-only sample with no rendering dependency."
+    )
+endif()
+
+if(CROFT_EXAMPLE_RENDER_TARGET)
+    croft_add_example(example_render_canvas
+        SOURCES tests/host_tests/test_render_standalone.c
+        LINKS ${CROFT_EXAMPLE_RENDER_TARGET}
+        REQUIRES ${CROFT_EXAMPLE_RENDER_TARGET}
+        TAGS render canvas tgfx
+        FOCUS "GPU-backed 2D canvas rendering sample."
+    )
+endif()
+
+if(CROFT_EXAMPLE_SCENE_TARGET)
+    croft_add_example(example_scene_graph
+        SOURCES tests/host_tests/test_scene_standalone.c
+        LINKS ${CROFT_EXAMPLE_SCENE_TARGET} croft_a11y_stub
+        REQUIRES ${CROFT_EXAMPLE_SCENE_TARGET}
+        TAGS scene graph hit-testing
+        FOCUS "Scene graph layout, hit-testing, and draw traversal."
+    )
+endif()
+
+if(CROFT_EXAMPLE_SCENE_TARGET)
+    if(NOT APPLE OR CROFT_EXAMPLE_GESTURE_TARGET)
+        set(CROFT_ZOOM_EXAMPLE_LINKS ${CROFT_EXAMPLE_SCENE_TARGET} croft_a11y_stub)
+        set(CROFT_ZOOM_EXAMPLE_REQUIRES ${CROFT_EXAMPLE_SCENE_TARGET})
+        if(CROFT_EXAMPLE_GESTURE_TARGET)
+            list(APPEND CROFT_ZOOM_EXAMPLE_LINKS ${CROFT_EXAMPLE_GESTURE_TARGET})
+            list(APPEND CROFT_ZOOM_EXAMPLE_REQUIRES ${CROFT_EXAMPLE_GESTURE_TARGET})
+        endif()
+        croft_add_example(example_zoom_canvas
+            SOURCES tests/host_tests/test_zoom_standalone.c
+            LINKS ${CROFT_ZOOM_EXAMPLE_LINKS}
+            REQUIRES ${CROFT_ZOOM_EXAMPLE_REQUIRES}
+            TAGS scene zoom gesture canvas
+            FOCUS "Scrollable and zoomable infinite-canvas scene demo."
+        )
+    endif()
+endif()
+
+if(CROFT_EXAMPLE_EDITOR_TARGET)
+    if(NOT APPLE OR CROFT_EXAMPLE_GESTURE_TARGET)
+        set(CROFT_EDITOR_EXAMPLE_LINKS ${CROFT_EXAMPLE_EDITOR_TARGET} croft_a11y_stub croft_fs)
+        set(CROFT_EDITOR_EXAMPLE_REQUIRES ${CROFT_EXAMPLE_EDITOR_TARGET} croft_fs)
+        if(CROFT_EXAMPLE_GESTURE_TARGET)
+            list(APPEND CROFT_EDITOR_EXAMPLE_LINKS ${CROFT_EXAMPLE_GESTURE_TARGET})
+            list(APPEND CROFT_EDITOR_EXAMPLE_REQUIRES ${CROFT_EXAMPLE_GESTURE_TARGET})
+        endif()
+        croft_add_example(example_editor_text
+            SOURCES tests/host_tests/test_editor_standalone.c
+            LINKS ${CROFT_EDITOR_EXAMPLE_LINKS}
+            REQUIRES ${CROFT_EDITOR_EXAMPLE_REQUIRES}
+            TAGS editor text sapling gui
+            FOCUS "Text-editor shell built on Sapling text, scene, and host IO."
+        )
+    endif()
+endif()
+
+if(TARGET croft_a11y_macos AND CROFT_EXAMPLE_SCENE_TARGET)
+    croft_add_example(example_a11y_tree
+        SOURCES tests/host_tests/test_a11y_standalone.c
+        LINKS ${CROFT_EXAMPLE_SCENE_TARGET} croft_a11y_macos
+        REQUIRES ${CROFT_EXAMPLE_SCENE_TARGET} croft_a11y_macos
+        TAGS a11y macos scene
+        FOCUS "Native accessibility tree wiring for scene nodes on macOS."
+    )
+endif()
+
+if(TARGET croft_menu_macos AND CROFT_EXAMPLE_UI_TARGET)
+    croft_add_example(example_menu_bar
+        SOURCES tests/host_tests/test_menu_standalone.c
+        LINKS ${CROFT_EXAMPLE_UI_TARGET} croft_menu_macos
+        REQUIRES ${CROFT_EXAMPLE_UI_TARGET} croft_menu_macos
+        TAGS menu macos ui
+        FOCUS "Native menu intents applied to a macOS menu bar."
+    )
+endif()
+
+if(TARGET croft_audio_miniaudio)
+    croft_add_example(example_audio_tone
+        SOURCES tests/host_tests/test_audio_standalone.c
+        LINKS croft_audio_miniaudio
+        REQUIRES croft_audio_miniaudio
+        TAGS audio miniaudio tone
+        FOCUS "Synchronous audio playback using the miniaudio host backend."
+    )
+endif()
+
 # ── Tests ───────────────────────────────────────────────────────────────
 if(CROFT_BUILD_TESTS)
     enable_testing()
@@ -590,42 +807,7 @@ if(CROFT_BUILD_TESTS)
     target_link_libraries(test_croft PRIVATE croft)
     add_test(NAME croft_tests COMMAND test_croft)
 
-    set(CROFT_WAT2WASM_TOOL "")
-    set(CROFT_WAT2WASM_DEP "")
-    if(TARGET croft_wasm_wasm3)
-        if(CROFT_WABT_SOURCE_DIR)
-            if(EXISTS "${CROFT_WABT_SOURCE_DIR}/CMakeLists.txt")
-                set(BUILD_TESTS OFF CACHE BOOL "Disable WABT tests" FORCE)
-                set(BUILD_TOOLS ON CACHE BOOL "Enable WABT tools" FORCE)
-                set(BUILD_LIBWASM OFF CACHE BOOL "Disable WABT shared library" FORCE)
-                add_subdirectory("${CROFT_WABT_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/_deps/wabt" EXCLUDE_FROM_ALL)
-            else()
-                croft_optional_missing("wabt" "CROFT_WABT_SOURCE_DIR does not contain CMakeLists.txt: ${CROFT_WABT_SOURCE_DIR}")
-            endif()
-        else()
-            find_program(CROFT_WAT2WASM_TOOL wat2wasm)
-        endif()
-
-        if(TARGET wat2wasm)
-            set(CROFT_WAT2WASM_TOOL wat2wasm)
-            set(CROFT_WAT2WASM_DEP wat2wasm)
-        elseif(NOT CROFT_WAT2WASM_TOOL AND NOT CROFT_WABT_SOURCE_DIR)
-            croft_optional_missing("wabt" "set CROFT_WABT_SOURCE_DIR or install wat2wasm to enable host Wasm tests")
-        endif()
-    endif()
-
-    if(TARGET croft_wasm_wasm3 AND CROFT_WAT2WASM_TOOL)
-        set(WASM_GUEST_BIN "${CMAKE_CURRENT_BINARY_DIR}/tests/dummy_guest.wasm")
-        add_custom_command(
-            OUTPUT ${WASM_GUEST_BIN}
-            COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/tests"
-            COMMAND ${CROFT_WAT2WASM_TOOL} "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/dummy_guest.wat"
-                                         -o ${WASM_GUEST_BIN}
-            DEPENDS ${CROFT_WAT2WASM_DEP} "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/dummy_guest.wat"
-            COMMENT "Compiling dummy_guest.wat to Wasm..."
-        )
-        add_custom_target(wasm_guest_gen DEPENDS ${WASM_GUEST_BIN})
-
+    if(TARGET croft_wasm_wasm3 AND TARGET wasm_guest_gen)
         target_sources(test_croft PRIVATE tests/host_tests/test_wasm_guest.c)
         target_link_libraries(test_croft PRIVATE croft_wasm_wasm3)
         target_compile_definitions(test_croft PRIVATE
@@ -733,6 +915,24 @@ install(TARGETS ${CROFT_INSTALL_TARGETS}
     LIBRARY DESTINATION lib
     RUNTIME DESTINATION bin
 )
+
+get_property(CROFT_EXAMPLE_ENTRIES GLOBAL PROPERTY CROFT_EXAMPLE_ENTRIES)
+if(NOT CROFT_EXAMPLE_ENTRIES)
+    set(CROFT_EXAMPLE_ENTRIES "")
+endif()
+string(JOIN ",\n" CROFT_EXAMPLE_ENTRIES_JSON ${CROFT_EXAMPLE_ENTRIES})
+file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/croft-examples.json"
+    CONTENT "{\n  \"examples\": [\n${CROFT_EXAMPLE_ENTRIES_JSON}\n  ]\n}\n")
+
+get_property(CROFT_EXAMPLE_TARGETS GLOBAL PROPERTY CROFT_EXAMPLE_TARGETS)
+if(CROFT_EXAMPLE_TARGETS)
+    add_custom_target(croft_examples DEPENDS ${CROFT_EXAMPLE_TARGETS})
+    string(JOIN "\n" CROFT_EXAMPLE_TARGETS_TEXT ${CROFT_EXAMPLE_TARGETS})
+    file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/croft-example-targets.txt"
+        CONTENT "${CROFT_EXAMPLE_TARGETS_TEXT}\n")
+else()
+    file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/croft-example-targets.txt" CONTENT "")
+endif()
 
 install(DIRECTORY include/croft/
     DESTINATION include/croft

@@ -58,7 +58,7 @@ void run_test_wasm_guest(int argc, char **argv) {
     /* Call test_function_a(10) -> expects 52 back and 'host_log' to have been called */
     /* Since we pass arguments as void*, Wasm3 requires us to pass pointer to string representations */
     const char *args[] = { "10" };
-    int32_t rc = host_wasm_call(ctx, "test_function_a", 1, (const void **)args);
+    int32_t rc = host_wasm_call(ctx, "test_function_a", 1, args);
     
     /* Note: Wasm3 `m3_Call` stringizes arguments natively on its C-API, but we wrote `host_wasm_call`
        to use it. We should ensure rc is 52. */

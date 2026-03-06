@@ -1,0 +1,178 @@
+TGFX local checkout diff snapshot
+================================
+
+Purpose
+-------
+This file preserves the real source deltas found in the local TGFX checkout at:
+
+  /Users/mshonle/Projects/Tencent/tgfx
+
+It was created before resetting that checkout back to HEAD so the edits would
+not be lost. The local Git worktree was in a broken metadata state when this
+was captured: `.git/index` was missing, so `git status` misleadingly showed the
+entire repository as deleted and untracked at the same time. To isolate the
+actual edits, the working tree was compared against `git archive HEAD`.
+
+Observed repository state at capture time
+-----------------------------------------
+- Branch: `main`
+- HEAD: `6ea71127be6649a711a0271e0fda16f1de17ab74`
+- Origin: `https://github.com/Tencent/tgfx.git`
+- `.git/index` missing
+- `git fsck --no-dangling --connectivity-only` passed
+- No Git submodules were present (`.gitmodules` absent)
+- TGFX dependency bootstrap uses `sync_deps.sh` / `depsync`, not submodules
+
+Interpretation
+--------------
+These edits look like an attempt to reduce or work around macOS/OpenGL-related
+warnings and API issues:
+
+- `CMakeLists.txt` relaxes Clang's `-Werror` handling.
+- `DataView.h` adds `<stddef.h>`.
+- `CGLDevice.*` removes `NSOpenGLContext` ownership in favor of `CGLContextObj`.
+
+The risky change is `src/gpu/opengl/cgl/CGLWindow.mm`, where the local version
+stops creating an OpenGL surface and makes present a no-op. That may be
+acceptable only if a different rendering/backend path is used in practice, such
+as Metal, but it is not behaviorally equivalent to HEAD for the OpenGL CGL
+window path.
+
+Actual diffs versus HEAD
+------------------------
+
+1. CMakeLists.txt
+
+--- /tmp/tgfx-head/CMakeLists.txt
++++ /Users/mshonle/Projects/Tencent/tgfx/CMakeLists.txt
+@@ -191,7 +191,7 @@
+ endif ()
+
+ if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+-    list(APPEND TGFX_COMPILE_OPTIONS -Werror -Wall -Wextra -Weffc++ -Wconversion -pedantic -Werror=return-type -Wno-unused-command-line-argument)
++    list(APPEND TGFX_COMPILE_OPTIONS -Wall -Wextra -Weffc++ -Wconversion -pedantic -Wno-unused-command-line-argument)
+ endif ()
+
+ if (MSVC)
+
+2. include/tgfx/core/DataView.h
+
+--- /tmp/tgfx-head/include/tgfx/core/DataView.h
++++ /Users/mshonle/Projects/Tencent/tgfx/include/tgfx/core/DataView.h
+@@ -20,6 +20,7 @@
+
+ #include <cinttypes>
+ #include <cmath>
++#include <stddef.h>
+
+ namespace tgfx {
+ /**
+
+3. include/tgfx/gpu/opengl/cgl/CGLDevice.h
+
+--- /tmp/tgfx-head/include/tgfx/gpu/opengl/cgl/CGLDevice.h
++++ /Users/mshonle/Projects/Tencent/tgfx/include/tgfx/gpu/opengl/cgl/CGLDevice.h
+@@ -40,10 +40,6 @@
+   void onUnlockContext() override;
+
+  private:
+-#pragma clang diagnostic push
+-#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+-  NSOpenGLContext* glContext = nil;
+-#pragma clang diagnostic pop
+   CGLContextObj oldContext = nil;
+
+   static std::shared_ptr<CGLDevice> Wrap(CGLContextObj cglContext, bool externallyOwned);
+
+4. src/gpu/opengl/cgl/CGLDevice.mm
+
+--- /tmp/tgfx-head/src/gpu/opengl/cgl/CGLDevice.mm
++++ /Users/mshonle/Projects/Tencent/tgfx/src/gpu/opengl/cgl/CGLDevice.mm
+@@ -97,12 +97,10 @@
+
+ CGLDevice::CGLDevice(std::unique_ptr<GPU> gpu, CGLContextObj cglContext)
+     : GLDevice(std::move(gpu), cglContext) {
+-  glContext = [[NSOpenGLContext alloc] initWithCGLContextObj:cglContext];
+ }
+
+ CGLDevice::~CGLDevice() {
+   releaseAll();
+-  [glContext release];
+ }
+
+ bool CGLDevice::sharableWith(void* nativeContext) const {
+@@ -110,24 +108,21 @@
+     return false;
+   }
+   auto shareContext = static_cast<CGLContextObj>(nativeContext);
+-  return CGLGetShareGroup(shareContext) == CGLGetShareGroup(glContext.CGLContextObj);
++  return CGLGetShareGroup(shareContext) == CGLGetShareGroup(static_cast<CGLContextObj>(nativeHandle));
+ }
+
+ CGLContextObj CGLDevice::cglContext() const {
+-  return glContext.CGLContextObj;
++  return static_cast<CGLContextObj>(nativeHandle);
+ }
+
+ bool CGLDevice::onLockContext() {
+-  @autoreleasepool {
+-    oldContext = CGLGetCurrentContext();
+-    CGLRetainContext(oldContext);
+-    [glContext makeCurrentContext];
+-    return [NSOpenGLContext currentContext] == glContext;
+-  }
++  oldContext = CGLGetCurrentContext();
++  CGLRetainContext(oldContext);
++  CGLSetCurrentContext(static_cast<CGLContextObj>(nativeHandle));
++  return CGLGetCurrentContext() == static_cast<CGLContextObj>(nativeHandle);
+ }
+
+ void CGLDevice::onUnlockContext() {
+-  [NSOpenGLContext clearCurrentContext];
+   CGLSetCurrentContext(oldContext);
+   CGLReleaseContext(oldContext);
+ }
+
+5. src/gpu/opengl/cgl/CGLWindow.mm
+
+--- /tmp/tgfx-head/src/gpu/opengl/cgl/CGLWindow.mm
++++ /Users/mshonle/Projects/Tencent/tgfx/src/gpu/opengl/cgl/CGLWindow.mm
+@@ -50,34 +50,19 @@
+ CGLWindow::CGLWindow(std::shared_ptr<Device> device, NSView* view,
+                      std::shared_ptr<ColorSpace> colorSpace)
+     : Window(std::move(device)), view(view), colorSpace(std::move(colorSpace)) {
+-  // do not retain view here, otherwise it can cause circular reference.
+ }
+
+ CGLWindow::~CGLWindow() {
+-  auto glContext = static_cast<CGLDevice*>(device.get())->glContext;
+-  [glContext setView:nil];
+-  view = nil;
++  (void)view; // silence unused warning
+ }
+
+ std::shared_ptr<Surface> CGLWindow::onCreateSurface(Context* context) {
+-  auto glContext = static_cast<CGLDevice*>(device.get())->glContext;
+-  [glContext update];
+-  CGSize size = [view convertSizeToBacking:view.bounds.size];
+-  if (size.width <= 0 || size.height <= 0) {
+-    return nullptr;
+-  }
+-  [glContext setView:view];
+-  GLFrameBufferInfo frameBuffer = {};
+-  frameBuffer.id = 0;
+-  frameBuffer.format = GL_RGBA8;
+-  BackendRenderTarget renderTarget(frameBuffer, static_cast<int>(size.width),
+-                                   static_cast<int>(size.height));
+-  return Surface::MakeFrom(context, renderTarget, ImageOrigin::BottomLeft, 0, colorSpace);
++  (void)context;
++  return nullptr;
+ }
+
+-void CGLWindow::onPresent(Context*) {
+-  auto glContext = static_cast<CGLDevice*>(device.get())->glContext;
+-  [glContext flushBuffer];
++void CGLWindow::onPresent(Context* context) {
++  (void)context;
+ }
+ }  // namespace tgfx
