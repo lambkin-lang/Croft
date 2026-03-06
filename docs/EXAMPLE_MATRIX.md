@@ -22,8 +22,11 @@ cmake --build build --target croft_examples
 | `example_foundation_threads` | Foundation-only worker thread, timing, and logging | `croft_host_log`, `croft_host_time`, `croft_host_thread` |
 | `example_messaging_roundtrip` | Validated message envelope round-trip over the host queue | `croft_msg_frame`, `croft_host_queue` |
 | `example_fs_inspect` | Host filesystem access and resource-path discovery | `croft_fs` |
+| `example_wit_fs_read` | Host filesystem open/read/close through generated WIT file resource handles | `croft_wit_host_fs_runtime` |
 | `example_sapling_text` | Sapling text clone-on-write editing over the single-thread linear arena profile | `sapling_core` |
 | `example_wit_text_handles` | Sapling text editing through generated WIT commands and opaque resource handles | `croft_wit_text_runtime` |
+| `example_wit_db_kv` | Sapling key-value round-trip through generated WIT `db` and `txn` resource handles | `croft_wit_store_runtime` |
+| `example_wit_mailbox_ping` | Common-core mailbox round-trip through generated WIT mailbox resource handles | `croft_wit_mailbox_runtime` |
 | `example_wasm_guest` | Embedded Wasm guest bridged into Croft host imports | `croft_wasm_wasm3` |
 | `example_ui_window_opengl` | Window only; OpenGL-capable GLFW context and no renderer | `croft_ui_glfw_opengl` |
 | `example_ui_window_metal` | Window only; no-API GLFW window for the Metal path | `croft_ui_glfw_metal` |
@@ -50,6 +53,14 @@ Notes:
 - `example_wit_text_handles` is the first model-program sample that crosses a
   WIT/resource barrier instead of calling Sapling text APIs directly. It is the
   current best in-tree proxy for Lambkin-generated common-core code.
+- `example_wit_db_kv` extends that barrier to transactional datastore state and
+  keeps `DB*` and `Txn*` fully hidden behind WIT handle IDs.
+- `example_wit_mailbox_ping` is the first common-side no-shared-memory mailbox
+  sample. It intentionally models nonblocking message passing without pulling
+  in host threads, sleeping, or native queue APIs.
+- `example_wit_fs_read` is the first host mix-in WIT sample. It wraps the
+  native `host_fs` pointer-shaped API in opaque file handles so generated model
+  programs do not observe raw host file descriptors.
 - The editor document layer is now split: `croft_editor_document_core` carries
   Sapling state, history, and edit semantics, while
   `croft_editor_document_fs` is the host-fs adapter for open/save.

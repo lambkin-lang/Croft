@@ -163,6 +163,9 @@ set(WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_schema_dbis.c")
 set(COMMON_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_common_core.h")
 set(COMMON_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_common_core.c")
 
+set(HOST_FS_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_fs.h")
+set(HOST_FS_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_fs.c")
+
 set(TEST_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/test_result_types.h")
 set(TEST_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/test_result_types.c")
 
@@ -192,6 +195,17 @@ add_custom_command(
     COMMENT "Generating Common-Core WIT C Layouts..."
 )
 add_custom_target(common_wit_schema_gen DEPENDS ${COMMON_WIT_GENERATED_H} ${COMMON_WIT_GENERATED_C})
+
+# Host-fs schema
+add_custom_command(
+    OUTPUT ${HOST_FS_WIT_GENERATED_H} ${HOST_FS_WIT_GENERATED_C}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
+    COMMAND wit_codegen --wit "${CMAKE_CURRENT_SOURCE_DIR}/schemas/wit/host-fs.wit"
+                        --header "${HOST_FS_WIT_GENERATED_H}" --source "${HOST_FS_WIT_GENERATED_C}"
+    DEPENDS wit_codegen "${CMAKE_CURRENT_SOURCE_DIR}/schemas/wit/host-fs.wit"
+    COMMENT "Generating Host-FS WIT C Layouts..."
+)
+add_custom_target(host_fs_wit_schema_gen DEPENDS ${HOST_FS_WIT_GENERATED_H} ${HOST_FS_WIT_GENERATED_C})
 
 # Test fixture schema
 add_custom_command(
@@ -447,6 +461,15 @@ croft_register_artifact(croft_wit_common_core wit
     DEPENDS croft_thatch_core
 )
 
+add_library(croft_wit_host_fs STATIC ${HOST_FS_WIT_GENERATED_C})
+add_dependencies(croft_wit_host_fs host_fs_wit_schema_gen)
+croft_apply_public_includes(croft_wit_host_fs)
+target_link_libraries(croft_wit_host_fs PUBLIC croft_thatch_core)
+croft_register_artifact(croft_wit_host_fs wit
+    TAGS wit host-fs resource-handles xpi
+    DEPENDS croft_thatch_core
+)
+
 add_library(croft_wire_runtime STATIC
     src/runner/wire_v0.c
     ${WIT_GENERATED_C}
@@ -638,6 +661,33 @@ target_link_libraries(croft_wit_text_runtime PUBLIC sapling_core croft_wit_commo
 croft_register_artifact(croft_wit_text_runtime wit
     TAGS tier8 wit text resource-handles common-core machine-generated-model
     DEPENDS sapling_core croft_wit_common_core
+)
+
+add_library(croft_wit_store_runtime STATIC src/runtime/wit_store_runtime.c)
+add_dependencies(croft_wit_store_runtime common_wit_schema_gen)
+croft_apply_public_includes(croft_wit_store_runtime)
+target_link_libraries(croft_wit_store_runtime PUBLIC sapling_core croft_wit_common_core)
+croft_register_artifact(croft_wit_store_runtime wit
+    TAGS tier8 wit db txn resource-handles common-core machine-generated-model
+    DEPENDS sapling_core croft_wit_common_core
+)
+
+add_library(croft_wit_mailbox_runtime STATIC src/runtime/wit_mailbox_runtime.c)
+add_dependencies(croft_wit_mailbox_runtime common_wit_schema_gen)
+croft_apply_public_includes(croft_wit_mailbox_runtime)
+target_link_libraries(croft_wit_mailbox_runtime PUBLIC croft_wit_common_core)
+croft_register_artifact(croft_wit_mailbox_runtime wit
+    TAGS tier8 wit mailbox resource-handles common-core machine-generated-model no-shared-memory
+    DEPENDS croft_wit_common_core
+)
+
+add_library(croft_wit_host_fs_runtime STATIC src/runtime/wit_host_fs_runtime.c)
+add_dependencies(croft_wit_host_fs_runtime host_fs_wit_schema_gen)
+croft_apply_public_includes(croft_wit_host_fs_runtime)
+target_link_libraries(croft_wit_host_fs_runtime PUBLIC croft_fs croft_wit_host_fs)
+croft_register_artifact(croft_wit_host_fs_runtime wit
+    TAGS tier8 wit host-fs file-handles host-mix-in machine-generated-model
+    DEPENDS croft_fs croft_wit_host_fs
 )
 
 # ── Optional Croft artifacts ───────────────────────────────────────────
@@ -984,6 +1034,18 @@ croft_add_example(example_fs_inspect
     FOCUS "Filesystem access and resource-path discovery."
 )
 
+croft_add_example(example_wit_fs_read
+    SOURCES examples/wit_fs_read.c
+    LINKS croft_wit_host_fs_runtime
+    REQUIRES croft_wit_host_fs_runtime
+    TAGS wit xpi host-fs file-handles host-mix-in
+    FOCUS "Host filesystem access driven through generated WIT file resource handles."
+)
+add_dependencies(example_wit_fs_read host_fs_wit_schema_gen)
+target_compile_definitions(example_wit_fs_read PRIVATE
+    CROFT_WIT_FS_SAMPLE_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/wit_host_fs_sample.txt"
+)
+
 croft_add_example(example_sapling_text
     SOURCES examples/sapling_text.c
     LINKS sapling_core
@@ -1000,6 +1062,24 @@ croft_add_example(example_wit_text_handles
     FOCUS "Sapling text editing driven through generated WIT resource handles."
 )
 add_dependencies(example_wit_text_handles common_wit_schema_gen)
+
+croft_add_example(example_wit_db_kv
+    SOURCES examples/wit_db_kv.c
+    LINKS croft_wit_store_runtime
+    REQUIRES croft_wit_store_runtime
+    TAGS wit xpi db txn handles common-core sapling
+    FOCUS "Sapling key-value round-trip driven through generated WIT db and txn resource handles."
+)
+add_dependencies(example_wit_db_kv common_wit_schema_gen)
+
+croft_add_example(example_wit_mailbox_ping
+    SOURCES examples/wit_mailbox_ping.c
+    LINKS croft_wit_mailbox_runtime
+    REQUIRES croft_wit_mailbox_runtime
+    TAGS wit xpi mailbox handles common-core no-shared-memory
+    FOCUS "Mailbox round-trip driven through generated WIT mailbox resource handles."
+)
+add_dependencies(example_wit_mailbox_ping common_wit_schema_gen)
 
 if(TARGET wasm_guest_gen)
     croft_add_example(example_wasm_guest
@@ -1173,7 +1253,7 @@ endif()
 if(CROFT_BUILD_TESTS)
     enable_testing()
 
-    add_executable(test_croft tests/test_main.c tests/test_queue.c tests/host_tests/test_fs.c tests/test_editor_text_model.c tests/test_editor_document.c tests/test_editor_commands.c tests/test_wit_resource_codegen.c tests/test_wit_text_runtime.c)
+    add_executable(test_croft tests/test_main.c tests/test_queue.c tests/host_tests/test_fs.c tests/test_editor_text_model.c tests/test_editor_document.c tests/test_editor_commands.c tests/test_wit_resource_codegen.c tests/test_wit_text_runtime.c tests/test_wit_store_runtime.c tests/test_wit_mailbox_runtime.c tests/test_wit_host_fs_runtime.c)
     target_include_directories(test_croft PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
     target_link_libraries(test_croft
         PRIVATE
@@ -1181,8 +1261,14 @@ if(CROFT_BUILD_TESTS)
             croft_editor_document_fs
             croft_editor_commands
             croft_wit_text_runtime
+            croft_wit_store_runtime
+            croft_wit_mailbox_runtime
+            croft_wit_host_fs_runtime
     )
-    add_dependencies(test_croft common_wit_schema_gen)
+    add_dependencies(test_croft common_wit_schema_gen host_fs_wit_schema_gen)
+    target_compile_definitions(test_croft PRIVATE
+        CROFT_WIT_FS_SAMPLE_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/wit_host_fs_sample.txt"
+    )
     if(NOT TARGET croft_wasm_wasm3)
         target_link_libraries(test_croft PRIVATE croft_host_log croft_host_time)
     endif()

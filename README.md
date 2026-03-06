@@ -149,7 +149,8 @@ Typical targets include:
 - `croft_foundation`, `croft_host_log`, `croft_host_time`, `croft_host_thread`
 - `croft_msg_frame`, `croft_host_queue`, `croft_messaging`, `croft_fs`
 - `sapling_core`, `sapling_runner_core`, `sapling_runner_host`, `sapling_wasi_runtime`, `sapling_wasi_host`, `sapling`
-- `croft_wit_common_core`, `croft_wit_text_runtime`
+- `croft_wit_common_core`, `croft_wit_text_runtime`, `croft_wit_store_runtime`, `croft_wit_mailbox_runtime`
+- `croft_wit_host_fs`, `croft_wit_host_fs_runtime`
 - `croft_wasm_wasm3`
 - `croft_ui_glfw_opengl`, `croft_ui_glfw_metal` (macOS)
 - `croft_render_tgfx_opengl`, `croft_render_tgfx_metal` (macOS)
@@ -180,8 +181,11 @@ Representative examples include:
 - `example_foundation_threads`
 - `example_messaging_roundtrip`
 - `example_fs_inspect`
+- `example_wit_fs_read`
 - `example_sapling_text`
 - `example_wit_text_handles`
+- `example_wit_db_kv`
+- `example_wit_mailbox_ping`
 - `example_wasm_guest`
 - `example_ui_window_opengl`
 - `example_ui_window_metal`
@@ -209,7 +213,14 @@ records a direct-Metal sample that bypasses tgfx entirely.
 For common-core/WIT experiments, compare:
 
 - `example_sapling_text` as the direct common-side baseline
-- `example_wit_text_handles` as the first handle-oriented WIT/resource model
+- `example_wit_text_handles` as the text/resource handle baseline
+- `example_wit_db_kv` as the first `db`/`txn` handle-oriented datastore model
+- `example_wit_mailbox_ping` as the first common-side mailbox/message-passing model
+
+For the first host mix-in WIT experiment, compare:
+
+- `example_fs_inspect` as the direct host filesystem baseline
+- `example_wit_fs_read` as the first WIT/resource wrapper over native `host_fs`
 
 For editor-family experiments on macOS, Croft currently compares:
 

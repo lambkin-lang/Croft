@@ -1,0 +1,63 @@
+package lambkin:host-fs@0.1.0;
+
+interface types {
+  resource file;
+
+  enum fs-error {
+    invalid-handle,
+    not-found,
+    access,
+    io,
+    invalid,
+    too-large,
+    oom,
+    internal,
+  }
+
+  record fs-file-open {
+    path: list<u8>,
+    write: bool,
+    create: bool,
+    truncate: bool,
+    append: bool,
+  }
+
+  record fs-file-close {
+    file: file,
+  }
+
+  record fs-file-read-all {
+    file: file,
+  }
+
+  variant fs-file-op-result {
+    ok(file),
+    err(fs-error),
+  }
+
+  variant fs-status {
+    ok,
+    err(fs-error),
+  }
+
+  variant fs-file-read-result {
+    ok(list<u8>),
+    err(fs-error),
+  }
+
+  variant fs-command {
+    open(fs-file-open),
+    close(fs-file-close),
+    read-all(fs-file-read-all),
+  }
+
+  variant fs-reply {
+    file(fs-file-op-result),
+    status(fs-status),
+    read(fs-file-read-result),
+  }
+}
+
+world host-fs {
+  export types;
+}

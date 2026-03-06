@@ -179,10 +179,15 @@ Current status:
 - `croft_editor_document_core` now carries document state/history and
   `croft_editor_document_fs` now handles file-backed open/save.
 - The first common-side WIT package now exists in `schemas/wit/common-core.wit`
-  and is exercised by `example_wit_text_handles` through opaque resource
-  handles instead of raw `Text*`.
-- The remaining cleanup is to extend that WIT barrier beyond `text` and keep
-  pushing consumers onto the narrower targets.
+  and is now exercised by `example_wit_text_handles`,
+  `example_wit_db_kv`, and `example_wit_mailbox_ping` through opaque resource
+  handles instead of raw `Text*`, `DB*`, or `Txn*`.
+- The first host mix-in WIT package now exists in `schemas/wit/host-fs.wit`
+  and is exercised by `example_wit_fs_read` through opaque `file` resource
+  handles instead of the raw `uint64_t` host-fs handle representation.
+- The remaining cleanup is to move the same common-core logic across more than
+  one world shape and to start defining the first host mix-in WIT packages.
+  The next mix-in candidate is likely `clock`.
 
 ## World Plan
 
@@ -221,6 +226,8 @@ Current status:
 - `example_wit_text_handles` is the first handle-oriented WIT/resource version
   of that baseline and should be treated as the preferred shape for future
   model-program growth.
+- `example_wit_db_kv` now covers the transactional datastore slice.
+- `example_wit_mailbox_ping` now covers the no-shared-memory mailbox slice.
 
 ### Family B: Same Core Logic with CLI and Filesystem
 
@@ -282,9 +289,10 @@ These should remain clearly on the host side:
 
 The next concrete implementation work should happen in this order:
 
-1. Extend `common-core.wit` from `text` to `db`, `txn`, and `mailbox`.
-2. Create the first Wasm-aligned common-core sample programs that use those
-   generated interfaces in more than one world shape.
+1. Reuse the new common-core WIT handles across more than one world shape,
+   starting with CLI-style and host-Wasm-facing samples.
+2. Define the next host mix-in WIT packages, likely `clock` and then window or
+   GPU facets, without letting them bleed back into `common-core`.
 3. Read `docs/LAMBKIN_XPI_JOURNAL.md` before expanding host/editor surface area
    so the current join-point questions remain explicit.
 

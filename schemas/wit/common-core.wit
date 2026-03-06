@@ -1,6 +1,7 @@
 package lambkin:common-core@0.1.0;
 
 interface types {
+  type bytes = list<u8>;
   type utf8 = list<u8>;
   type offset = u32;
 
@@ -45,6 +46,9 @@ interface types {
     busy,
     platform,
     internal,
+    not-found,
+    readonly,
+    conflict,
   }
 
   variant text-op-result {
@@ -75,6 +79,112 @@ interface types {
     text(text-op-result),
     status(status),
     export(text-export-result),
+  }
+
+  record db-open {
+    page-size: u32,
+  }
+
+  record db-drop {
+    db: db,
+  }
+
+  record txn-begin {
+    db: db,
+    read-only: bool,
+  }
+
+  record txn-commit {
+    txn: txn,
+  }
+
+  record txn-abort {
+    txn: txn,
+  }
+
+  record kv-put {
+    txn: txn,
+    key: bytes,
+    value: bytes,
+  }
+
+  record kv-get {
+    txn: txn,
+    key: bytes,
+  }
+
+  variant db-op-result {
+    ok(db),
+    err(common-error),
+  }
+
+  variant txn-op-result {
+    ok(txn),
+    err(common-error),
+  }
+
+  variant kv-get-result {
+    ok(bytes),
+    not-found,
+    err(common-error),
+  }
+
+  variant store-command {
+    db-open(db-open),
+    db-drop(db-drop),
+    txn-begin(txn-begin),
+    txn-commit(txn-commit),
+    txn-abort(txn-abort),
+    kv-put(kv-put),
+    kv-get(kv-get),
+  }
+
+  variant store-reply {
+    db(db-op-result),
+    txn(txn-op-result),
+    status(status),
+    get(kv-get-result),
+  }
+
+  record mailbox-open {
+    max-messages: u32,
+  }
+
+  record mailbox-drop {
+    mailbox: mailbox,
+  }
+
+  record mailbox-send {
+    mailbox: mailbox,
+    payload: bytes,
+  }
+
+  record mailbox-recv {
+    mailbox: mailbox,
+  }
+
+  variant mailbox-op-result {
+    ok(mailbox),
+    err(common-error),
+  }
+
+  variant mailbox-recv-result {
+    ok(bytes),
+    empty,
+    err(common-error),
+  }
+
+  variant mailbox-command {
+    open(mailbox-open),
+    drop(mailbox-drop),
+    send(mailbox-send),
+    recv(mailbox-recv),
+  }
+
+  variant mailbox-reply {
+    mailbox(mailbox-op-result),
+    status(status),
+    recv(mailbox-recv-result),
   }
 }
 
