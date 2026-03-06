@@ -70,6 +70,47 @@ static croft_editor_word_class croft_editor_commands_classify_offset(const croft
     return croft_editor_commands_classify_codepoint(codepoint);
 }
 
+static int croft_editor_commands_is_ascii_lower(uint32_t codepoint) {
+    return codepoint >= 'a' && codepoint <= 'z';
+}
+
+static int croft_editor_commands_is_ascii_upper(uint32_t codepoint) {
+    return codepoint >= 'A' && codepoint <= 'Z';
+}
+
+static int croft_editor_commands_is_ascii_digit(uint32_t codepoint) {
+    return codepoint >= '0' && codepoint <= '9';
+}
+
+static int croft_editor_commands_is_word_part_hump_start(uint32_t left_codepoint,
+                                                         uint32_t right_codepoint) {
+    return (croft_editor_commands_is_ascii_lower(left_codepoint)
+            || croft_editor_commands_is_ascii_digit(left_codepoint))
+        && croft_editor_commands_is_ascii_upper(right_codepoint);
+}
+
+static int croft_editor_commands_boundary_codepoints(const croft_editor_text_model* model,
+                                                     uint32_t boundary,
+                                                     uint32_t* out_left_codepoint,
+                                                     uint32_t* out_right_codepoint) {
+    uint32_t max_offset = croft_editor_text_model_codepoint_length(model);
+
+    if (!out_left_codepoint || !out_right_codepoint || boundary == 0u || boundary >= max_offset) {
+        return 0;
+    }
+    if (croft_editor_text_model_codepoint_at_offset(model,
+                                                    boundary - 1u,
+                                                    out_left_codepoint) != CROFT_EDITOR_OK) {
+        return 0;
+    }
+    if (croft_editor_text_model_codepoint_at_offset(model,
+                                                    boundary,
+                                                    out_right_codepoint) != CROFT_EDITOR_OK) {
+        return 0;
+    }
+    return 1;
+}
+
 static int croft_editor_commands_find_previous_run(const croft_editor_text_model* model,
                                                    uint32_t position,
                                                    uint32_t* out_start,
@@ -160,6 +201,38 @@ static uint32_t croft_editor_commands_move_word_left_target(const croft_editor_t
     return run_start;
 }
 
+static uint32_t croft_editor_commands_move_word_left_end_target(const croft_editor_text_model* model,
+                                                                uint32_t position) {
+    uint32_t run_start = 0;
+    uint32_t run_end = 0;
+    croft_editor_word_class run_class = CROFT_EDITOR_WORD_CLASS_WHITESPACE;
+
+    if (!croft_editor_commands_find_previous_run(model, position, &run_start, &run_end, &run_class)) {
+        return 0u;
+    }
+
+    if (run_end == position
+            && !croft_editor_commands_find_previous_run(model,
+                                                        run_start,
+                                                        &run_start,
+                                                        &run_end,
+                                                        &run_class)) {
+        return 0u;
+    }
+
+    if (run_class == CROFT_EDITOR_WORD_CLASS_SEPARATOR
+            && croft_editor_commands_is_separator_bridge(model, run_start, run_end)
+            && croft_editor_commands_find_previous_run(model,
+                                                       run_start,
+                                                       &run_start,
+                                                       &run_end,
+                                                       &run_class)) {
+        return run_end;
+    }
+
+    return run_end;
+}
+
 static uint32_t croft_editor_commands_move_word_right_target(const croft_editor_text_model* model,
                                                              uint32_t position) {
     uint32_t run_start = 0;
@@ -181,6 +254,187 @@ static uint32_t croft_editor_commands_move_word_right_target(const croft_editor_
     }
 
     return run_end;
+}
+
+static uint32_t croft_editor_commands_move_word_right_start_target(const croft_editor_text_model* model,
+                                                                   uint32_t position) {
+    uint32_t run_start = 0;
+    uint32_t run_end = 0;
+    croft_editor_word_class run_class = CROFT_EDITOR_WORD_CLASS_WHITESPACE;
+    uint32_t next_start = 0;
+    uint32_t next_end = 0;
+    croft_editor_word_class next_class = CROFT_EDITOR_WORD_CLASS_WHITESPACE;
+    uint32_t max_offset = croft_editor_text_model_codepoint_length(model);
+
+    if (!croft_editor_commands_find_next_run(model, position, &run_start, &run_end, &run_class)) {
+        return max_offset;
+    }
+
+    if (run_start <= position
+            && position < run_end
+            && !croft_editor_commands_find_next_run(model,
+                                                    run_end,
+                                                    &run_start,
+                                                    &run_end,
+                                                    &run_class)) {
+        return max_offset;
+    }
+
+    if (run_class == CROFT_EDITOR_WORD_CLASS_SEPARATOR
+            && croft_editor_commands_is_separator_bridge(model, run_start, run_end)
+            && croft_editor_commands_find_next_run(model,
+                                                   run_end,
+                                                   &next_start,
+                                                   &next_end,
+                                                   &next_class)
+            && next_class == CROFT_EDITOR_WORD_CLASS_REGULAR) {
+        return next_start;
+    }
+
+    return run_start;
+}
+
+static uint32_t croft_editor_commands_move_word_part_left_segment_target(
+    const croft_editor_text_model* model,
+    uint32_t position) {
+    croft_editor_position current_position =
+        croft_editor_text_model_get_position_at(model, position);
+    uint32_t line_start =
+        croft_editor_text_model_line_start_offset(model, current_position.line_number);
+    uint32_t boundary;
+
+    if (position == line_start) {
+        if (current_position.line_number > 1u) {
+            return croft_editor_text_model_line_end_offset(model, current_position.line_number - 1u);
+        }
+        return 0u;
+    }
+
+    for (boundary = position - 1u; boundary > line_start; boundary--) {
+        uint32_t left_codepoint = 0;
+        uint32_t right_codepoint = 0;
+
+        if (!croft_editor_commands_boundary_codepoints(model,
+                                                       boundary,
+                                                       &left_codepoint,
+                                                       &right_codepoint)) {
+            continue;
+        }
+
+        if (left_codepoint == '_' && right_codepoint != '_') {
+            return boundary;
+        }
+        if (left_codepoint == '-' && right_codepoint != '-') {
+            return boundary;
+        }
+        if (croft_editor_commands_is_word_part_hump_start(left_codepoint, right_codepoint)) {
+            return boundary;
+        }
+        if (croft_editor_commands_is_ascii_upper(left_codepoint)
+                && croft_editor_commands_is_ascii_upper(right_codepoint)
+                && boundary + 1u < croft_editor_text_model_line_end_offset(model,
+                                                                            current_position.line_number)) {
+            uint32_t next_codepoint = 0;
+            if (croft_editor_text_model_codepoint_at_offset(model,
+                                                            boundary + 1u,
+                                                            &next_codepoint) == CROFT_EDITOR_OK
+                    && (croft_editor_commands_is_ascii_lower(next_codepoint)
+                        || croft_editor_commands_is_ascii_digit(next_codepoint))) {
+                return boundary;
+            }
+        }
+    }
+
+    return line_start;
+}
+
+static uint32_t croft_editor_commands_move_word_part_right_segment_target(
+    const croft_editor_text_model* model,
+    uint32_t position) {
+    croft_editor_position current_position =
+        croft_editor_text_model_get_position_at(model, position);
+    uint32_t line_end =
+        croft_editor_text_model_line_end_offset(model, current_position.line_number);
+    uint32_t line_count = croft_editor_text_model_line_count(model);
+    uint32_t boundary;
+
+    if (position == line_end) {
+        if (current_position.line_number < line_count) {
+            return croft_editor_text_model_line_start_offset(model, current_position.line_number + 1u);
+        }
+        return croft_editor_text_model_codepoint_length(model);
+    }
+
+    for (boundary = position + 1u; boundary < line_end; boundary++) {
+        uint32_t left_codepoint = 0;
+        uint32_t right_codepoint = 0;
+
+        if (!croft_editor_commands_boundary_codepoints(model,
+                                                       boundary,
+                                                       &left_codepoint,
+                                                       &right_codepoint)) {
+            continue;
+        }
+
+        if (left_codepoint != '_' && right_codepoint == '_') {
+            return boundary;
+        }
+        if (left_codepoint != '-' && right_codepoint == '-') {
+            return boundary;
+        }
+        if (croft_editor_commands_is_word_part_hump_start(left_codepoint, right_codepoint)) {
+            return boundary;
+        }
+        if (croft_editor_commands_is_ascii_upper(left_codepoint)
+                && croft_editor_commands_is_ascii_upper(right_codepoint)
+                && boundary + 1u < line_end) {
+            uint32_t next_codepoint = 0;
+            if (croft_editor_text_model_codepoint_at_offset(model,
+                                                            boundary + 1u,
+                                                            &next_codepoint) == CROFT_EDITOR_OK
+                    && (croft_editor_commands_is_ascii_lower(next_codepoint)
+                        || croft_editor_commands_is_ascii_digit(next_codepoint))) {
+                return boundary;
+            }
+        }
+    }
+
+    return line_end;
+}
+
+static uint32_t croft_editor_commands_move_word_part_left_target(const croft_editor_text_model* model,
+                                                                 uint32_t position) {
+    uint32_t word_start_target = croft_editor_commands_move_word_left_target(model, position);
+    uint32_t word_end_target = croft_editor_commands_move_word_left_end_target(model, position);
+    uint32_t segment_target =
+        croft_editor_commands_move_word_part_left_segment_target(model, position);
+    uint32_t target = word_start_target;
+
+    if (word_end_target > target) {
+        target = word_end_target;
+    }
+    if (segment_target > target) {
+        target = segment_target;
+    }
+    return target;
+}
+
+static uint32_t croft_editor_commands_move_word_part_right_target(const croft_editor_text_model* model,
+                                                                  uint32_t position) {
+    uint32_t word_start_target =
+        croft_editor_commands_move_word_right_start_target(model, position);
+    uint32_t word_end_target = croft_editor_commands_move_word_right_target(model, position);
+    uint32_t segment_target =
+        croft_editor_commands_move_word_part_right_segment_target(model, position);
+    uint32_t target = word_start_target;
+
+    if (word_end_target < target) {
+        target = word_end_target;
+    }
+    if (segment_target < target) {
+        target = segment_target;
+    }
+    return target;
 }
 
 static int croft_editor_commands_delete_selection_or_range(uint32_t anchor_offset,
@@ -398,6 +652,54 @@ void croft_editor_command_move_word_right(const croft_editor_text_model* model,
                                      0);
 }
 
+void croft_editor_command_move_word_part_left(const croft_editor_text_model* model,
+                                              uint32_t* anchor_offset,
+                                              uint32_t* active_offset,
+                                              uint32_t* preferred_column,
+                                              int selecting) {
+    uint32_t start = 0;
+    uint32_t end = 0;
+    uint32_t target_offset;
+
+    croft_editor_commands_normalize(*anchor_offset, *active_offset, &start, &end);
+    if (!selecting && start != end) {
+        croft_editor_commands_apply_move(anchor_offset, active_offset, start, preferred_column, 0, 0);
+        return;
+    }
+
+    target_offset = croft_editor_commands_move_word_part_left_target(model, *active_offset);
+    croft_editor_commands_apply_move(anchor_offset,
+                                     active_offset,
+                                     target_offset,
+                                     preferred_column,
+                                     selecting,
+                                     0);
+}
+
+void croft_editor_command_move_word_part_right(const croft_editor_text_model* model,
+                                               uint32_t* anchor_offset,
+                                               uint32_t* active_offset,
+                                               uint32_t* preferred_column,
+                                               int selecting) {
+    uint32_t start = 0;
+    uint32_t end = 0;
+    uint32_t target_offset;
+
+    croft_editor_commands_normalize(*anchor_offset, *active_offset, &start, &end);
+    if (!selecting && start != end) {
+        croft_editor_commands_apply_move(anchor_offset, active_offset, end, preferred_column, 0, 0);
+        return;
+    }
+
+    target_offset = croft_editor_commands_move_word_part_right_target(model, *active_offset);
+    croft_editor_commands_apply_move(anchor_offset,
+                                     active_offset,
+                                     target_offset,
+                                     preferred_column,
+                                     selecting,
+                                     0);
+}
+
 int croft_editor_command_delete_left_range(const croft_editor_text_model* model,
                                            uint32_t anchor_offset,
                                            uint32_t active_offset,
@@ -448,6 +750,34 @@ int croft_editor_command_delete_word_right_range(const croft_editor_text_model* 
                                                  uint32_t* out_start_offset,
                                                  uint32_t* out_end_offset) {
     uint32_t move_target = croft_editor_commands_move_word_right_target(model, active_offset);
+    return croft_editor_commands_delete_selection_or_range(anchor_offset,
+                                                           active_offset,
+                                                           move_target,
+                                                           0,
+                                                           out_start_offset,
+                                                           out_end_offset);
+}
+
+int croft_editor_command_delete_word_part_left_range(const croft_editor_text_model* model,
+                                                     uint32_t anchor_offset,
+                                                     uint32_t active_offset,
+                                                     uint32_t* out_start_offset,
+                                                     uint32_t* out_end_offset) {
+    uint32_t move_target = croft_editor_commands_move_word_part_left_target(model, active_offset);
+    return croft_editor_commands_delete_selection_or_range(anchor_offset,
+                                                           active_offset,
+                                                           move_target,
+                                                           1,
+                                                           out_start_offset,
+                                                           out_end_offset);
+}
+
+int croft_editor_command_delete_word_part_right_range(const croft_editor_text_model* model,
+                                                      uint32_t anchor_offset,
+                                                      uint32_t active_offset,
+                                                      uint32_t* out_start_offset,
+                                                      uint32_t* out_end_offset) {
+    uint32_t move_target = croft_editor_commands_move_word_part_right_target(model, active_offset);
     return croft_editor_commands_delete_selection_or_range(anchor_offset,
                                                            active_offset,
                                                            move_target,

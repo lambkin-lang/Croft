@@ -220,6 +220,9 @@ extern int test_editor_commands_word_moves(void);
 extern int test_editor_commands_word_deletes(void);
 extern int test_editor_commands_vertical_column_memory(void);
 extern int test_editor_commands_shift_word_selection(void);
+extern int test_editor_commands_word_part_moves(void);
+extern int test_editor_commands_word_part_deletes(void);
+extern int test_editor_commands_shift_word_part_selection(void);
 
 extern void run_test_fs(int argc, char **argv);
 
@@ -280,6 +283,9 @@ int main(void)
     RUN_TEST(test_editor_commands_word_deletes);
     RUN_TEST(test_editor_commands_vertical_column_memory);
     RUN_TEST(test_editor_commands_shift_word_selection);
+    RUN_TEST(test_editor_commands_word_part_moves);
+    RUN_TEST(test_editor_commands_word_part_deletes);
+    RUN_TEST(test_editor_commands_shift_word_part_selection);
 
     printf("\n[host_fs]\n");
     RUN_TEST(run_tier2_fs_tests);

@@ -57,6 +57,18 @@ void croft_editor_command_move_word_right(const croft_editor_text_model* model,
                                           uint32_t* preferred_column,
                                           int selecting);
 
+void croft_editor_command_move_word_part_left(const croft_editor_text_model* model,
+                                              uint32_t* anchor_offset,
+                                              uint32_t* active_offset,
+                                              uint32_t* preferred_column,
+                                              int selecting);
+
+void croft_editor_command_move_word_part_right(const croft_editor_text_model* model,
+                                               uint32_t* anchor_offset,
+                                               uint32_t* active_offset,
+                                               uint32_t* preferred_column,
+                                               int selecting);
+
 int croft_editor_command_delete_left_range(const croft_editor_text_model* model,
                                            uint32_t anchor_offset,
                                            uint32_t active_offset,
@@ -80,6 +92,18 @@ int croft_editor_command_delete_word_right_range(const croft_editor_text_model* 
                                                  uint32_t active_offset,
                                                  uint32_t* out_start_offset,
                                                  uint32_t* out_end_offset);
+
+int croft_editor_command_delete_word_part_left_range(const croft_editor_text_model* model,
+                                                     uint32_t anchor_offset,
+                                                     uint32_t active_offset,
+                                                     uint32_t* out_start_offset,
+                                                     uint32_t* out_end_offset);
+
+int croft_editor_command_delete_word_part_right_range(const croft_editor_text_model* model,
+                                                      uint32_t anchor_offset,
+                                                      uint32_t active_offset,
+                                                      uint32_t* out_start_offset,
+                                                      uint32_t* out_end_offset);
 
 #ifdef __cplusplus
 }

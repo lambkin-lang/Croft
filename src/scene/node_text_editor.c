@@ -314,6 +314,7 @@ static void text_editor_key_event(scene_node *n, int key, int action) {
     text_editor_node *te = (text_editor_node *)n;
     uint32_t modifiers;
     int selecting;
+    int word_part_mode;
     int word_mode;
 
     if (action == CROFT_KEY_RELEASE) {
@@ -322,7 +323,10 @@ static void text_editor_key_event(scene_node *n, int key, int action) {
 
     modifiers = host_ui_get_modifiers();
     selecting = (modifiers & CROFT_UI_MOD_SHIFT) != 0u;
-    word_mode = (modifiers & (CROFT_UI_MOD_ALT | CROFT_UI_MOD_CONTROL)) != 0u;
+    word_part_mode = (modifiers & CROFT_UI_MOD_ALT) != 0u
+        && (modifiers & CROFT_UI_MOD_CONTROL) != 0u;
+    word_mode = !word_part_mode
+        && (modifiers & (CROFT_UI_MOD_ALT | CROFT_UI_MOD_CONTROL)) != 0u;
 
     if (key == CROFT_KEY_BACKSPACE || key == CROFT_KEY_DELETE) {
         SapTxnCtx *txn = sap_txn_begin(te->env, NULL, 0);
@@ -334,7 +338,19 @@ static void text_editor_key_event(scene_node *n, int key, int action) {
             return;
         }
 
-        if (word_mode) {
+        if (word_part_mode) {
+            has_delete = (key == CROFT_KEY_BACKSPACE)
+                ? croft_editor_command_delete_word_part_left_range(&te->text_model,
+                                                                   te->sel_start,
+                                                                   te->sel_end,
+                                                                   &delete_start,
+                                                                   &delete_end)
+                : croft_editor_command_delete_word_part_right_range(&te->text_model,
+                                                                    te->sel_start,
+                                                                    te->sel_end,
+                                                                    &delete_start,
+                                                                    &delete_end);
+        } else if (word_mode) {
             has_delete = (key == CROFT_KEY_BACKSPACE)
                 ? croft_editor_command_delete_word_left_range(&te->text_model,
                                                               te->sel_start,
@@ -367,7 +383,13 @@ static void text_editor_key_event(scene_node *n, int key, int action) {
         sap_txn_commit(txn);
         text_editor_sync_cache(te);
     } else if (key == CROFT_KEY_LEFT) {
-        if (word_mode) {
+        if (word_part_mode) {
+            croft_editor_command_move_word_part_left(&te->text_model,
+                                                     &te->sel_start,
+                                                     &te->sel_end,
+                                                     &te->preferred_column,
+                                                     selecting);
+        } else if (word_mode) {
             croft_editor_command_move_word_left(&te->text_model,
                                                 &te->sel_start,
                                                 &te->sel_end,
@@ -382,7 +404,13 @@ static void text_editor_key_event(scene_node *n, int key, int action) {
         }
         text_editor_sync_selection(te);
     } else if (key == CROFT_KEY_RIGHT) {
-        if (word_mode) {
+        if (word_part_mode) {
+            croft_editor_command_move_word_part_right(&te->text_model,
+                                                      &te->sel_start,
+                                                      &te->sel_end,
+                                                      &te->preferred_column,
+                                                      selecting);
+        } else if (word_mode) {
             croft_editor_command_move_word_right(&te->text_model,
                                                  &te->sel_start,
                                                  &te->sel_end,
