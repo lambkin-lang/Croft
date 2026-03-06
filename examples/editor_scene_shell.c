@@ -149,6 +149,7 @@ int main(int argc, char** argv) {
                               (float)fw - 100.0f,
                               (float)fh - 100.0f,
                               croft_editor_document_text(g_document));
+        text_editor_node_bind_document(&g_editor, g_document);
         scene_node_add_child(&g_root_vp.base, &g_editor.base);
     }
 

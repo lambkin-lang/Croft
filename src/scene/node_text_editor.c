@@ -1,5 +1,6 @@
 #include "croft/scene.h"
 #include "croft/editor_commands.h"
+#include "croft/editor_document.h"
 #include "croft/host_ui.h"
 #include "croft/host_render.h"
 #include "croft/host_a11y.h"
@@ -20,6 +21,8 @@ enum {
     CROFT_KEY_HOME = 268,
     CROFT_KEY_END = 269,
     CROFT_KEY_ENTER = 257,
+    CROFT_KEY_Y = 89,
+    CROFT_KEY_Z = 90,
     CROFT_KEY_KP_ENTER_OLD = 284,
     CROFT_KEY_KP_ENTER = 335
 };
@@ -47,6 +50,19 @@ static void text_editor_sync_selection(text_editor_node *te) {
     te->selection = croft_editor_selection_from_offsets(&te->text_model, te->sel_start, te->sel_end);
 }
 
+static Text* text_editor_live_text(text_editor_node* te) {
+    if (!te) {
+        return NULL;
+    }
+
+    if (te->document) {
+        te->env = croft_editor_document_env(te->document);
+        te->text_tree = croft_editor_document_text(te->document);
+    }
+
+    return te->text_tree;
+}
+
 static void text_editor_refresh_cache(text_editor_node *te) {
     te->utf8_cache = te->text_model.utf8;
     te->utf8_len = croft_editor_text_model_length(&te->text_model);
@@ -54,6 +70,8 @@ static void text_editor_refresh_cache(text_editor_node *te) {
 }
 
 static void text_editor_sync_cache(text_editor_node *te) {
+    te->text_tree = text_editor_live_text(te);
+
     if (!te->text_tree) {
         croft_editor_text_model_dispose(&te->text_model);
         te->utf8_cache = NULL;
@@ -141,6 +159,12 @@ static void text_editor_delete_range(SapTxnCtx* txn,
 
     for (i = 0; i < count; i++) {
         text_delete(txn, te->text_tree, start_offset, NULL);
+    }
+}
+
+static void text_editor_break_coalescing(text_editor_node* te) {
+    if (te && te->document) {
+        croft_editor_document_break_coalescing(te->document);
     }
 }
 
@@ -267,9 +291,11 @@ static void text_editor_mouse_event(scene_node *n, int action, float local_x, fl
     text_editor_node *te = (text_editor_node *)n;
     if (action == 1) { // Down
         uint32_t hit_index = text_editor_hit_index(te, local_x, local_y);
+        text_editor_break_coalescing(te);
         te->is_selecting = 1;
         text_editor_set_selection(te, hit_index, hit_index, 1);
     } else if (action == 3 && te->is_selecting) { // Drag
+        text_editor_break_coalescing(te);
         text_editor_set_selection(te, te->sel_start, text_editor_hit_index(te, local_x, local_y), 1);
     } else if (action == 0 || action == 2) { // Up
         te->is_selecting = 0;
@@ -278,11 +304,27 @@ static void text_editor_mouse_event(scene_node *n, int action, float local_x, fl
 
 static void text_editor_char_event(scene_node *n, uint32_t codepoint) {
     text_editor_node *te = (text_editor_node *)n;
+    Text* text_tree = text_editor_live_text(te);
     SapTxnCtx *txn;
     uint32_t selection_min = 0;
     uint32_t selection_max = 0;
 
-    if (!te->text_tree || !te->env) {
+    if (!text_tree || !te->env) {
+        return;
+    }
+
+    text_editor_selection_bounds(te, &selection_min, &selection_max);
+    if (te->document) {
+        if (croft_editor_document_replace_range_with_codepoint(te->document,
+                                                               selection_min,
+                                                               selection_max,
+                                                               codepoint,
+                                                               CROFT_EDITOR_EDIT_INSERT) != 0) {
+            return;
+        }
+
+        text_editor_collapse_selection(te, selection_min + 1u, 0);
+        text_editor_sync_cache(te);
         return;
     }
 
@@ -291,14 +333,13 @@ static void text_editor_char_event(scene_node *n, uint32_t codepoint) {
         return;
     }
 
-    text_editor_selection_bounds(te, &selection_min, &selection_max);
     if (selection_min != selection_max) {
         text_editor_delete_range(txn, te, selection_min, selection_max);
         te->sel_start = selection_min;
         te->sel_end = selection_min;
     }
 
-    if (text_insert(txn, te->text_tree, te->sel_end, codepoint) != 0) {
+    if (text_insert(txn, text_tree, te->sel_end, codepoint) != 0) {
         sap_txn_abort(txn);
         return;
     }
@@ -313,6 +354,7 @@ static void text_editor_char_event(scene_node *n, uint32_t codepoint) {
 static void text_editor_key_event(scene_node *n, int key, int action) {
     text_editor_node *te = (text_editor_node *)n;
     uint32_t modifiers;
+    int command_mode;
     int selecting;
     int word_part_mode;
     int word_mode;
@@ -322,21 +364,35 @@ static void text_editor_key_event(scene_node *n, int key, int action) {
     }
 
     modifiers = host_ui_get_modifiers();
+    command_mode = (modifiers & (CROFT_UI_MOD_SUPER | CROFT_UI_MOD_CONTROL)) != 0u;
     selecting = (modifiers & CROFT_UI_MOD_SHIFT) != 0u;
     word_part_mode = (modifiers & CROFT_UI_MOD_ALT) != 0u
         && (modifiers & CROFT_UI_MOD_CONTROL) != 0u;
     word_mode = !word_part_mode
         && (modifiers & (CROFT_UI_MOD_ALT | CROFT_UI_MOD_CONTROL)) != 0u;
 
+    if (te->document && command_mode) {
+        if (key == CROFT_KEY_Z) {
+            int32_t rc = selecting
+                ? croft_editor_document_redo(te->document)
+                : croft_editor_document_undo(te->document);
+            if (rc == 0) {
+                text_editor_sync_cache(te);
+            }
+            return;
+        }
+        if (key == CROFT_KEY_Y) {
+            if (croft_editor_document_redo(te->document) == 0) {
+                text_editor_sync_cache(te);
+            }
+            return;
+        }
+    }
+
     if (key == CROFT_KEY_BACKSPACE || key == CROFT_KEY_DELETE) {
-        SapTxnCtx *txn = sap_txn_begin(te->env, NULL, 0);
         uint32_t delete_start = 0;
         uint32_t delete_end = 0;
         int has_delete = 0;
-
-        if (!txn) {
-            return;
-        }
 
         if (word_part_mode) {
             has_delete = (key == CROFT_KEY_BACKSPACE)
@@ -377,12 +433,28 @@ static void text_editor_key_event(scene_node *n, int key, int action) {
         }
 
         if (has_delete) {
-            text_editor_delete_range(txn, te, delete_start, delete_end);
-            text_editor_collapse_selection(te, delete_start, 0);
+            if (te->document) {
+                if (croft_editor_document_delete_range(te->document,
+                                                       delete_start,
+                                                       delete_end,
+                                                       key == CROFT_KEY_BACKSPACE
+                                                           ? CROFT_EDITOR_EDIT_DELETE_BACKWARD
+                                                           : CROFT_EDITOR_EDIT_DELETE_FORWARD) == 0) {
+                    text_editor_collapse_selection(te, delete_start, 0);
+                }
+            } else {
+                SapTxnCtx *txn = sap_txn_begin(te->env, NULL, 0);
+                if (!txn) {
+                    return;
+                }
+                text_editor_delete_range(txn, te, delete_start, delete_end);
+                text_editor_collapse_selection(te, delete_start, 0);
+                sap_txn_commit(txn);
+            }
         }
-        sap_txn_commit(txn);
         text_editor_sync_cache(te);
     } else if (key == CROFT_KEY_LEFT) {
+        text_editor_break_coalescing(te);
         if (word_part_mode) {
             croft_editor_command_move_word_part_left(&te->text_model,
                                                      &te->sel_start,
@@ -404,6 +476,7 @@ static void text_editor_key_event(scene_node *n, int key, int action) {
         }
         text_editor_sync_selection(te);
     } else if (key == CROFT_KEY_RIGHT) {
+        text_editor_break_coalescing(te);
         if (word_part_mode) {
             croft_editor_command_move_word_part_right(&te->text_model,
                                                       &te->sel_start,
@@ -425,6 +498,7 @@ static void text_editor_key_event(scene_node *n, int key, int action) {
         }
         text_editor_sync_selection(te);
     } else if (key == CROFT_KEY_UP || key == CROFT_KEY_DOWN) {
+        text_editor_break_coalescing(te);
         if (key == CROFT_KEY_UP) {
             croft_editor_command_move_up(&te->text_model,
                                          &te->sel_start,
@@ -440,6 +514,7 @@ static void text_editor_key_event(scene_node *n, int key, int action) {
         }
         text_editor_sync_selection(te);
     } else if (key == CROFT_KEY_HOME) {
+        text_editor_break_coalescing(te);
         croft_editor_command_move_home(&te->text_model,
                                        &te->sel_start,
                                        &te->sel_end,
@@ -447,6 +522,7 @@ static void text_editor_key_event(scene_node *n, int key, int action) {
                                        selecting);
         text_editor_sync_selection(te);
     } else if (key == CROFT_KEY_END) {
+        text_editor_break_coalescing(te);
         croft_editor_command_move_end(&te->text_model,
                                       &te->sel_start,
                                       &te->sel_end,
@@ -475,6 +551,7 @@ void text_editor_node_init(text_editor_node *n, struct SapEnv *env, float x, flo
     n->base.flags |= 1; // Mark as focusable/container
     n->env = env;
     n->text_tree = text_tree;
+    n->document = NULL;
     n->scroll_x = 0;
     n->scroll_y = 0;
     n->utf8_cache = NULL;
@@ -499,6 +576,17 @@ void text_editor_node_init(text_editor_node *n, struct SapEnv *env, float x, flo
         .os_specific_mixin = NULL
     };
     n->base.a11y_handle = host_a11y_create_node(ROLE_TEXT, &cfg); // Standard text for now until ROLE_TEXT_AREA map
+}
+
+void text_editor_node_bind_document(text_editor_node *n, struct croft_editor_document *document) {
+    if (!n) {
+        return;
+    }
+
+    n->document = document;
+    n->env = document ? croft_editor_document_env(document) : n->env;
+    n->text_tree = document ? croft_editor_document_text(document) : n->text_tree;
+    text_editor_sync_cache(n);
 }
 
 void text_editor_node_set_text(text_editor_node *n, struct Text *text_tree) {

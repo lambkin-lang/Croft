@@ -586,7 +586,7 @@ if(CROFT_GLFW_TARGET AND CROFT_TGFX_TARGET AND CROFT_TGFX_REQUEST_OPENGL)
     target_link_libraries(croft_scene_text_editor_tgfx_opengl
         PUBLIC
             croft_scene_core_tgfx_opengl
-            croft_editor_core
+            croft_editor_document
             croft_editor_commands
             sapling
     )
@@ -631,7 +631,7 @@ if(APPLE AND CROFT_GLFW_TARGET AND CROFT_TGFX_TARGET AND CROFT_TGFX_REQUEST_META
     target_link_libraries(croft_scene_text_editor_tgfx_metal
         PUBLIC
             croft_scene_core_tgfx_metal
-            croft_editor_core
+            croft_editor_document
             croft_editor_commands
             sapling
     )
@@ -674,7 +674,7 @@ if(APPLE AND TARGET croft_ui_glfw_metal)
     target_link_libraries(croft_scene_text_editor_metal_native
         PUBLIC
             croft_scene_core_metal_native
-            croft_editor_core
+            croft_editor_document
             croft_editor_commands
             sapling
     )
@@ -1021,9 +1021,9 @@ endif()
 if(CROFT_BUILD_TESTS)
     enable_testing()
 
-    add_executable(test_croft tests/test_main.c tests/test_queue.c tests/host_tests/test_fs.c tests/test_editor_text_model.c tests/test_editor_commands.c)
+    add_executable(test_croft tests/test_main.c tests/test_queue.c tests/host_tests/test_fs.c tests/test_editor_text_model.c tests/test_editor_document.c tests/test_editor_commands.c)
     target_include_directories(test_croft PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
-    target_link_libraries(test_croft PRIVATE croft croft_editor_commands)
+    target_link_libraries(test_croft PRIVATE croft croft_editor_document croft_editor_commands)
     add_test(NAME croft_tests COMMAND test_croft)
 
     if(TARGET croft_wasm_wasm3 AND TARGET wasm_guest_gen)

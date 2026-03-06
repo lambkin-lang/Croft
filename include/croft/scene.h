@@ -92,11 +92,13 @@ void code_block_node_init(code_block_node *n, float x, float y, float sx, float 
 // Text Editor Node (Draws text from a persistent Sapling Text engine)
 struct Text;
 struct SapEnv;
+struct croft_editor_document;
 
 typedef struct text_editor_node {
     scene_node base;
     struct SapEnv *env;
     struct Text *text_tree;
+    struct croft_editor_document *document;
     float scroll_x;
     float scroll_y;
     // Cache for naive line rendering MVP
@@ -113,6 +115,7 @@ typedef struct text_editor_node {
 } text_editor_node;
 
 void text_editor_node_init(text_editor_node *n, struct SapEnv *env, float x, float y, float sx, float sy, struct Text *text_tree);
+void text_editor_node_bind_document(text_editor_node *n, struct croft_editor_document *document);
 void text_editor_node_set_text(text_editor_node *n, struct Text *text_tree);
 void text_editor_node_dispose(text_editor_node *n);
 
