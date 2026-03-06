@@ -34,6 +34,11 @@ Options:
 Environment overrides:
   CROFT_SIZE_BENCH_KEEP
   CROFT_SIZE_BENCH_OPT_LEVEL
+  CROFT_GLFW_SOURCE_DIR
+  CROFT_TGFX_SOURCE_DIR
+  CROFT_WASM3_SOURCE_DIR
+  CROFT_WABT_SOURCE_DIR
+  CROFT_MINIAUDIO_SOURCE_DIR
 USAGE
 }
 
@@ -155,12 +160,23 @@ build_and_measure() {
     local cmake_config_cmd=(
         cmake -S "$ROOT_DIR" -B "$abs_build_dir"
         -DCROFT_BUILD_TESTS=ON
-        -DCROFT_ENABLE_UI=ON
-        -DCROFT_ENABLE_WASM=OFF
-        -DCROFT_ENABLE_AUDIO=OFF
-        -DCROFT_ENABLE_ACCESSIBILITY=ON
         -DCMAKE_BUILD_TYPE="$build_type"
     )
+    if [[ -n "${CROFT_GLFW_SOURCE_DIR:-}" ]]; then
+        cmake_config_cmd+=("-DCROFT_GLFW_SOURCE_DIR=${CROFT_GLFW_SOURCE_DIR}")
+    fi
+    if [[ -n "${CROFT_TGFX_SOURCE_DIR:-}" ]]; then
+        cmake_config_cmd+=("-DCROFT_TGFX_SOURCE_DIR=${CROFT_TGFX_SOURCE_DIR}")
+    fi
+    if [[ -n "${CROFT_WASM3_SOURCE_DIR:-}" ]]; then
+        cmake_config_cmd+=("-DCROFT_WASM3_SOURCE_DIR=${CROFT_WASM3_SOURCE_DIR}")
+    fi
+    if [[ -n "${CROFT_WABT_SOURCE_DIR:-}" ]]; then
+        cmake_config_cmd+=("-DCROFT_WABT_SOURCE_DIR=${CROFT_WABT_SOURCE_DIR}")
+    fi
+    if [[ -n "${CROFT_MINIAUDIO_SOURCE_DIR:-}" ]]; then
+        cmake_config_cmd+=("-DCROFT_MINIAUDIO_SOURCE_DIR=${CROFT_MINIAUDIO_SOURCE_DIR}")
+    fi
     if (( ${#extra_cmake_args[@]} > 0 )); then
         cmake_config_cmd+=("${extra_cmake_args[@]}")
     fi

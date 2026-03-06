@@ -17,10 +17,11 @@ testable, and useful layer that later tiers build on.
    `host_queue`, `text_buffer`, …). A native program can create as many
    or as few of these as it needs.
 
-3. **Compile‑time feature selection.**
-   CMake options (`CROFT_ENABLE_UI`, `CROFT_ENABLE_WASM`, …) gate each
-   tier so that a backend‑only program links only tiers 0–3 and ships a
-   tiny binary. The full host enables everything.
+3. **Artifact selection, not feature gates.**
+   Croft emits modular libraries for each subsystem and supported
+   implementation variant. Lambkin decides which artifacts to link based
+   on program references and constraint solving. Croft's job is to build
+   the available pieces, not to decide the final product composition.
 
 4. **Each tier is independently testable.**
    A new contributor can clone the repo, build just tier 0, and run its
@@ -31,19 +32,21 @@ testable, and useful layer that later tiers build on.
 ## Tier Map
 
 ```
-Tier  Name              Depends on   CMake guard
-────  ────              ──────────   ───────────
- 0    Foundation         —            (always)
- 1    Messaging          0            (always)
- 2    Filesystem         0            (always)
- 3    Text Buffer        0            (always)
- 4    Wasm Embedding     0–3          CROFT_ENABLE_WASM
- 5    Windowing / Input  0            CROFT_ENABLE_UI
- 6    Rendering          0, 5         CROFT_ENABLE_UI
- 7    Scene Graph        0, 5, 6      CROFT_ENABLE_UI
- 8    Audio              0            CROFT_ENABLE_AUDIO
- 9    Accessibility      0, 7         CROFT_ENABLE_ACCESSIBILITY
- 10   Hardening          all          —
+Tier  Name              Depends on   Representative artifacts
+────  ────              ──────────   ────────────────────────
+ 0    Foundation         —            croft_foundation
+ 1    Messaging          0            croft_wire_runtime + croft_messaging
+ 2    Filesystem         0            croft_fs
+ 3    Text Buffer        0            sapling
+ 4    Wasm Embedding     0–2          croft_wasm_wasm3
+ 5    Windowing / Input  0            croft_ui_glfw_opengl
+ 6    Rendering          0, 5         croft_render_tgfx_opengl
+ 7    Scene Graph        0, 5, 6      croft_scene_core_tgfx_opengl
+ 7    Text Editor Node   3, 6, 7      croft_scene_text_editor_tgfx_opengl
+ 8    Audio              0            croft_audio_miniaudio
+ 9    Accessibility      7            croft_a11y_stub / croft_a11y_macos
+ 9    Menu / Gestures    5            croft_menu_macos / croft_gesture_macos
+ 10   Hardening          all          manifests, tests, packaging
 ```
 
 ### What you get at each milestone
@@ -208,24 +211,31 @@ the UI tiers are still in progress.
 
 ---
 
-## Build Configurations
+## Build Outputs
 
 ```cmake
-# Backend‑only (threads + filesystem + text)
-cmake -DCROFT_ENABLE_UI=OFF -DCROFT_ENABLE_WASM=OFF \
-      -DCROFT_ENABLE_AUDIO=OFF -DCROFT_ENABLE_ACCESSIBILITY=OFF ..
-
-# Backend + Wasm (headless Wasm services)
-cmake -DCROFT_ENABLE_WASM=ON -DCROFT_ENABLE_UI=OFF ..
-
-# Full host
-cmake -DCROFT_ENABLE_UI=ON -DCROFT_ENABLE_WASM=ON \
-      -DCROFT_ENABLE_AUDIO=ON -DCROFT_ENABLE_ACCESSIBILITY=ON ..
+# Build every Croft artifact whose dependencies are present.
+cmake -B build \
+      -DCROFT_GLFW_SOURCE_DIR=/path/to/glfw \
+      -DCROFT_TGFX_SOURCE_DIR=/path/to/tgfx \
+      -DCROFT_WASM3_SOURCE_DIR=/path/to/wasm3 \
+      -DCROFT_WABT_SOURCE_DIR=/path/to/wabt \
+      -DCROFT_MINIAUDIO_SOURCE_DIR=/path/to/miniaudio
 ```
 
-Each configuration produces a single static library (`libcroft.a` /
-`croft.lib`) containing only the compiled tiers, plus any example
-binaries selected.
+The resulting build records the available artifact set in
+`build/croft-artifacts.json`. Lambkin can then select a minimal link set
+such as:
+
+- `croft_foundation + croft_fs`
+- `croft_foundation + croft_wire_runtime + croft_messaging`
+- `croft_foundation + croft_fs + sapling`
+- `croft_ui_glfw_opengl + croft_render_tgfx_opengl + croft_scene_core_tgfx_opengl`
+- `croft_scene_text_editor_tgfx_opengl + sapling + croft_a11y_stub`
+
+This keeps Croft modular while preserving the "big analysis, small
+binaries" goal: Croft builds the solution space, Lambkin chooses the
+smallest correct binary.
 
 ---
 
@@ -237,5 +247,5 @@ This PR provides Tier 0 — the foundation — as working code:
 - `include/croft/host_log.h` + `src/host/host_log.c` — logging
 - `include/croft/host_time.h` + `src/host/host_time.c` — monotonic time
 - `include/croft/host_thread.h` + `src/host/host_thread.c` — thread primitives
-- `CMakeLists.txt` — build system with feature flags for future tiers
+- `CMakeLists.txt` — modular artifact graph plus build manifest generation
 - `tests/` — test suite for every Tier 0 component

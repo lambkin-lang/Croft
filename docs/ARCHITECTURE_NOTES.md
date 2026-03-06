@@ -61,6 +61,12 @@ However, Croft and Lambkin are fundamentally designed around **Open Implementati
 
 This dual nature ensures the environment can scale from analyzing massive cloud backend codebases down to deploying tightly packed, deterministic logic to microcontrollers, relying heavily on the customizable data representations of Sapling and Lambkin.
 
+In build-system terms, this means Croft should not hide product-family
+choices behind coarse `ENABLE_*` switches. Croft should emit modular
+artifacts and supported implementation variants, while Lambkin performs
+the higher-level selection work. The working motto is: **big analysis,
+small binaries**.
+
 ---
 
 ## Makepad Architectural Synergy

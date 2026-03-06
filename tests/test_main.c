@@ -227,7 +227,7 @@ static int run_tier2_fs_tests(void) {
 extern void run_test_wasm_guest(int argc, char **argv);
 
 static int run_tier4_wasm_tests(void) {
-#ifdef CROFT_ENABLE_WASM
+#ifdef CROFT_TEST_HAS_WASM
     run_test_wasm_guest(0, NULL);
 #endif
     return 0;
@@ -264,7 +264,7 @@ int main(void)
     printf("\n[host_fs]\n");
     RUN_TEST(run_tier2_fs_tests);
 
-#ifdef CROFT_ENABLE_WASM
+#ifdef CROFT_TEST_HAS_WASM
     printf("\n[host_wasm]\n");
     RUN_TEST(run_tier4_wasm_tests);
 #endif
