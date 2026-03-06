@@ -9,6 +9,45 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+function(croft_append_unique_flag var_name flag)
+    set(current_value "${${var_name}}")
+    string(FIND " ${current_value} " " ${flag} " already_present)
+    if(already_present EQUAL -1)
+        if(current_value STREQUAL "")
+            set(${var_name} "${flag}" PARENT_SCOPE)
+        else()
+            set(${var_name} "${current_value} ${flag}" PARENT_SCOPE)
+        endif()
+    else()
+        set(${var_name} "${current_value}" PARENT_SCOPE)
+    endif()
+endfunction()
+
+foreach(lang C CXX OBJC OBJCXX)
+    foreach(cfg RELEASE MINSIZEREL)
+        croft_append_unique_flag(CMAKE_${lang}_FLAGS_${cfg} "-g0")
+        croft_append_unique_flag(CMAKE_${lang}_FLAGS_${cfg} "-ffunction-sections")
+        croft_append_unique_flag(CMAKE_${lang}_FLAGS_${cfg} "-fdata-sections")
+    endforeach()
+endforeach()
+
+foreach(link_var
+        CMAKE_EXE_LINKER_FLAGS_RELEASE
+        CMAKE_EXE_LINKER_FLAGS_MINSIZEREL
+        CMAKE_SHARED_LINKER_FLAGS_RELEASE
+        CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL
+        CMAKE_MODULE_LINKER_FLAGS_RELEASE
+        CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL)
+    croft_append_unique_flag(${link_var} "-Wl,-dead_strip")
+    croft_append_unique_flag(${link_var} "-Wl,-x")
+    if(APPLE)
+        croft_append_unique_flag(${link_var} "-Wl,-dead_strip_dylibs")
+    endif()
+endforeach()
+
+set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
+set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_MINSIZEREL ON)
+
 option(CROFT_BUILD_TESTS "Build the test suite" ON)
 option(CROFT_FAIL_ON_MISSING_OPTIONAL_DEPS
        "Treat unresolved optional subsystem dependencies as configure errors" OFF)
@@ -211,6 +250,37 @@ if(NOT CROFT_GLFW_TARGET)
 endif()
 
 set(CROFT_TGFX_TARGET "")
+set(CROFT_TGFX_REQUEST_OPENGL OFF)
+set(CROFT_TGFX_REQUEST_METAL OFF)
+
+if(DEFINED TGFX_USE_METAL)
+    if(TGFX_USE_METAL)
+        set(CROFT_TGFX_REQUEST_METAL ON)
+    endif()
+elseif(APPLE)
+    set(CROFT_TGFX_REQUEST_METAL ON)
+endif()
+
+if(DEFINED TGFX_USE_OPENGL)
+    if(TGFX_USE_OPENGL)
+        set(CROFT_TGFX_REQUEST_OPENGL ON)
+    endif()
+elseif(NOT CROFT_TGFX_REQUEST_METAL)
+    set(CROFT_TGFX_REQUEST_OPENGL ON)
+endif()
+
+if(CROFT_TGFX_REQUEST_METAL AND CROFT_TGFX_REQUEST_OPENGL)
+    message(FATAL_ERROR
+        "Croft's current tgfx integration supports one backend variant per configure. "
+        "Use separate build directories to compare OpenGL and Metal.")
+endif()
+
+if(NOT CROFT_TGFX_REQUEST_METAL AND NOT CROFT_TGFX_REQUEST_OPENGL)
+    message(FATAL_ERROR
+        "Croft requires one tgfx GPU backend variant per configure. "
+        "Set TGFX_USE_METAL=ON or TGFX_USE_OPENGL=ON.")
+endif()
+
 if(CROFT_GLFW_TARGET)
     if(CROFT_TGFX_SOURCE_DIR)
         if(EXISTS "${CROFT_TGFX_SOURCE_DIR}/CMakeLists.txt")
@@ -218,10 +288,16 @@ if(CROFT_GLFW_TARGET)
             set(TGFX_BUILD_PDF OFF CACHE BOOL "Disable tgfx PDF module" FORCE)
             set(TGFX_BUILD_LAYERS OFF CACHE BOOL "Disable tgfx layers module" FORCE)
             set(TGFX_BUILD_HELLO2D OFF CACHE BOOL "Disable tgfx Hello2D demo" FORCE)
-            set(TGFX_USE_OPENGL ON CACHE BOOL "Enable tgfx OpenGL backend" FORCE)
-            if(APPLE)
-                set(TGFX_USE_METAL ON CACHE BOOL "Enable tgfx Metal backend for Croft variants" FORCE)
-            endif()
+            set(TGFX_USE_PNG_DECODE OFF CACHE BOOL "Disable tgfx PNG decoding for Croft" FORCE)
+            set(TGFX_USE_PNG_ENCODE OFF CACHE BOOL "Disable tgfx PNG encoding for Croft" FORCE)
+            set(TGFX_USE_JPEG_DECODE OFF CACHE BOOL "Disable tgfx JPEG decoding for Croft" FORCE)
+            set(TGFX_USE_JPEG_ENCODE OFF CACHE BOOL "Disable tgfx JPEG encoding for Croft" FORCE)
+            set(TGFX_USE_WEBP_DECODE OFF CACHE BOOL "Disable tgfx WEBP decoding for Croft" FORCE)
+            set(TGFX_USE_WEBP_ENCODE OFF CACHE BOOL "Disable tgfx WEBP encoding for Croft" FORCE)
+            set(TGFX_USE_METAL ${CROFT_TGFX_REQUEST_METAL} CACHE BOOL
+                "Enable tgfx Metal backend for this Croft configure" FORCE)
+            set(TGFX_USE_OPENGL ${CROFT_TGFX_REQUEST_OPENGL} CACHE BOOL
+                "Enable tgfx OpenGL backend for this Croft configure" FORCE)
             add_subdirectory("${CROFT_TGFX_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/_deps/tgfx" EXCLUDE_FROM_ALL)
         else()
             croft_optional_missing("tgfx" "CROFT_TGFX_SOURCE_DIR does not contain CMakeLists.txt: ${CROFT_TGFX_SOURCE_DIR}")
@@ -400,6 +476,14 @@ croft_register_artifact(sapling datastore
     TAGS tier3 tier4 sapling runner wasi datastore persistent-text
 )
 
+add_library(croft_editor_document STATIC src/editor/editor_document.c)
+croft_apply_public_includes(croft_editor_document)
+target_link_libraries(croft_editor_document PUBLIC croft_fs sapling)
+croft_register_artifact(croft_editor_document editor
+    TAGS tier8 editor document sapling filesystem
+    DEPENDS croft_fs sapling
+)
+
 # ── Optional Croft artifacts ───────────────────────────────────────────
 if(CROFT_WASM3_TARGET)
     add_library(croft_wasm_wasm3 STATIC src/host/host_wasm.c)
@@ -459,7 +543,7 @@ if(CROFT_GLFW_TARGET)
     endif()
 endif()
 
-if(CROFT_GLFW_TARGET AND CROFT_TGFX_TARGET)
+if(CROFT_GLFW_TARGET AND CROFT_TGFX_TARGET AND CROFT_TGFX_REQUEST_OPENGL)
     add_library(croft_render_tgfx_opengl STATIC src/host/host_render.cpp)
     croft_apply_public_includes(croft_render_tgfx_opengl)
     target_link_libraries(croft_render_tgfx_opengl PUBLIC croft_ui_glfw_opengl ${CROFT_TGFX_TARGET})
@@ -494,51 +578,106 @@ if(CROFT_GLFW_TARGET AND CROFT_TGFX_TARGET)
         TAGS tier7 scene text-editor tgfx opengl sapling
         DEPENDS croft_scene_core_tgfx_opengl sapling
     )
+endif()
 
-    if(APPLE AND TARGET croft_ui_glfw_metal)
-        add_library(croft_render_tgfx_metal STATIC src/host/host_render_metal.mm)
-        set_source_files_properties(src/host/host_render_metal.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
-        croft_apply_public_includes(croft_render_tgfx_metal)
-        target_link_libraries(croft_render_tgfx_metal
-            PUBLIC
-                croft_ui_glfw_metal
-                ${CROFT_TGFX_TARGET}
-                "-framework AppKit"
-                "-framework Metal"
-                "-framework QuartzCore"
-        )
-        croft_register_artifact(croft_render_tgfx_metal render
-            TAGS tier6 render tgfx metal macos
-            DEPENDS croft_ui_glfw_metal
-        )
+if(APPLE AND CROFT_GLFW_TARGET AND CROFT_TGFX_TARGET AND CROFT_TGFX_REQUEST_METAL
+        AND TARGET croft_ui_glfw_metal)
+    add_library(croft_render_tgfx_metal STATIC src/host/host_render_metal.mm)
+    set_source_files_properties(src/host/host_render_metal.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+    croft_apply_public_includes(croft_render_tgfx_metal)
+    target_link_libraries(croft_render_tgfx_metal
+        PUBLIC
+            croft_ui_glfw_metal
+            ${CROFT_TGFX_TARGET}
+            "-framework AppKit"
+            "-framework Metal"
+            "-framework QuartzCore"
+    )
+    croft_register_artifact(croft_render_tgfx_metal render
+        TAGS tier6 render tgfx metal macos
+        DEPENDS croft_ui_glfw_metal
+    )
 
-        add_library(croft_scene_core_tgfx_metal STATIC
-            src/scene/scene_node.c
-            src/scene/node_viewport.c
-            src/scene/node_code_block.c
-        )
-        croft_apply_public_includes(croft_scene_core_tgfx_metal)
-        target_link_libraries(croft_scene_core_tgfx_metal PUBLIC croft_render_tgfx_metal)
-        croft_register_artifact(croft_scene_core_tgfx_metal scene
-            TAGS tier7 scene tgfx metal macos
-            DEPENDS croft_render_tgfx_metal
-        )
+    add_library(croft_scene_core_tgfx_metal STATIC
+        src/scene/scene_node.c
+        src/scene/node_viewport.c
+        src/scene/node_code_block.c
+    )
+    croft_apply_public_includes(croft_scene_core_tgfx_metal)
+    target_link_libraries(croft_scene_core_tgfx_metal PUBLIC croft_render_tgfx_metal)
+    croft_register_artifact(croft_scene_core_tgfx_metal scene
+        TAGS tier7 scene tgfx metal macos
+        DEPENDS croft_render_tgfx_metal
+    )
 
-        add_library(croft_scene_text_editor_tgfx_metal STATIC src/scene/node_text_editor.c)
-        croft_apply_public_includes(croft_scene_text_editor_tgfx_metal)
-        target_link_libraries(croft_scene_text_editor_tgfx_metal
-            PUBLIC
-                croft_scene_core_tgfx_metal
-                sapling
-        )
-        croft_register_artifact(croft_scene_text_editor_tgfx_metal scene
-            TAGS tier7 scene text-editor tgfx metal macos sapling
-            DEPENDS croft_scene_core_tgfx_metal sapling
-        )
-    endif()
+    add_library(croft_scene_text_editor_tgfx_metal STATIC src/scene/node_text_editor.c)
+    croft_apply_public_includes(croft_scene_text_editor_tgfx_metal)
+    target_link_libraries(croft_scene_text_editor_tgfx_metal
+        PUBLIC
+            croft_scene_core_tgfx_metal
+            sapling
+    )
+    croft_register_artifact(croft_scene_text_editor_tgfx_metal scene
+        TAGS tier7 scene text-editor tgfx metal macos sapling
+        DEPENDS croft_scene_core_tgfx_metal sapling
+    )
+endif()
+
+if(APPLE AND TARGET croft_ui_glfw_metal)
+    add_library(croft_render_metal_native STATIC src/host/host_render_native_metal.mm)
+    set_source_files_properties(src/host/host_render_native_metal.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+    croft_apply_public_includes(croft_render_metal_native)
+    target_link_libraries(croft_render_metal_native
+        PUBLIC
+            croft_ui_glfw_metal
+            "-framework AppKit"
+            "-framework Metal"
+            "-framework QuartzCore"
+    )
+    croft_register_artifact(croft_render_metal_native render
+        TAGS tier6 render metal native-direct macos
+        DEPENDS croft_ui_glfw_metal
+    )
+
+    add_library(croft_scene_core_metal_native STATIC
+        src/scene/scene_node.c
+        src/scene/node_viewport.c
+        src/scene/node_code_block.c
+    )
+    croft_apply_public_includes(croft_scene_core_metal_native)
+    target_link_libraries(croft_scene_core_metal_native PUBLIC croft_render_metal_native)
+    croft_register_artifact(croft_scene_core_metal_native scene
+        TAGS tier7 scene metal native-direct macos
+        DEPENDS croft_render_metal_native
+    )
+
+    add_library(croft_scene_text_editor_metal_native STATIC src/scene/node_text_editor.c)
+    croft_apply_public_includes(croft_scene_text_editor_metal_native)
+    target_link_libraries(croft_scene_text_editor_metal_native
+        PUBLIC
+            croft_scene_core_metal_native
+            sapling
+    )
+    croft_register_artifact(croft_scene_text_editor_metal_native scene
+        TAGS tier7 scene text-editor metal native-direct macos sapling
+        DEPENDS croft_scene_core_metal_native sapling
+    )
 endif()
 
 if(APPLE)
+    add_library(croft_editor_appkit STATIC src/host/mac/host_editor_appkit.mm)
+    croft_apply_public_includes(croft_editor_appkit)
+    set_source_files_properties(src/host/mac/host_editor_appkit.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+    target_link_libraries(croft_editor_appkit
+        PUBLIC
+            croft_editor_document
+            "-framework AppKit"
+    )
+    croft_register_artifact(croft_editor_appkit editor
+        TAGS tier9 editor native appkit textkit macos cpu
+        DEPENDS croft_editor_document
+    )
+
     add_library(croft_a11y_macos STATIC src/host/mac/host_a11y.m)
     croft_apply_public_includes(croft_a11y_macos)
     set_source_files_properties(src/host/mac/host_a11y.m PROPERTIES COMPILE_FLAGS "-fobjc-arc")
@@ -702,23 +841,53 @@ if(TARGET wasm_guest_gen)
     add_dependencies(example_wasm_guest wasm_guest_gen)
 endif()
 
-if(CROFT_EXAMPLE_UI_TARGET)
-    croft_add_example(example_ui_window
-        SOURCES tests/host_tests/test_ui_window_standalone.c
-        LINKS ${CROFT_EXAMPLE_UI_TARGET}
-        REQUIRES ${CROFT_EXAMPLE_UI_TARGET}
-        TAGS ui window glfw
-        FOCUS "Windowing-only sample with no rendering dependency."
+if(TARGET croft_ui_glfw_opengl)
+    croft_add_example(example_ui_window_opengl
+        SOURCES examples/ui_window.c
+        LINKS croft_ui_glfw_opengl
+        REQUIRES croft_ui_glfw_opengl
+        TAGS ui window glfw opengl
+        FOCUS "Windowing-only sample using a GLFW OpenGL context and no renderer."
     )
 endif()
 
-if(CROFT_EXAMPLE_RENDER_TARGET)
-    croft_add_example(example_render_canvas
-        SOURCES tests/host_tests/test_render_standalone.c
-        LINKS ${CROFT_EXAMPLE_RENDER_TARGET}
-        REQUIRES ${CROFT_EXAMPLE_RENDER_TARGET}
-        TAGS render canvas tgfx
-        FOCUS "GPU-backed 2D canvas rendering sample."
+if(TARGET croft_ui_glfw_metal)
+    croft_add_example(example_ui_window_metal
+        SOURCES examples/ui_window.c
+        LINKS croft_ui_glfw_metal
+        REQUIRES croft_ui_glfw_metal
+        TAGS ui window glfw metal macos
+        FOCUS "Windowing-only sample using a GLFW no-API window for the Metal path."
+    )
+endif()
+
+if(TARGET croft_render_tgfx_opengl)
+    croft_add_example(example_render_canvas_opengl
+        SOURCES examples/render_canvas_opengl.c
+        LINKS croft_render_tgfx_opengl
+        REQUIRES croft_render_tgfx_opengl
+        TAGS render canvas tgfx opengl
+        FOCUS "GPU-backed 2D canvas rendering on the tgfx OpenGL path."
+    )
+endif()
+
+if(TARGET croft_render_tgfx_metal)
+    croft_add_example(example_render_canvas_metal
+        SOURCES examples/render_canvas_metal.c
+        LINKS croft_render_tgfx_metal
+        REQUIRES croft_render_tgfx_metal
+        TAGS render canvas tgfx metal macos
+        FOCUS "GPU-backed 2D canvas rendering on the tgfx Metal path."
+    )
+endif()
+
+if(TARGET croft_render_metal_native)
+    croft_add_example(example_render_canvas_metal_native
+        SOURCES examples/render_canvas_metal_native.c
+        LINKS croft_render_metal_native
+        REQUIRES croft_render_metal_native
+        TAGS render canvas metal native-direct macos
+        FOCUS "Direct Metal 2D rectangle rendering with no tgfx dependency."
     )
 endif()
 
@@ -752,20 +921,40 @@ endif()
 
 if(CROFT_EXAMPLE_EDITOR_TARGET)
     if(NOT APPLE OR CROFT_EXAMPLE_GESTURE_TARGET)
-        set(CROFT_EDITOR_EXAMPLE_LINKS ${CROFT_EXAMPLE_EDITOR_TARGET} croft_a11y_stub croft_fs)
-        set(CROFT_EDITOR_EXAMPLE_REQUIRES ${CROFT_EXAMPLE_EDITOR_TARGET} croft_fs)
+        set(CROFT_EDITOR_EXAMPLE_LINKS ${CROFT_EXAMPLE_EDITOR_TARGET} croft_a11y_stub croft_editor_document)
+        set(CROFT_EDITOR_EXAMPLE_REQUIRES ${CROFT_EXAMPLE_EDITOR_TARGET} croft_editor_document)
         if(CROFT_EXAMPLE_GESTURE_TARGET)
             list(APPEND CROFT_EDITOR_EXAMPLE_LINKS ${CROFT_EXAMPLE_GESTURE_TARGET})
             list(APPEND CROFT_EDITOR_EXAMPLE_REQUIRES ${CROFT_EXAMPLE_GESTURE_TARGET})
         endif()
         croft_add_example(example_editor_text
-            SOURCES tests/host_tests/test_editor_standalone.c
+            SOURCES examples/editor_scene_shell.c
             LINKS ${CROFT_EDITOR_EXAMPLE_LINKS}
             REQUIRES ${CROFT_EDITOR_EXAMPLE_REQUIRES}
             TAGS editor text sapling gui
             FOCUS "Text-editor shell built on Sapling text, scene, and host IO."
         )
     endif()
+endif()
+
+if(TARGET croft_scene_text_editor_metal_native AND CROFT_EXAMPLE_GESTURE_TARGET)
+    croft_add_example(example_editor_text_metal_native
+        SOURCES examples/editor_scene_shell.c
+        LINKS croft_scene_text_editor_metal_native croft_a11y_stub croft_editor_document ${CROFT_EXAMPLE_GESTURE_TARGET}
+        REQUIRES croft_scene_text_editor_metal_native croft_a11y_stub croft_editor_document ${CROFT_EXAMPLE_GESTURE_TARGET}
+        TAGS editor text sapling metal native-direct macos
+        FOCUS "Text-editor shell built on the direct-Metal renderer and shared Sapling document layer."
+    )
+endif()
+
+if(TARGET croft_editor_appkit)
+    croft_add_example(example_editor_text_appkit
+        SOURCES examples/editor_text_appkit.mm
+        LINKS croft_editor_appkit
+        REQUIRES croft_editor_appkit croft_editor_document
+        TAGS editor text sapling appkit textkit macos cpu
+        FOCUS "CPU-based macOS text editor using AppKit/TextKit over a Sapling-backed document."
+    )
 endif()
 
 if(TARGET croft_a11y_macos AND CROFT_EXAMPLE_SCENE_TARGET)
@@ -778,13 +967,23 @@ if(TARGET croft_a11y_macos AND CROFT_EXAMPLE_SCENE_TARGET)
     )
 endif()
 
-if(TARGET croft_menu_macos AND CROFT_EXAMPLE_UI_TARGET)
-    croft_add_example(example_menu_bar
-        SOURCES tests/host_tests/test_menu_standalone.c
-        LINKS ${CROFT_EXAMPLE_UI_TARGET} croft_menu_macos
-        REQUIRES ${CROFT_EXAMPLE_UI_TARGET} croft_menu_macos
-        TAGS menu macos ui
-        FOCUS "Native menu intents applied to a macOS menu bar."
+if(TARGET croft_menu_macos AND TARGET croft_ui_glfw_opengl)
+    croft_add_example(example_window_menu_opengl
+        SOURCES examples/window_menu.c
+        LINKS croft_ui_glfw_opengl croft_menu_macos
+        REQUIRES croft_ui_glfw_opengl croft_menu_macos
+        TAGS menu macos ui opengl
+        FOCUS "Window and native menu shell with an OpenGL-capable GLFW context and no renderer."
+    )
+endif()
+
+if(TARGET croft_menu_macos AND TARGET croft_ui_glfw_metal)
+    croft_add_example(example_window_menu_metal
+        SOURCES examples/window_menu.c
+        LINKS croft_ui_glfw_metal croft_menu_macos
+        REQUIRES croft_ui_glfw_metal croft_menu_macos
+        TAGS menu macos ui metal
+        FOCUS "Window and native menu shell with a Metal-style no-API window and no renderer."
     )
 endif()
 

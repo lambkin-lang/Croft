@@ -24,19 +24,45 @@ cmake --build build --target croft_examples
 | `example_fs_inspect` | Host filesystem access and resource-path discovery | `croft_fs` |
 | `example_sapling_text` | Sapling text clone-on-write editing with no GUI | `sapling` |
 | `example_wasm_guest` | Embedded Wasm guest bridged into Croft host imports | `croft_wasm_wasm3` |
-| `example_ui_window` | Windowing only; no renderer | `croft_ui_glfw_*` |
-| `example_render_canvas` | GPU-backed 2D rendering | `croft_render_tgfx_*` |
-| `example_scene_graph` | Scene graph layout, hit-testing, and rendering | `croft_scene_core_tgfx_*` |
-| `example_zoom_canvas` | Gesture-assisted infinite canvas demo | `croft_scene_core_tgfx_*`, gesture backend |
-| `example_editor_text` | Text-editor shell over Sapling, scene, and host IO | `croft_scene_text_editor_tgfx_*`, `croft_fs`, gesture backend |
+| `example_ui_window_opengl` | Window only; OpenGL-capable GLFW context and no renderer | `croft_ui_glfw_opengl` |
+| `example_ui_window_metal` | Window only; no-API GLFW window for the Metal path | `croft_ui_glfw_metal` |
+| `example_window_menu_opengl` | Native menu shell with no renderer on the OpenGL UI path | `croft_ui_glfw_opengl`, `croft_menu_macos` |
+| `example_window_menu_metal` | Native menu shell with no renderer on the Metal UI path | `croft_ui_glfw_metal`, `croft_menu_macos` |
+| `example_render_canvas_opengl` | GPU-backed 2D rendering on the tgfx OpenGL path | `croft_render_tgfx_opengl` |
+| `example_render_canvas_metal` | GPU-backed 2D rendering on the tgfx Metal path | `croft_render_tgfx_metal` |
+| `example_render_canvas_metal_native` | GPU-backed 2D rectangles on a direct Metal path with no tgfx dependency | `croft_render_metal_native` |
+| `example_scene_graph` | Scene graph layout, hit-testing, and rendering | active `croft_scene_core_tgfx_*` variant |
+| `example_zoom_canvas` | Gesture-assisted infinite canvas demo | active `croft_scene_core_tgfx_*` variant, gesture backend |
+| `example_editor_text` | Text-editor shell over Sapling, scene, and host IO | active `croft_scene_text_editor_tgfx_*` variant, `croft_editor_document`, gesture backend |
+| `example_editor_text_appkit` | Native AppKit/TextKit editor over the same Sapling-backed document layer | `croft_editor_appkit`, `croft_editor_document` |
+| `example_editor_text_metal_native` | Scene-based text editor on the direct-Metal renderer with no tgfx dependency | `croft_scene_text_editor_metal_native`, `croft_editor_document`, gesture backend |
 | `example_a11y_tree` | Native accessibility handles for scene nodes on macOS | scene target, `croft_a11y_macos` |
-| `example_menu_bar` | Native menu intents on macOS | UI target, `croft_menu_macos` |
 | `example_audio_tone` | Host audio playback via miniaudio | `croft_audio_miniaudio` |
 
 Notes:
 
-- `*` in target names above means Croft picks the platform-appropriate variant.
-  On macOS the current preferred path is Metal-backed when available.
+- The UI-only and window+menu examples are explicit backend datapoints, so they
+  can be benchmarked without dragging in tgfx.
+- `example_render_canvas_metal_native` is the first direct-Metal proof point.
+  It uses the same host window path as the tgfx Metal examples, but replaces
+  tgfx with a bespoke Metal renderer so the solver can eventually choose a much
+  smaller macOS render splice.
+- `example_editor_text_appkit` is the first CPU-native editor family. It keeps
+  Sapling and file IO, but delegates layout, selection, and text rendering to
+  AppKit/TextKit instead of Croft scene nodes.
+- `example_editor_text_metal_native` is the third editor family. It keeps the
+  Croft scene/input model, but swaps out tgfx for the direct-Metal renderer and
+  its cached text-quads path.
+- The render backend comparison is currently done with separate build
+  directories. Croft's current in-tree tgfx integration supports one GPU
+  backend variant per configure, selected by `TGFX_USE_OPENGL` or
+  `TGFX_USE_METAL`. The benchmark helper now records three render datapoints:
+  tgfx/OpenGL, tgfx/Metal, and native-direct Metal.
+- The editor-family comparison now spans tgfx/Metal, AppKit/TextKit CPU, and
+  direct-Metal.
+- Higher-level scene/editor examples still ride the active tgfx backend for the
+  current configure. They remain useful for feature-ladder modeling even though
+  their target names are not backend-suffixed yet.
 - Examples are `EXCLUDE_FROM_ALL`. They exist to model subsystem selections and
   to support smoke tests and size benchmarking without forcing every default
   build to link the demo binaries.

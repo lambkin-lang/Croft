@@ -17,6 +17,8 @@ for the reproducible external build closure, required checkouts, and
 reference repos that are intentionally not part of the build.
 See [docs/EXAMPLE_MATRIX.md](docs/EXAMPLE_MATRIX.md) for the current example
 ladder from foundation-only demos up through the text-editor shell.
+See [docs/EDITOR_FAMILY_ANALYSIS.md](docs/EDITOR_FAMILY_ANALYSIS.md) for the
+current editor-family comparison on macOS.
 
 ## Building
 
@@ -83,7 +85,13 @@ Useful options:
 tools/benchmark_binary_size.sh --opt-level Oz
 
 # Benchmark one specific example
-tools/benchmark_binary_size.sh --target example_scene_graph
+tools/benchmark_binary_size.sh --target example_render_canvas_metal
+
+# Compare the OpenGL and Metal backend datapoints
+bash ./tools/benchmark_tgfx_backends.sh
+
+# Compare the current editor families on macOS
+bash ./tools/benchmark_editor_families.sh
 
 # Compare optimized sizes against Debug
 tools/benchmark_binary_size.sh --compare-debug
@@ -137,6 +145,9 @@ Typical targets include:
 - `croft_wasm_wasm3`
 - `croft_ui_glfw_opengl`, `croft_ui_glfw_metal` (macOS)
 - `croft_render_tgfx_opengl`, `croft_render_tgfx_metal` (macOS)
+- `croft_render_metal_native` (macOS)
+- `croft_editor_document`, `croft_editor_appkit` (macOS)
+- `croft_scene_core_metal_native`, `croft_scene_text_editor_metal_native` (macOS)
 - `croft_scene_core_tgfx_opengl`, `croft_scene_core_tgfx_metal` (macOS)
 - `croft_scene_text_editor_tgfx_opengl`, `croft_scene_text_editor_tgfx_metal` (macOS)
 - `croft_audio_miniaudio`
@@ -162,16 +173,36 @@ Representative examples include:
 - `example_fs_inspect`
 - `example_sapling_text`
 - `example_wasm_guest`
-- `example_ui_window`
-- `example_render_canvas`
+- `example_ui_window_opengl`
+- `example_ui_window_metal`
+- `example_window_menu_opengl`
+- `example_window_menu_metal`
+- `example_render_canvas_opengl`
+- `example_render_canvas_metal`
+- `example_render_canvas_metal_native`
 - `example_scene_graph`
 - `example_zoom_canvas`
 - `example_editor_text`
+- `example_editor_text_appkit`
+- `example_editor_text_metal_native`
 - `example_a11y_tree`
-- `example_menu_bar`
 - `example_audio_tone`
 
 The intended ladder is documented in [docs/EXAMPLE_MATRIX.md](docs/EXAMPLE_MATRIX.md).
+
+For backend comparison experiments, Croft currently builds one tgfx GPU backend
+variant per configure. Use separate build directories with `TGFX_USE_OPENGL=ON`
+or `TGFX_USE_METAL=ON` when comparing render costs; the
+`tools/benchmark_tgfx_backends.sh` helper automates that workflow and now also
+records a direct-Metal sample that bypasses tgfx entirely.
+
+For editor-family experiments on macOS, Croft currently compares:
+
+- the tgfx/Metal scene editor (`example_editor_text`)
+- the native AppKit/TextKit CPU editor (`example_editor_text_appkit`)
+- the direct-Metal scene editor (`example_editor_text_metal_native`)
+
+The `tools/benchmark_editor_families.sh` helper automates that comparison.
 
 Build specific artifacts directly when needed:
 

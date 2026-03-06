@@ -14,6 +14,7 @@ OPT_LEVEL="${CROFT_SIZE_BENCH_OPT_LEVEL:-Os}"
 COMPARE_DEBUG=0
 
 TARGETS=()
+EXTRA_CMAKE_ARGS=()
 
 usage() {
     cat <<'USAGE'
@@ -33,6 +34,8 @@ Options:
   --opt-dir <dir>              Build dir for optimized profile (default: build-size-opt)
   --keep <count>               Keep newest N run logs (default: 80)
   --opt-level <Os|Oz|O2|O3>    Compile optimization level for optimized profile (default: Os)
+  --cmake-arg <arg>            Extra argument forwarded to the configure step.
+                               May be repeated.
   --compare-debug              Also build and measure Debug binaries
   --help                       Show this help
 
@@ -329,6 +332,10 @@ while (($#)); do
             OPT_LEVEL="${2:?missing value for --opt-level}"
             shift 2
             ;;
+        --cmake-arg)
+            EXTRA_CMAKE_ARGS+=("${2:?missing value for --cmake-arg}")
+            shift 2
+            ;;
         --compare-debug)
             COMPARE_DEBUG=1
             shift
@@ -370,6 +377,9 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 echo "RUN_TIMESTAMP=${STAMP}"
 echo "GIT_DESCRIBE=${GIT_DESC}"
 echo "PRELOAD_FILE=${PRELOAD_FILE:-<none>}"
+if (( ${#EXTRA_CMAKE_ARGS[@]} > 0 )); then
+    echo "EXTRA_CMAKE_ARGS=${EXTRA_CMAKE_ARGS[*]}"
+fi
 if (( ${#TARGETS[@]} > 0 )); then
     echo "SELECTED_TARGETS=${TARGETS[*]}"
 else
@@ -384,6 +394,9 @@ status=0
 
 OPT_FLAGS="-${OPT_LEVEL} -DNDEBUG -g0 -ffunction-sections -fdata-sections"
 OPT_LDFLAGS="-Wl,-dead_strip -Wl,-x"
+if [[ "$(uname -s)" == "Darwin" ]]; then
+    OPT_LDFLAGS="${OPT_LDFLAGS} -Wl,-dead_strip_dylibs"
+fi
 
 if build_and_measure_profile \
     "optimized" \
@@ -397,7 +410,8 @@ if build_and_measure_profile \
     -DCMAKE_CXX_FLAGS_MINSIZEREL="$OPT_FLAGS" \
     -DCMAKE_OBJC_FLAGS_MINSIZEREL="$OPT_FLAGS" \
     -DCMAKE_OBJCXX_FLAGS_MINSIZEREL="$OPT_FLAGS" \
-    -DCMAKE_EXE_LINKER_FLAGS_MINSIZEREL="$OPT_LDFLAGS"; then
+    -DCMAKE_EXE_LINKER_FLAGS_MINSIZEREL="$OPT_LDFLAGS" \
+    "${EXTRA_CMAKE_ARGS[@]}"; then
     :
 else
     status=$?
