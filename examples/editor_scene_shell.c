@@ -1,5 +1,5 @@
 #include "croft/editor_document.h"
-#include "croft/host_fs.h"
+#include "croft/editor_document_fs.h"
 #include "croft/host_gesture.h"
 #include "croft/host_render.h"
 #include "croft/host_ui.h"
@@ -109,10 +109,10 @@ int main(int argc, char** argv) {
         "This scene-based editor reuses the shared Sapling document layer.\n";
     double start_time = 0.0;
 
-    g_document = croft_editor_document_create(argc > 0 ? argv[0] : NULL,
-                                              target_file,
-                                              (const uint8_t*)fallback,
-                                              strlen(fallback));
+    g_document = croft_editor_document_open(argc > 0 ? argv[0] : NULL,
+                                            target_file,
+                                            (const uint8_t*)fallback,
+                                            strlen(fallback));
     if (!g_document) {
         return 1;
     }

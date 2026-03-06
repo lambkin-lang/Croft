@@ -219,6 +219,7 @@ extern int test_editor_text_model_word_ranges(void);
 extern int test_editor_document_undo_redo_coalesced_insert(void);
 extern int test_editor_document_coalescing_barrier(void);
 extern int test_editor_document_delete_coalescing_and_redo_invalidation(void);
+extern int test_editor_document_fs_open_save_roundtrip(void);
 extern int test_editor_commands_word_moves(void);
 extern int test_editor_commands_word_deletes(void);
 extern int test_editor_commands_vertical_column_memory(void);
@@ -285,6 +286,7 @@ int main(void)
     RUN_TEST(test_editor_document_undo_redo_coalesced_insert);
     RUN_TEST(test_editor_document_coalescing_barrier);
     RUN_TEST(test_editor_document_delete_coalescing_and_redo_invalidation);
+    RUN_TEST(test_editor_document_fs_open_save_roundtrip);
 
     printf("\n[editor_commands]\n");
     RUN_TEST(test_editor_commands_word_moves);

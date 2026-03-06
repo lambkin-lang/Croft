@@ -33,9 +33,9 @@ cmake --build build --target croft_examples
 | `example_render_canvas_metal_native` | GPU-backed 2D rectangles on a direct Metal path with no tgfx dependency | `croft_render_metal_native` |
 | `example_scene_graph` | Scene graph layout, hit-testing, and rendering | active `croft_scene_core_tgfx_*` variant |
 | `example_zoom_canvas` | Gesture-assisted infinite canvas demo | active `croft_scene_core_tgfx_*` variant, gesture backend |
-| `example_editor_text` | Text-editor shell over Sapling, scene, and host IO | active `croft_scene_text_editor_tgfx_*` variant, `croft_editor_document`, gesture backend |
-| `example_editor_text_appkit` | Native AppKit/TextKit editor over the same Sapling-backed document layer | `croft_editor_appkit`, `croft_editor_document` |
-| `example_editor_text_metal_native` | Scene-based text editor on the direct-Metal renderer with no tgfx dependency | `croft_scene_text_editor_metal_native`, `croft_editor_document`, gesture backend |
+| `example_editor_text` | Text-editor shell over Sapling, scene, and host IO | active `croft_scene_text_editor_tgfx_*` variant, `croft_editor_document_core`, `croft_editor_document_fs`, gesture backend |
+| `example_editor_text_appkit` | Native AppKit/TextKit editor over the same Sapling-backed document layer | `croft_editor_appkit`, `croft_editor_document_core`, `croft_editor_document_fs` |
+| `example_editor_text_metal_native` | Scene-based text editor on the direct-Metal renderer with no tgfx dependency | `croft_scene_text_editor_metal_native`, `croft_editor_document_core`, `croft_editor_document_fs`, gesture backend |
 | `example_a11y_tree` | Native accessibility handles for scene nodes on macOS | scene target, `croft_a11y_macos` |
 | `example_audio_tone` | Host audio playback via miniaudio | `croft_audio_miniaudio` |
 
@@ -46,6 +46,9 @@ Notes:
 - `example_sapling_text` now uses `sapling_core` and the linear arena backing,
   so it is the current smallest in-tree proof point for the Wasm-aligned
   datastore/text side.
+- The editor document layer is now split: `croft_editor_document_core` carries
+  Sapling state, history, and edit semantics, while
+  `croft_editor_document_fs` is the host-fs adapter for open/save.
 - `example_render_canvas_metal_native` is the first direct-Metal proof point.
   It uses the same host window path as the tgfx Metal examples, but replaces
   tgfx with a bespoke Metal renderer so the solver can eventually choose a much

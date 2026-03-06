@@ -161,7 +161,7 @@ need to be split or renamed to make the boundaries honest.
 | `croft_foundation` | Split common base from host services | Move thread/time assumptions into separate host artifacts and leave a true host-neutral base |
 | `croft_messaging` | Separate wire format from host mailbox implementation | Keep protocol/schema validation in the common layer, keep queueing in host layer |
 | `sapling` | Support multiple profiles | Add a true single-thread core profile and keep threaded support as a separate variant |
-| `editor_document` | Separate document core from file-backed adapter | Keep document state/history pure; move load/save to a host-fs add-on |
+| `editor_document_core` + `editor_document_fs` | Keep document core separate from file-backed adapter | Keep document state/history pure; move load/save to a host-fs add-on |
 | `runner` + `wasi/shim` | Split protocol core from host execution shell | Keep replay/message/intent logic common; keep clocks/sleep/host execution separate |
 | `croft_wasm_wasm3` | Keep as host runtime only | Treat embedded Wasm execution as a host feature, not the common runtime |
 
@@ -173,8 +173,10 @@ Current status:
 - `sapling_core` now exists as the single-thread profile, and
   `example_sapling_text` now exercises the linear arena backing through that
   target.
+- `croft_editor_document_core` now carries document state/history and
+  `croft_editor_document_fs` now handles file-backed open/save.
 - The remaining cleanup is to keep pushing consumers onto the narrower targets
-  and to continue splitting common support from host adapters above this layer.
+  and then introduce the first WIT-defined common interfaces above this layer.
 
 ## World Plan
 
@@ -267,10 +269,9 @@ These should remain clearly on the host side:
 
 The next concrete implementation work should happen in this order:
 
-1. Split editor document core from file-backed loading/saving.
-2. Add the first common WIT interfaces and generated C bindings around
+1. Add the first common WIT interfaces and generated C bindings around
    `text`, `db`, `txn`, and `mailbox`.
-3. Create the first Wasm-aligned common-core sample programs using those
+2. Create the first Wasm-aligned common-core sample programs using those
    generated interfaces.
 
 ## Resume Checklist For Future Sessions

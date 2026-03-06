@@ -1,4 +1,5 @@
 #include "croft/editor_document.h"
+#include "croft/editor_document_fs.h"
 #include "croft/host_editor_appkit.h"
 
 #include <cstdlib>
@@ -15,10 +16,10 @@ int main(int argc, char** argv) {
     croft_editor_document* document;
     croft_editor_appkit_options options;
 
-    document = croft_editor_document_create(argc > 0 ? argv[0] : NULL,
-                                            target_file,
-                                            (const uint8_t*)fallback,
-                                            std::strlen(fallback));
+    document = croft_editor_document_open(argc > 0 ? argv[0] : NULL,
+                                          target_file,
+                                          (const uint8_t*)fallback,
+                                          std::strlen(fallback));
     if (!document) {
         return 1;
     }

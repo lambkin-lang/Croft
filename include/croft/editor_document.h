@@ -19,12 +19,13 @@ typedef enum croft_editor_document_edit_kind {
     CROFT_EDITOR_EDIT_REPLACE_ALL = 4
 } croft_editor_document_edit_kind;
 
-croft_editor_document* croft_editor_document_create(const char* exe_path,
-                                                    const char* file_path,
-                                                    const uint8_t* fallback_utf8,
-                                                    size_t fallback_len);
+croft_editor_document* croft_editor_document_create(const uint8_t* initial_utf8,
+                                                    size_t initial_len);
 
 void croft_editor_document_destroy(croft_editor_document* document);
+
+int32_t croft_editor_document_set_path(croft_editor_document* document,
+                                       const char* path);
 
 int32_t croft_editor_document_replace_utf8(croft_editor_document* document,
                                            const uint8_t* utf8,
@@ -45,8 +46,6 @@ int32_t croft_editor_document_delete_range(croft_editor_document* document,
 int32_t croft_editor_document_export_utf8(croft_editor_document* document,
                                           char** out_utf8,
                                           size_t* out_len);
-
-int32_t croft_editor_document_save(croft_editor_document* document);
 
 const char* croft_editor_document_path(const croft_editor_document* document);
 

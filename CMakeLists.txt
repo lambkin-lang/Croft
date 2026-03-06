@@ -553,12 +553,28 @@ croft_register_artifact(croft_editor_commands editor
     DEPENDS croft_editor_core
 )
 
-add_library(croft_editor_document STATIC src/editor/editor_document.c)
+add_library(croft_editor_document_core STATIC src/editor/editor_document.c)
+croft_apply_public_includes(croft_editor_document_core)
+target_link_libraries(croft_editor_document_core PUBLIC croft_editor_core sapling_core)
+croft_register_artifact(croft_editor_document_core editor
+    TAGS tier8 editor document sapling common host-neutral
+    DEPENDS croft_editor_core sapling_core
+)
+
+add_library(croft_editor_document_fs STATIC src/editor/editor_document_fs.c)
+croft_apply_public_includes(croft_editor_document_fs)
+target_link_libraries(croft_editor_document_fs PUBLIC croft_editor_document_core croft_fs)
+croft_register_artifact(croft_editor_document_fs editor
+    TAGS tier8 editor document filesystem io
+    DEPENDS croft_editor_document_core croft_fs
+)
+
+add_library(croft_editor_document STATIC src/editor/editor_document_aggregate.c)
 croft_apply_public_includes(croft_editor_document)
-target_link_libraries(croft_editor_document PUBLIC croft_editor_core croft_fs sapling_core)
+target_link_libraries(croft_editor_document PUBLIC croft_editor_document_core croft_editor_document_fs)
 croft_register_artifact(croft_editor_document editor
-    TAGS tier8 editor document sapling filesystem
-    DEPENDS croft_editor_core croft_fs sapling_core
+    TAGS tier8 editor document compatibility aggregate
+    DEPENDS croft_editor_document_core croft_editor_document_fs
 )
 
 # ── Optional Croft artifacts ───────────────────────────────────────────
@@ -649,7 +665,7 @@ if(CROFT_GLFW_TARGET AND CROFT_TGFX_TARGET AND CROFT_TGFX_REQUEST_OPENGL)
     target_link_libraries(croft_scene_text_editor_tgfx_opengl
         PUBLIC
             croft_scene_core_tgfx_opengl
-            croft_editor_document
+            croft_editor_document_core
             croft_editor_commands
             sapling_core
     )
@@ -694,7 +710,7 @@ if(APPLE AND CROFT_GLFW_TARGET AND CROFT_TGFX_TARGET AND CROFT_TGFX_REQUEST_META
     target_link_libraries(croft_scene_text_editor_tgfx_metal
         PUBLIC
             croft_scene_core_tgfx_metal
-            croft_editor_document
+            croft_editor_document_core
             croft_editor_commands
             sapling_core
     )
@@ -737,7 +753,7 @@ if(APPLE AND TARGET croft_ui_glfw_metal)
     target_link_libraries(croft_scene_text_editor_metal_native
         PUBLIC
             croft_scene_core_metal_native
-            croft_editor_document
+            croft_editor_document_core
             croft_editor_commands
             sapling_core
     )
@@ -753,12 +769,13 @@ if(APPLE)
     set_source_files_properties(src/host/mac/host_editor_appkit.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
     target_link_libraries(croft_editor_appkit
         PUBLIC
-            croft_editor_document
+            croft_editor_document_core
+            croft_editor_document_fs
             "-framework AppKit"
     )
     croft_register_artifact(croft_editor_appkit editor
         TAGS tier9 editor native appkit textkit macos cpu
-        DEPENDS croft_editor_document
+        DEPENDS croft_editor_document_core croft_editor_document_fs
     )
 
     add_library(croft_a11y_macos STATIC src/host/mac/host_a11y.m)
@@ -1004,8 +1021,8 @@ endif()
 
 if(CROFT_EXAMPLE_EDITOR_TARGET)
     if(NOT APPLE OR CROFT_EXAMPLE_GESTURE_TARGET)
-        set(CROFT_EDITOR_EXAMPLE_LINKS ${CROFT_EXAMPLE_EDITOR_TARGET} croft_a11y_stub croft_editor_document)
-        set(CROFT_EDITOR_EXAMPLE_REQUIRES ${CROFT_EXAMPLE_EDITOR_TARGET} croft_editor_document)
+        set(CROFT_EDITOR_EXAMPLE_LINKS ${CROFT_EXAMPLE_EDITOR_TARGET} croft_a11y_stub croft_editor_document_fs)
+        set(CROFT_EDITOR_EXAMPLE_REQUIRES ${CROFT_EXAMPLE_EDITOR_TARGET} croft_editor_document_core croft_editor_document_fs)
         if(CROFT_EXAMPLE_GESTURE_TARGET)
             list(APPEND CROFT_EDITOR_EXAMPLE_LINKS ${CROFT_EXAMPLE_GESTURE_TARGET})
             list(APPEND CROFT_EDITOR_EXAMPLE_REQUIRES ${CROFT_EXAMPLE_GESTURE_TARGET})
@@ -1023,8 +1040,8 @@ endif()
 if(TARGET croft_scene_text_editor_metal_native AND CROFT_EXAMPLE_GESTURE_TARGET)
     croft_add_example(example_editor_text_metal_native
         SOURCES examples/editor_scene_shell.c
-        LINKS croft_scene_text_editor_metal_native croft_a11y_stub croft_editor_document ${CROFT_EXAMPLE_GESTURE_TARGET}
-        REQUIRES croft_scene_text_editor_metal_native croft_a11y_stub croft_editor_document ${CROFT_EXAMPLE_GESTURE_TARGET}
+        LINKS croft_scene_text_editor_metal_native croft_a11y_stub croft_editor_document_fs ${CROFT_EXAMPLE_GESTURE_TARGET}
+        REQUIRES croft_scene_text_editor_metal_native croft_a11y_stub croft_editor_document_core croft_editor_document_fs ${CROFT_EXAMPLE_GESTURE_TARGET}
         TAGS editor text sapling metal native-direct macos
         FOCUS "Text-editor shell built on the direct-Metal renderer and shared Sapling document layer."
     )
@@ -1033,8 +1050,8 @@ endif()
 if(TARGET croft_editor_appkit)
     croft_add_example(example_editor_text_appkit
         SOURCES examples/editor_text_appkit.mm
-        LINKS croft_editor_appkit
-        REQUIRES croft_editor_appkit croft_editor_document
+        LINKS croft_editor_appkit croft_editor_document_fs
+        REQUIRES croft_editor_appkit croft_editor_document_core croft_editor_document_fs
         TAGS editor text sapling appkit textkit macos cpu
         FOCUS "CPU-based macOS text editor using AppKit/TextKit over a Sapling-backed document."
     )
@@ -1089,7 +1106,7 @@ if(CROFT_BUILD_TESTS)
     target_link_libraries(test_croft
         PRIVATE
             croft_host_queue
-            croft_editor_document
+            croft_editor_document_fs
             croft_editor_commands
     )
     if(NOT TARGET croft_wasm_wasm3)

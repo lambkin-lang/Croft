@@ -1,4 +1,5 @@
 #include "croft/editor_document.h"
+#include "croft/editor_document_fs.h"
 #include "croft/host_editor_appkit.h"
 
 #import <AppKit/AppKit.h>

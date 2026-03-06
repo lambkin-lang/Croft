@@ -150,7 +150,8 @@ Typical targets include:
 - `croft_ui_glfw_opengl`, `croft_ui_glfw_metal` (macOS)
 - `croft_render_tgfx_opengl`, `croft_render_tgfx_metal` (macOS)
 - `croft_render_metal_native` (macOS)
-- `croft_editor_document`, `croft_editor_appkit` (macOS)
+- `croft_editor_document_core`, `croft_editor_document_fs`, `croft_editor_document`
+- `croft_editor_appkit` (macOS)
 - `croft_scene_core_metal_native`, `croft_scene_text_editor_metal_native` (macOS)
 - `croft_scene_core_tgfx_opengl`, `croft_scene_core_tgfx_metal` (macOS)
 - `croft_scene_text_editor_tgfx_opengl`, `croft_scene_text_editor_tgfx_metal` (macOS)
