@@ -23,6 +23,7 @@ cmake --build build --target croft_examples
 | `example_messaging_roundtrip` | Validated message envelope round-trip over the host queue | `croft_msg_frame`, `croft_host_queue` |
 | `example_fs_inspect` | Host filesystem access and resource-path discovery | `croft_fs` |
 | `example_wit_fs_read` | Host filesystem open/read/close through generated WIT file resource handles | `croft_wit_host_fs_runtime` |
+| `example_wit_clock_now` | Host monotonic clock query through generated WIT service commands | `croft_wit_host_clock_runtime` |
 | `example_sapling_text` | Sapling text clone-on-write editing over the single-thread linear arena profile | `sapling_core` |
 | `example_wit_text_handles` | Sapling text editing through generated WIT commands and opaque resource handles | `croft_wit_text_runtime` |
 | `example_wit_db_kv` | Sapling key-value round-trip through generated WIT `db` and `txn` resource handles | `croft_wit_store_runtime` |
@@ -61,6 +62,9 @@ Notes:
 - `example_wit_fs_read` is the first host mix-in WIT sample. It wraps the
   native `host_fs` pointer-shaped API in opaque file handles so generated model
   programs do not observe raw host file descriptors.
+- `example_wit_clock_now` is the first stateless host mix-in WIT sample. It is
+  intentionally service-shaped rather than resource-shaped, which keeps the
+  boundary honest: not every host capability owns lifetime-managed state.
 - The editor document layer is now split: `croft_editor_document_core` carries
   Sapling state, history, and edit semantics, while
   `croft_editor_document_fs` is the host-fs adapter for open/save.

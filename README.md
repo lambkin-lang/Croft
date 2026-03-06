@@ -151,6 +151,7 @@ Typical targets include:
 - `sapling_core`, `sapling_runner_core`, `sapling_runner_host`, `sapling_wasi_runtime`, `sapling_wasi_host`, `sapling`
 - `croft_wit_common_core`, `croft_wit_text_runtime`, `croft_wit_store_runtime`, `croft_wit_mailbox_runtime`
 - `croft_wit_host_fs`, `croft_wit_host_fs_runtime`
+- `croft_wit_host_clock`, `croft_wit_host_clock_runtime`
 - `croft_wasm_wasm3`
 - `croft_ui_glfw_opengl`, `croft_ui_glfw_metal` (macOS)
 - `croft_render_tgfx_opengl`, `croft_render_tgfx_metal` (macOS)
@@ -182,6 +183,7 @@ Representative examples include:
 - `example_messaging_roundtrip`
 - `example_fs_inspect`
 - `example_wit_fs_read`
+- `example_wit_clock_now`
 - `example_sapling_text`
 - `example_wit_text_handles`
 - `example_wit_db_kv`
@@ -221,6 +223,7 @@ For the first host mix-in WIT experiment, compare:
 
 - `example_fs_inspect` as the direct host filesystem baseline
 - `example_wit_fs_read` as the first WIT/resource wrapper over native `host_fs`
+- `example_wit_clock_now` as the first stateless host service mix-in over `host_time`
 
 For editor-family experiments on macOS, Croft currently compares:
 

@@ -236,6 +236,7 @@ extern int test_wit_store_runtime_readonly_put_rejected(void);
 extern int test_wit_mailbox_runtime_roundtrip(void);
 extern int test_wit_mailbox_runtime_drop_busy(void);
 extern int test_wit_host_fs_runtime_read_fixture(void);
+extern int test_wit_host_clock_runtime_monotonic(void);
 
 extern void run_test_fs(int argc, char **argv);
 
@@ -316,6 +317,7 @@ int main(void)
     RUN_TEST(test_wit_mailbox_runtime_roundtrip);
     RUN_TEST(test_wit_mailbox_runtime_drop_busy);
     RUN_TEST(test_wit_host_fs_runtime_read_fixture);
+    RUN_TEST(test_wit_host_clock_runtime_monotonic);
 
     printf("\n[host_fs]\n");
     RUN_TEST(run_tier2_fs_tests);

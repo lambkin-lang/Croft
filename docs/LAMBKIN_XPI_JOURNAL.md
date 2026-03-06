@@ -158,6 +158,27 @@ The real join-points are:
 That means even "simple" host mix-ins are already policy surfaces, not just ABI
 adapters.
 
+### 5. Not Every Mix-In Should Be Forced Into `resource`
+
+The first `host-clock` package validated the opposite side of the same idea:
+some host capabilities are pure service queries, not owned-state handles.
+
+That matters because it is easy to overfit the early WIT work around resources
+just because `text`, `db`, `txn`, `mailbox`, and `file` all need lifetime
+management. `host_time_millis()` does not.
+
+So the current split is now explicit:
+
+- stateful boundaries: `text`, `db`, `txn`, `mailbox`, `file`
+- stateless service boundaries: `clock`
+
+That is likely to matter later for other mix-ins too:
+
+- accessibility may be partly resource-shaped and partly service-shaped
+- menu construction may create handles, but command routing may be service-like
+- GPU may split between surface/resource ownership and stateless capability
+  queries
+
 ## Likely Join-Points / XPIs
 
 The following are likely to become first-class XPIs or equivalent aspect
@@ -307,6 +328,8 @@ solves them.
     or should Lambkin weave a separate symbol-hygiene layer around codegen?
 11. Which host capabilities are stable enough to present as reusable mix-ins
     (`fs`, `clock`) versus which should stay family-specific (`window`, `gpu`)?
+12. Which future host interfaces should deliberately *avoid* `resource` and
+    remain pure command/service surfaces?
 
 ## Near-Term Follow-Through
 
@@ -314,7 +337,8 @@ The next high-value steps look like this:
 
 - reuse the current `text`/`db`/`txn`/`mailbox` WIT barrier in a CLI-style
   sample and a host-Wasm-facing sample
-- define the next host mix-in WIT package after `host-fs`, likely `clock`
+- define the next host mix-in WIT package after `host-fs` and `host-clock`,
+  likely window/input or GPU-facing facets
 - isolate direct-Metal editor concerns into explicit layout/input/accessibility
   seams instead of letting them accumulate inside one renderer-centric module
 - start naming candidate Lambkin aspect libraries from the join-points above,

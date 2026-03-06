@@ -1,0 +1,28 @@
+package lambkin:host-clock@0.1.0;
+
+interface types {
+  enum clock-error {
+    invalid,
+    internal,
+  }
+
+  record clock-monotonic-now {
+  }
+
+  variant clock-now-result {
+    ok(u64),
+    err(clock-error),
+  }
+
+  variant clock-command {
+    monotonic-now(clock-monotonic-now),
+  }
+
+  variant clock-reply {
+    now(clock-now-result),
+  }
+}
+
+world host-clock {
+  export types;
+}

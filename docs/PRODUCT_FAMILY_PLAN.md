@@ -185,9 +185,12 @@ Current status:
 - The first host mix-in WIT package now exists in `schemas/wit/host-fs.wit`
   and is exercised by `example_wit_fs_read` through opaque `file` resource
   handles instead of the raw `uint64_t` host-fs handle representation.
+- The next host mix-in WIT package now exists in `schemas/wit/host-clock.wit`
+  and is exercised by `example_wit_clock_now` as a stateless service-shaped
+  boundary over `host_time_millis()`.
 - The remaining cleanup is to move the same common-core logic across more than
   one world shape and to start defining the first host mix-in WIT packages.
-  The next mix-in candidate is likely `clock`.
+  The next mix-in candidates are likely window/input or GPU-facing facets.
 
 ## World Plan
 
@@ -291,8 +294,8 @@ The next concrete implementation work should happen in this order:
 
 1. Reuse the new common-core WIT handles across more than one world shape,
    starting with CLI-style and host-Wasm-facing samples.
-2. Define the next host mix-in WIT packages, likely `clock` and then window or
-   GPU facets, without letting them bleed back into `common-core`.
+2. Define the next host mix-in WIT packages, likely window/input and then GPU
+   facets, without letting them bleed back into `common-core`.
 3. Read `docs/LAMBKIN_XPI_JOURNAL.md` before expanding host/editor surface area
    so the current join-point questions remain explicit.
 
