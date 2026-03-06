@@ -160,6 +160,9 @@ find_package(Threads REQUIRED)
 set(WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_schema_dbis.h")
 set(WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_schema_dbis.c")
 
+set(COMMON_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_common_core.h")
+set(COMMON_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_common_core.c")
+
 set(TEST_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/test_result_types.h")
 set(TEST_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/test_result_types.c")
 
@@ -178,6 +181,17 @@ add_custom_command(
     COMMENT "Generating Schema C Layouts from WIT..."
 )
 add_custom_target(wit_schema_gen DEPENDS ${WIT_GENERATED_H} ${WIT_GENERATED_C})
+
+# Common-core schema
+add_custom_command(
+    OUTPUT ${COMMON_WIT_GENERATED_H} ${COMMON_WIT_GENERATED_C}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
+    COMMAND wit_codegen --wit "${CMAKE_CURRENT_SOURCE_DIR}/schemas/wit/common-core.wit"
+                        --header "${COMMON_WIT_GENERATED_H}" --source "${COMMON_WIT_GENERATED_C}"
+    DEPENDS wit_codegen "${CMAKE_CURRENT_SOURCE_DIR}/schemas/wit/common-core.wit"
+    COMMENT "Generating Common-Core WIT C Layouts..."
+)
+add_custom_target(common_wit_schema_gen DEPENDS ${COMMON_WIT_GENERATED_H} ${COMMON_WIT_GENERATED_C})
 
 # Test fixture schema
 add_custom_command(
@@ -418,10 +432,19 @@ croft_register_artifact(croft_host_thread host
     DEPENDS croft_foundation
 )
 
-add_library(croft_thatch_core STATIC src/runtime/thatch_core.c)
+add_library(croft_thatch_core STATIC src/runtime/thatch_core.c src/runtime/wit_skip.c)
 croft_apply_public_includes(croft_thatch_core)
 croft_register_artifact(croft_thatch_core serialization
     TAGS thatch packed-data serialization
+)
+
+add_library(croft_wit_common_core STATIC ${COMMON_WIT_GENERATED_C})
+add_dependencies(croft_wit_common_core common_wit_schema_gen)
+croft_apply_public_includes(croft_wit_common_core)
+target_link_libraries(croft_wit_common_core PUBLIC croft_thatch_core)
+croft_register_artifact(croft_wit_common_core wit
+    TAGS wit common-core resource-handles xpi
+    DEPENDS croft_thatch_core
 )
 
 add_library(croft_wire_runtime STATIC
@@ -499,18 +522,12 @@ croft_register_artifact(croft aggregate
 )
 
 # ── Library: Sapling ────────────────────────────────────────────────────
-file(GLOB SAPLING_SOURCES CONFIGURE_DEPENDS "src/sapling/*.c" "src/runner/*.c" "src/wasi/*.c")
+file(GLOB SAPLING_CORE_SOURCES CONFIGURE_DEPENDS "src/sapling/*.c")
+file(GLOB SAPLING_RUNNER_CORE_SOURCES CONFIGURE_DEPENDS "src/runner/*.c")
+list(REMOVE_ITEM SAPLING_RUNNER_CORE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/runner/runner_v0.c")
 
-add_library(sapling_core STATIC ${SAPLING_SOURCES} ${WIT_GENERATED_C})
-add_dependencies(sapling_core wit_schema_gen)
-target_include_directories(sapling_core
-    PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
-        $<INSTALL_INTERFACE:include>
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
-)
+add_library(sapling_core STATIC ${SAPLING_CORE_SOURCES})
+croft_apply_public_includes(sapling_core)
 target_compile_definitions(sapling_core PUBLIC SAPLING_PAGE_SIZE=4096)
 target_link_libraries(sapling_core PUBLIC croft_thatch_core)
 if(CROFT_BUILD_TESTS)
@@ -520,23 +537,60 @@ croft_register_artifact(sapling_core datastore
     TAGS tier3 tier4 sapling core single-thread linear-memory
 )
 
-add_library(sapling STATIC ${SAPLING_SOURCES} ${WIT_GENERATED_C})
-add_dependencies(sapling wit_schema_gen)
-target_include_directories(sapling
-    PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-        $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
-        $<INSTALL_INTERFACE:include>
-    PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/src
+add_library(sapling_runner_core STATIC ${SAPLING_RUNNER_CORE_SOURCES})
+add_dependencies(sapling_runner_core wit_schema_gen)
+croft_apply_public_includes(sapling_runner_core)
+target_compile_definitions(sapling_runner_core PUBLIC SAPLING_PAGE_SIZE=4096)
+target_link_libraries(sapling_runner_core PUBLIC sapling_core croft_wire_runtime)
+croft_register_artifact(sapling_runner_core runner
+    TAGS tier4 sapling runner common protocol wire intent replay
+    DEPENDS sapling_core croft_wire_runtime
 )
-target_compile_definitions(sapling PUBLIC SAPLING_PAGE_SIZE=4096 SAPLING_THREADED)
-target_link_libraries(sapling PUBLIC Threads::Threads croft_thatch_core)
+
+add_library(sapling_wasi_runtime STATIC src/wasi/runtime_v0.c)
+croft_apply_public_includes(sapling_wasi_runtime)
+target_compile_definitions(sapling_wasi_runtime PUBLIC SAPLING_PAGE_SIZE=4096)
+target_link_libraries(sapling_wasi_runtime PUBLIC sapling_runner_core)
+croft_register_artifact(sapling_wasi_runtime wasi
+    TAGS tier4 wasi runtime adapter common
+    DEPENDS sapling_runner_core
+)
+
+add_library(sapling_runner_host STATIC src/runner/runner_v0.c)
+add_dependencies(sapling_runner_host wit_schema_gen)
+croft_apply_public_includes(sapling_runner_host)
+target_compile_definitions(sapling_runner_host PUBLIC SAPLING_PAGE_SIZE=4096 SAPLING_THREADED)
+target_link_libraries(sapling_runner_host PUBLIC Threads::Threads sapling_runner_core)
+croft_register_artifact(sapling_runner_host runner
+    TAGS tier4 sapling runner host threaded clocks sleep polling
+    DEPENDS sapling_runner_core
+)
+
+add_library(sapling_wasi_host STATIC src/wasi/shim_v0.c)
+add_dependencies(sapling_wasi_host wit_schema_gen)
+croft_apply_public_includes(sapling_wasi_host)
+target_compile_definitions(sapling_wasi_host PUBLIC SAPLING_PAGE_SIZE=4096 SAPLING_THREADED)
+target_link_libraries(sapling_wasi_host PUBLIC sapling_runner_host sapling_wasi_runtime)
+croft_register_artifact(sapling_wasi_host wasi
+    TAGS tier4 wasi shim host reply-routing
+    DEPENDS sapling_runner_host sapling_wasi_runtime
+)
+
+add_library(sapling STATIC src/runtime/sapling_aggregate.c)
+croft_apply_public_includes(sapling)
+target_link_libraries(sapling PUBLIC
+    sapling_core
+    sapling_runner_core
+    sapling_wasi_runtime
+    sapling_runner_host
+    sapling_wasi_host
+)
 if(CROFT_BUILD_TESTS)
     target_compile_definitions(sapling PRIVATE SAPLING_HAMT_TESTING)
 endif()
-croft_register_artifact(sapling datastore
-    TAGS tier3 tier4 sapling threaded runner wasi datastore persistent-text
+croft_register_artifact(sapling compatibility
+    TAGS tier3 tier4 sapling threaded runner wasi datastore persistent-text aggregate
+    DEPENDS sapling_core sapling_runner_core sapling_wasi_runtime sapling_runner_host sapling_wasi_host
 )
 
 add_library(croft_editor_core STATIC src/editor/editor_text_model.c)
@@ -575,6 +629,15 @@ target_link_libraries(croft_editor_document PUBLIC croft_editor_document_core cr
 croft_register_artifact(croft_editor_document editor
     TAGS tier8 editor document compatibility aggregate
     DEPENDS croft_editor_document_core croft_editor_document_fs
+)
+
+add_library(croft_wit_text_runtime STATIC src/runtime/wit_text_runtime.c)
+add_dependencies(croft_wit_text_runtime common_wit_schema_gen)
+croft_apply_public_includes(croft_wit_text_runtime)
+target_link_libraries(croft_wit_text_runtime PUBLIC sapling_core croft_wit_common_core)
+croft_register_artifact(croft_wit_text_runtime wit
+    TAGS tier8 wit text resource-handles common-core machine-generated-model
+    DEPENDS sapling_core croft_wit_common_core
 )
 
 # ── Optional Croft artifacts ───────────────────────────────────────────
@@ -929,6 +992,15 @@ croft_add_example(example_sapling_text
     FOCUS "Sapling text clone-on-write editing without any GUI."
 )
 
+croft_add_example(example_wit_text_handles
+    SOURCES examples/wit_text_handles.c
+    LINKS croft_wit_text_runtime
+    REQUIRES croft_wit_text_runtime
+    TAGS wit xpi text handles common-core sapling
+    FOCUS "Sapling text editing driven through generated WIT resource handles."
+)
+add_dependencies(example_wit_text_handles common_wit_schema_gen)
+
 if(TARGET wasm_guest_gen)
     croft_add_example(example_wasm_guest
         SOURCES examples/wasm_guest.c
@@ -1101,14 +1173,16 @@ endif()
 if(CROFT_BUILD_TESTS)
     enable_testing()
 
-    add_executable(test_croft tests/test_main.c tests/test_queue.c tests/host_tests/test_fs.c tests/test_editor_text_model.c tests/test_editor_document.c tests/test_editor_commands.c)
+    add_executable(test_croft tests/test_main.c tests/test_queue.c tests/host_tests/test_fs.c tests/test_editor_text_model.c tests/test_editor_document.c tests/test_editor_commands.c tests/test_wit_resource_codegen.c tests/test_wit_text_runtime.c)
     target_include_directories(test_croft PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
     target_link_libraries(test_croft
         PRIVATE
             croft_host_queue
             croft_editor_document_fs
             croft_editor_commands
+            croft_wit_text_runtime
     )
+    add_dependencies(test_croft common_wit_schema_gen)
     if(NOT TARGET croft_wasm_wasm3)
         target_link_libraries(test_croft PRIVATE croft_host_log croft_host_time)
     endif()
@@ -1262,6 +1336,7 @@ install(DIRECTORY include/wasi/
 )
 
 install(FILES ${WIT_GENERATED_H} DESTINATION include/generated)
+install(FILES ${COMMON_WIT_GENERATED_H} DESTINATION include/generated)
 if(TARGET croft_menu_macos)
     install(FILES ${MENU_WIT_GENERATED_H} DESTINATION include/generated)
 endif()

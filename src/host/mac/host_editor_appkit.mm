@@ -108,6 +108,13 @@
     NSData* utf8 = [[_textView string] dataUsingEncoding:NSUTF8StringEncoding allowLossyConversion:NO];
     const void* bytes = utf8 ? utf8.bytes : "";
     size_t len = utf8 ? (size_t)utf8.length : 0u;
+
+    /*
+     * This whole-buffer sync is intentionally blunt. NSTextView is still doing
+     * the hard work for IME, selection affinity, undo grouping, and
+     * accessibility; keeping the sync obvious helps surface those join-points
+     * when we compare this family to the direct-Metal editor.
+     */
     int32_t rc = croft_editor_document_replace_utf8(_document, (const uint8_t*)bytes, len);
 
     if (rc != 0) {

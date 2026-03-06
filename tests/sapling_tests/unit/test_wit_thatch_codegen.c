@@ -15,13 +15,7 @@
 #include "sapling/thatch.h"
 #include "generated/wit_schema_dbis.h"
 
-/*
- * Include test-only result<> generated types inline.  Rename symbols that
- * conflict with the production wit_schema_dbis.c (skip).
- */
-#define sap_wit_skip_value      test_result_skip_value
 #include "tests/generated/test_result_types.c"
-#undef sap_wit_skip_value
 
 static int passed = 0;
 static int failed = 0;

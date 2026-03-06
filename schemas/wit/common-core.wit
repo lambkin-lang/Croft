@@ -1,0 +1,83 @@
+package lambkin:common-core@0.1.0;
+
+interface types {
+  type utf8 = list<u8>;
+  type offset = u32;
+
+  resource text;
+  resource db;
+  resource txn;
+  resource mailbox;
+
+  record text-open {
+    initial: utf8,
+  }
+
+  record text-clone {
+    source: text,
+  }
+
+  record text-insert {
+    text: text,
+    offset: offset,
+    utf8: utf8,
+  }
+
+  record text-delete {
+    text: text,
+    start: offset,
+    end: offset,
+  }
+
+  record text-export {
+    text: text,
+  }
+
+  record text-drop {
+    text: text,
+  }
+
+  enum common-error {
+    invalid-handle,
+    invalid-utf8,
+    range,
+    oom,
+    busy,
+    platform,
+    internal,
+  }
+
+  variant text-op-result {
+    ok(text),
+    err(common-error),
+  }
+
+  variant status {
+    ok,
+    err(common-error),
+  }
+
+  variant text-export-result {
+    ok(utf8),
+    err(common-error),
+  }
+
+  variant text-command {
+    open(text-open),
+    clone(text-clone),
+    insert(text-insert),
+    delete(text-delete),
+    export(text-export),
+    drop(text-drop),
+  }
+
+  variant text-reply {
+    text(text-op-result),
+    status(status),
+    export(text-export-result),
+  }
+}
+
+world common-core {
+  export types;
+}

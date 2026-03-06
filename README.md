@@ -18,6 +18,9 @@ reference repos that are intentionally not part of the build.
 See [docs/PRODUCT_FAMILY_PLAN.md](docs/PRODUCT_FAMILY_PLAN.md) for the
 current Croft/Lambkin boundary model, WIT plan, and phased implementation
 sequence intended to guide future sessions.
+See [docs/LAMBKIN_XPI_JOURNAL.md](docs/LAMBKIN_XPI_JOURNAL.md) for the
+current join-points, XPI candidates, and AppKit/direct-Metal research notes
+surfaced while forcing the design into code.
 See [docs/EXAMPLE_MATRIX.md](docs/EXAMPLE_MATRIX.md) for the current example
 ladder from foundation-only demos up through the text-editor shell.
 See [docs/EDITOR_FAMILY_ANALYSIS.md](docs/EDITOR_FAMILY_ANALYSIS.md) for the
@@ -145,7 +148,8 @@ Typical targets include:
 
 - `croft_foundation`, `croft_host_log`, `croft_host_time`, `croft_host_thread`
 - `croft_msg_frame`, `croft_host_queue`, `croft_messaging`, `croft_fs`
-- `sapling_core`, `sapling`
+- `sapling_core`, `sapling_runner_core`, `sapling_runner_host`, `sapling_wasi_runtime`, `sapling_wasi_host`, `sapling`
+- `croft_wit_common_core`, `croft_wit_text_runtime`
 - `croft_wasm_wasm3`
 - `croft_ui_glfw_opengl`, `croft_ui_glfw_metal` (macOS)
 - `croft_render_tgfx_opengl`, `croft_render_tgfx_metal` (macOS)
@@ -177,6 +181,7 @@ Representative examples include:
 - `example_messaging_roundtrip`
 - `example_fs_inspect`
 - `example_sapling_text`
+- `example_wit_text_handles`
 - `example_wasm_guest`
 - `example_ui_window_opengl`
 - `example_ui_window_metal`
@@ -200,6 +205,11 @@ variant per configure. Use separate build directories with `TGFX_USE_OPENGL=ON`
 or `TGFX_USE_METAL=ON` when comparing render costs; the
 `tools/benchmark_tgfx_backends.sh` helper automates that workflow and now also
 records a direct-Metal sample that bypasses tgfx entirely.
+
+For common-core/WIT experiments, compare:
+
+- `example_sapling_text` as the direct common-side baseline
+- `example_wit_text_handles` as the first handle-oriented WIT/resource model
 
 For editor-family experiments on macOS, Croft currently compares:
 

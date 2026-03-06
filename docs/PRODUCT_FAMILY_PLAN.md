@@ -173,10 +173,16 @@ Current status:
 - `sapling_core` now exists as the single-thread profile, and
   `example_sapling_text` now exercises the linear arena backing through that
   target.
+- `sapling_runner_core`, `sapling_runner_host`, `sapling_wasi_runtime`, and
+  `sapling_wasi_host` now keep runner/WASI host shell concerns out of
+  `sapling_core` while preserving the compatibility aggregate.
 - `croft_editor_document_core` now carries document state/history and
   `croft_editor_document_fs` now handles file-backed open/save.
-- The remaining cleanup is to keep pushing consumers onto the narrower targets
-  and then introduce the first WIT-defined common interfaces above this layer.
+- The first common-side WIT package now exists in `schemas/wit/common-core.wit`
+  and is exercised by `example_wit_text_handles` through opaque resource
+  handles instead of raw `Text*`.
+- The remaining cleanup is to extend that WIT barrier beyond `text` and keep
+  pushing consumers onto the narrower targets.
 
 ## World Plan
 
@@ -208,6 +214,13 @@ These are the first priority for validating the common layer:
 - a minimal `db` sample
 - a mailbox/worker sample with no shared memory
 - a document-editing sample that does not require host filesystem access
+
+Current status:
+
+- `example_sapling_text` is the direct common-core baseline.
+- `example_wit_text_handles` is the first handle-oriented WIT/resource version
+  of that baseline and should be treated as the preferred shape for future
+  model-program growth.
 
 ### Family B: Same Core Logic with CLI and Filesystem
 
@@ -269,10 +282,11 @@ These should remain clearly on the host side:
 
 The next concrete implementation work should happen in this order:
 
-1. Add the first common WIT interfaces and generated C bindings around
-   `text`, `db`, `txn`, and `mailbox`.
-2. Create the first Wasm-aligned common-core sample programs using those
-   generated interfaces.
+1. Extend `common-core.wit` from `text` to `db`, `txn`, and `mailbox`.
+2. Create the first Wasm-aligned common-core sample programs that use those
+   generated interfaces in more than one world shape.
+3. Read `docs/LAMBKIN_XPI_JOURNAL.md` before expanding host/editor surface area
+   so the current join-point questions remain explicit.
 
 ## Resume Checklist For Future Sessions
 
@@ -281,11 +295,13 @@ When resuming this work in a new session:
 1. Read this document first.
 2. Read `README.md` for the current build and benchmark workflow.
 3. Read `docs/EXAMPLE_MATRIX.md` to see the current modeled sample families.
-4. For any new code, decide whether it belongs to:
+4. Read `docs/LAMBKIN_XPI_JOURNAL.md` to pick up the current join-points,
+   XPIs, and open research questions.
+5. For any new code, decide whether it belongs to:
    common support, WIT bindings, or host/platform support.
-5. If a change adds an OS dependency to a common target, stop and split the
+6. If a change adds an OS dependency to a common target, stop and split the
    boundary instead.
-6. If a new sample is added, state which world it models and which artifacts it
+7. If a new sample is added, state which world it models and which artifacts it
    should justify linking.
 
 ## Non-Goal Reminder

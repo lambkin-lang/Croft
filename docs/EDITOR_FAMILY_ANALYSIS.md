@@ -25,13 +25,15 @@ and the direct-Metal path does not reuse tgfx. All three families share only
 the document and file-IO
 concerns through:
 
-- `croft_editor_document`
+- `croft_editor_document_core`
+- `croft_editor_document_fs`
 
-That layer owns:
+Those layers own:
 
 - Sapling arena/environment/text allocation
+- document history, undo, and coalescing
 - UTF-8 import/export
-- host file loading and saving
+- host file loading and saving via the filesystem adapter
 
 Everything above that is allowed to diverge by family.
 
@@ -58,6 +60,10 @@ the editor/document logic.
   differently while still sharing Sapling-backed state.
 - The direct-Metal path can stay close to the AppKit path in size even after
   adding enough text rendering to support the scene editor.
+- The remaining comparison work is not just about performance. It is about
+  making hidden host services explicit: AppKit currently gives IME,
+  accessibility, and undo-manager behavior "for free", while the direct-Metal
+  path keeps those as visible join-points we still need to model.
 
 ## Next Step
 

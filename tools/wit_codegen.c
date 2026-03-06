@@ -215,6 +215,10 @@ typedef struct {
 } WitAlias;
 
 typedef struct {
+    char name[MAX_NAME];
+} WitResource;
+
+typedef struct {
     WitRecord  records[MAX_TYPES];
     int        record_count;
     WitVariant variants[MAX_TYPES];
@@ -225,6 +229,8 @@ typedef struct {
     int        flags_count;
     WitAlias   aliases[MAX_TYPES];
     int        alias_count;
+    WitResource resources[MAX_TYPES];
+    int         resource_count;
 } WitRegistry;
 
 /* ------------------------------------------------------------------ */
@@ -472,6 +478,13 @@ static int parse_alias(Scanner *s, WitAlias *alias)
     return 1;
 }
 
+static int parse_resource(Scanner *s, WitResource *resource)
+{
+    if (!scan_ident(s, resource->name, MAX_NAME)) return 0;
+    expect_char(s, ';');
+    return 1;
+}
+
 static int parse_wit(Scanner *s, WitRegistry *reg)
 {
     memset(reg, 0, sizeof(*reg));
@@ -516,6 +529,12 @@ static int parse_wit(Scanner *s, WitRegistry *reg)
             }
             if (!parse_alias(s, &reg->aliases[reg->alias_count])) return 0;
             reg->alias_count++;
+        } else if (match_keyword(s, "resource")) {
+            if (reg->resource_count >= MAX_TYPES) {
+                fprintf(stderr, "wit_codegen: too many resources\n"); return 0;
+            }
+            if (!parse_resource(s, &reg->resources[reg->resource_count])) return 0;
+            reg->resource_count++;
         } else if (scanner_peek(s) == '}') {
             scanner_advance(s);
         } else {
@@ -569,6 +588,14 @@ static const WitFlags *find_flags(const WitRegistry *reg, const char *name)
     return NULL;
 }
 
+static const WitResource *find_resource(const WitRegistry *reg, const char *name)
+{
+    for (int i = 0; i < reg->resource_count; i++)
+        if (strcmp(reg->resources[i].name, name) == 0)
+            return &reg->resources[i];
+    return NULL;
+}
+
 /* Resolve a type-expression index through aliases.
  * If the root is an ident that names an alias, follow the chain. */
 static int resolve_type(const WitRegistry *reg, int type_idx)
@@ -612,6 +639,7 @@ static int is_fixed_size(const WitRegistry *reg, int type_idx)
     case TYPE_IDENT:
         if (strcmp(t->ident, "string") == 0) return 0;
         if (is_primitive(t->ident)) return 1;
+        if (find_resource(reg, t->ident)) return 1;
         /* check named compound types */
         if (find_enum(reg, t->ident))  return 1;
         if (find_flags(reg, t->ident)) return 1;
@@ -692,6 +720,13 @@ static void kebab_to_camel(const char *in, char *out, int n)
         in++;
     }
     out[i] = '\0';
+}
+
+static void resource_c_typename(const char *resource_name, char *out, int n)
+{
+    char camel[MAX_NAME];
+    kebab_to_camel(resource_name, camel, MAX_NAME);
+    snprintf(out, n, "SapWit%sResource", camel);
 }
 
 /* ------------------------------------------------------------------ */
@@ -884,6 +919,12 @@ static void emit_c_fields(FILE *out, const WitRegistry *reg,
             fprintf(out, "%s%s %s;\n", indent, ctype, name);
             return;
         }
+        if (find_resource(reg, t->ident)) {
+            char resource_type[MAX_NAME];
+            resource_c_typename(t->ident, resource_type, MAX_NAME);
+            fprintf(out, "%s%s %s;\n", indent, resource_type, name);
+            return;
+        }
         if (find_enum(reg, t->ident)) {
             fprintf(out, "%suint8_t %s;\n", indent, name);
             return;
@@ -971,6 +1012,12 @@ static void emit_variant_payload(FILE *out, const WitRegistry *reg,
             fprintf(out, "        %s %s;\n", ctype, case_name);
             return;
         }
+        if (find_resource(reg, t->ident)) {
+            char resource_type[MAX_NAME];
+            resource_c_typename(t->ident, resource_type, MAX_NAME);
+            fprintf(out, "        %s %s;\n", resource_type, case_name);
+            return;
+        }
         if (find_record(reg, t->ident) || find_variant(reg, t->ident)) {
             char camel[MAX_NAME];
             kebab_to_camel(t->ident, camel, MAX_NAME);
@@ -1035,6 +1082,7 @@ static void emit_header(FILE *out, const WitRegistry *reg,
     fprintf(out, "#define %s\n\n", guard);
     fprintf(out, "#include <stdint.h>\n");
     fprintf(out, "#include <stddef.h>\n");
+    fprintf(out, "#include \"croft/wit_wire.h\"\n");
     fprintf(out, "#include \"sapling/thatch.h\"\n");
     fprintf(out, "#include \"sapling/err.h\"\n\n");
 
@@ -1062,38 +1110,11 @@ static void emit_header(FILE *out, const WitRegistry *reg,
     fprintf(out, " *   bool:        [TAG_BOOL_FALSE 0x2A] or [TAG_BOOL_TRUE 0x2B]\n");
     fprintf(out, " *   bytes:       [TAG_BYTES  0x2C][len: 4 LE][data: len bytes]\n");
     fprintf(out, " *   string:      [TAG_STRING 0x2D][len: 4 LE][data: len bytes]\n");
+    fprintf(out, " *   resource:    [TAG_RESOURCE 0x2E][handle: 4 LE]\n");
     fprintf(out, " *\n");
     fprintf(out, " *   skip_len: byte count of everything after the skip_len field\n");
     fprintf(out, " *             itself, up to (but not including) the next sibling.\n");
     fprintf(out, " */\n\n");
-
-    /* --- Thatch WIT tags --- */
-    fprintf(out, "/* Thatch WIT tags (0x10+, coexists with JSON 0x01-0x09) */\n");
-    fprintf(out, "#define SAP_WIT_TAG_RECORD       0x10\n");
-    fprintf(out, "#define SAP_WIT_TAG_VARIANT      0x11\n");
-    fprintf(out, "#define SAP_WIT_TAG_ENUM         0x12\n");
-    fprintf(out, "#define SAP_WIT_TAG_FLAGS        0x13\n");
-    fprintf(out, "#define SAP_WIT_TAG_OPTION_NONE  0x14\n");
-    fprintf(out, "#define SAP_WIT_TAG_OPTION_SOME  0x15\n");
-    fprintf(out, "#define SAP_WIT_TAG_TUPLE        0x16\n");
-    fprintf(out, "#define SAP_WIT_TAG_LIST         0x17\n");
-    fprintf(out, "#define SAP_WIT_TAG_RESULT_OK    0x18\n");
-    fprintf(out, "#define SAP_WIT_TAG_RESULT_ERR   0x19\n\n");
-
-    fprintf(out, "#define SAP_WIT_TAG_S8           0x20\n");
-    fprintf(out, "#define SAP_WIT_TAG_U8           0x21\n");
-    fprintf(out, "#define SAP_WIT_TAG_S16          0x22\n");
-    fprintf(out, "#define SAP_WIT_TAG_U16          0x23\n");
-    fprintf(out, "#define SAP_WIT_TAG_S32          0x24\n");
-    fprintf(out, "#define SAP_WIT_TAG_U32          0x25\n");
-    fprintf(out, "#define SAP_WIT_TAG_S64          0x26\n");
-    fprintf(out, "#define SAP_WIT_TAG_U64          0x27\n");
-    fprintf(out, "#define SAP_WIT_TAG_F32          0x28\n");
-    fprintf(out, "#define SAP_WIT_TAG_F64          0x29\n");
-    fprintf(out, "#define SAP_WIT_TAG_BOOL_FALSE   0x2A\n");
-    fprintf(out, "#define SAP_WIT_TAG_BOOL_TRUE    0x2B\n");
-    fprintf(out, "#define SAP_WIT_TAG_BYTES        0x2C\n");
-    fprintf(out, "#define SAP_WIT_TAG_STRING       0x2D\n\n");
 
     /* --- DBI index constants --- */
     for (int i = 0; i < ndbi; i++) {
@@ -1101,6 +1122,18 @@ static void emit_header(FILE *out, const WitRegistry *reg,
         fprintf(out, "#define SAP_WIT_DBI_%s %du\n", upper, dbis[i].dbi);
     }
     fprintf(out, "\n");
+
+    if (reg->resource_count > 0) {
+        fprintf(out, "/* Resource handle typedefs */\n");
+        for (int i = 0; i < reg->resource_count; i++) {
+            char resource_type[MAX_NAME];
+            kebab_to_upper(reg->resources[i].name, upper, MAX_NAME);
+            resource_c_typename(reg->resources[i].name, resource_type, MAX_NAME);
+            fprintf(out, "typedef uint32_t %s;\n", resource_type);
+            fprintf(out, "#define SAP_WIT_%s_RESOURCE_INVALID ((%s)0u)\n", upper, resource_type);
+        }
+        fprintf(out, "\n");
+    }
 
     /* --- DBI schema metadata type --- */
     if (ndbi > 0) {
@@ -1286,6 +1319,11 @@ static void emit_write_type_expr(FILE *out, const WitRegistry *reg,
                 fprintf(out, "%sSAP_WIT_CHECK(thatch_write_tag(region, %s));\n", indent, tag);
                 fprintf(out, "%sSAP_WIT_CHECK(thatch_write_data(region, &%s, %d));\n", indent, access, size);
             }
+            return;
+        }
+        if (find_resource(reg, t->ident)) {
+            fprintf(out, "%sSAP_WIT_CHECK(thatch_write_tag(region, SAP_WIT_TAG_RESOURCE));\n", indent);
+            fprintf(out, "%sSAP_WIT_CHECK(thatch_write_data(region, &%s, 4));\n", indent, access);
             return;
         }
         /* enum -> TAG_ENUM + 1 byte */
@@ -1541,6 +1579,12 @@ static void emit_read_type_expr(FILE *out, const WitRegistry *reg,
             }
             return;
         }
+        if (find_resource(reg, t->ident)) {
+            fprintf(out, "%s{ uint8_t tag; SAP_WIT_CHECK(thatch_read_tag(region, cursor, &tag));\n", indent);
+            fprintf(out, "%s  if (tag != SAP_WIT_TAG_RESOURCE) return ERR_TYPE; }\n", indent);
+            fprintf(out, "%sSAP_WIT_CHECK(thatch_read_data(region, cursor, 4, &%s));\n", indent, access);
+            return;
+        }
         /* enum -> read tag + 1 byte */
         if (find_enum(reg, t->ident)) {
             fprintf(out, "%s{ uint8_t tag; SAP_WIT_CHECK(thatch_read_tag(region, cursor, &tag));\n", indent);
@@ -1760,6 +1804,7 @@ static void emit_read_variant(FILE *out, const WitRegistry *reg,
 /* Universal skip emission                                            */
 /* ------------------------------------------------------------------ */
 
+__attribute__((unused))
 static void emit_skip_function(FILE *out)
 {
     fprintf(out, "int sap_wit_skip_value(const ThatchRegion *region, ThatchCursor *cursor)\n{\n");
@@ -1795,6 +1840,9 @@ static void emit_skip_function(FILE *out)
     fprintf(out, "        SAP_WIT_CHECK(thatch_read_data(region, cursor, 4, &len));\n");
     fprintf(out, "        return thatch_advance_cursor(region, cursor, len);\n");
     fprintf(out, "    }\n");
+
+    fprintf(out, "    case SAP_WIT_TAG_RESOURCE:\n");
+    fprintf(out, "        return thatch_advance_cursor(region, cursor, 4);\n");
 
     /* Record/tuple/list/variant with skip pointer: read skip len, advance */
     fprintf(out, "    case SAP_WIT_TAG_RECORD: case SAP_WIT_TAG_TUPLE:\n");
@@ -1872,10 +1920,6 @@ static void emit_source(FILE *out, const WitRegistry *reg,
         const WitVariant *var = find_variant(reg, order[idx]);
         if (var) { emit_read_variant(out, reg, var); continue; }
     }
-
-    /* Universal skip function */
-    fprintf(out, "/* ---- Universal skip ---- */\n\n");
-    emit_skip_function(out);
 
     /* DBI blob validators — full structural validation via typed readers */
     fprintf(out, "/* ---- DBI blob validators ---- */\n\n");
@@ -1981,9 +2025,9 @@ int main(int argc, char **argv)
     }
 
     printf("wit_codegen: PASS (records=%d variants=%d enums=%d flags=%d "
-           "aliases=%d dbis=%d)\n",
+           "aliases=%d resources=%d dbis=%d)\n",
            reg.record_count, reg.variant_count, reg.enum_count,
-           reg.flags_count, reg.alias_count, ndbi);
+           reg.flags_count, reg.alias_count, reg.resource_count, ndbi);
 
     free(src);
     return 0;

@@ -53,6 +53,12 @@ static __strong id<MTLCommandBuffer> g_command_buffer = nil;
 static __strong id<MTLRenderCommandEncoder> g_encoder = nil;
 static __strong NSMutableDictionary<NSString*, CroftTextTextureEntry*>* g_text_cache = nil;
 
+/*
+ * The direct-Metal path deliberately keeps rendering small and explicit.
+ * Text shaping, caret policy, IME composition, and accessibility remain
+ * separate join-points above this renderer rather than being hidden inside one
+ * "editor widget" abstraction.
+ */
 static uint32_t g_frame_width = 0;
 static uint32_t g_frame_height = 0;
 static MTLClearColor g_clear_color = MTLClearColorMake(0.0, 0.0, 0.0, 1.0);

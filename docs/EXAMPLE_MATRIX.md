@@ -23,6 +23,7 @@ cmake --build build --target croft_examples
 | `example_messaging_roundtrip` | Validated message envelope round-trip over the host queue | `croft_msg_frame`, `croft_host_queue` |
 | `example_fs_inspect` | Host filesystem access and resource-path discovery | `croft_fs` |
 | `example_sapling_text` | Sapling text clone-on-write editing over the single-thread linear arena profile | `sapling_core` |
+| `example_wit_text_handles` | Sapling text editing through generated WIT commands and opaque resource handles | `croft_wit_text_runtime` |
 | `example_wasm_guest` | Embedded Wasm guest bridged into Croft host imports | `croft_wasm_wasm3` |
 | `example_ui_window_opengl` | Window only; OpenGL-capable GLFW context and no renderer | `croft_ui_glfw_opengl` |
 | `example_ui_window_metal` | Window only; no-API GLFW window for the Metal path | `croft_ui_glfw_metal` |
@@ -46,6 +47,9 @@ Notes:
 - `example_sapling_text` now uses `sapling_core` and the linear arena backing,
   so it is the current smallest in-tree proof point for the Wasm-aligned
   datastore/text side.
+- `example_wit_text_handles` is the first model-program sample that crosses a
+  WIT/resource barrier instead of calling Sapling text APIs directly. It is the
+  current best in-tree proxy for Lambkin-generated common-core code.
 - The editor document layer is now split: `croft_editor_document_core` carries
   Sapling state, history, and edit semantics, while
   `croft_editor_document_fs` is the host-fs adapter for open/save.
