@@ -25,14 +25,14 @@ int main(void) {
     host_menu_set_callback(on_menu_action);
 
     // Stream the intents!
-    SapWitMenuIntent intent;
+    SapWitMenuSchemaMenuIntent intent;
 
     // 1. Begin Update
-    intent.case_tag = SAP_WIT_MENU_INTENT_BEGIN_UPDATE;
+    intent.case_tag = SAP_WIT_MENU_SCHEMA_MENU_INTENT_BEGIN_UPDATE;
     host_menu_apply_intent(&intent);
 
     // 2. Add App Menu (Root)
-    intent.case_tag = SAP_WIT_MENU_INTENT_ADD_ITEM;
+    intent.case_tag = SAP_WIT_MENU_SCHEMA_MENU_INTENT_ADD_ITEM;
     intent.val.add_item.action_id = 1;
     intent.val.add_item.parent_action_id = -1;
     intent.val.add_item.label_data = (const uint8_t*)"App";
@@ -42,7 +42,7 @@ int main(void) {
     host_menu_apply_intent(&intent);
 
     // 3. Add Quit item underneath App Menu
-    intent.case_tag = SAP_WIT_MENU_INTENT_ADD_ITEM;
+    intent.case_tag = SAP_WIT_MENU_SCHEMA_MENU_INTENT_ADD_ITEM;
     intent.val.add_item.action_id = 99;
     intent.val.add_item.parent_action_id = 1;
     intent.val.add_item.label_data = (const uint8_t*)"Quit Croft";
@@ -50,11 +50,11 @@ int main(void) {
     intent.val.add_item.has_shortcut = 1;
     intent.val.add_item.shortcut_data = (const uint8_t*)"q";
     intent.val.add_item.shortcut_len = 1;
-    intent.val.add_item.mods = SAP_WIT_MODIFIERS_CMD; // Bind Cmd+Q explicitly
+    intent.val.add_item.mods = SAP_WIT_MENU_SCHEMA_MODIFIERS_CMD; // Bind Cmd+Q explicitly
     host_menu_apply_intent(&intent);
 
     // 4. Commit Update
-    intent.case_tag = SAP_WIT_MENU_INTENT_COMMIT_UPDATE;
+    intent.case_tag = SAP_WIT_MENU_SCHEMA_MENU_INTENT_COMMIT_UPDATE;
     host_menu_apply_intent(&intent);
 
     printf("Menu registered natively! Please verify the Apple Menu Bar, then press Cmd+Q or click 'Quit Croft' to exit.\n");

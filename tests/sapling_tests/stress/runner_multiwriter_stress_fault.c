@@ -376,7 +376,7 @@ static int stress_atomic_apply(SapRunnerTxStackV0 *stack, Txn *read_txn, SapRunn
     wr32be(dedupe_key, stage->worker_id);
     wr64be(dedupe_key + 4u, order_id);
 
-    rc = txstack_key_exists(stack, read_txn, SAP_WIT_DBI_DEDUPE, dedupe_key, sizeof(dedupe_key),
+    rc = txstack_key_exists(stack, read_txn, SAP_WIT_RUNTIME_SCHEMA_DBI_DEDUPE, dedupe_key, sizeof(dedupe_key),
                             &seen);
     if (rc != ERR_OK)
     {

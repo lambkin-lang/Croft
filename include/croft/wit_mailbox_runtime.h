@@ -21,10 +21,10 @@ void croft_wit_mailbox_runtime_destroy(croft_wit_mailbox_runtime* runtime);
  * concerns belong in higher worlds rather than this common-core barrier.
  */
 int32_t croft_wit_mailbox_runtime_dispatch(croft_wit_mailbox_runtime* runtime,
-                                           const SapWitMailboxCommand* command,
-                                           SapWitMailboxReply* reply_out);
+                                           const SapWitCommonCoreMailboxCommand* command,
+                                           SapWitCommonCoreMailboxReply* reply_out);
 
-void croft_wit_mailbox_reply_dispose(SapWitMailboxReply* reply);
+void croft_wit_mailbox_reply_dispose(SapWitCommonCoreMailboxReply* reply);
 
 #ifdef __cplusplus
 }

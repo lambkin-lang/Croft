@@ -40,19 +40,19 @@ int sap_runner_mailbox_v0_claim(DB *db, uint64_t inbox_worker_id, uint64_t seq,
         return ERR_BUSY;
     }
 
-    rc = txn_get_dbi(txn, SAP_WIT_DBI_INBOX, key, sizeof(key), &frame, &frame_len);
+    rc = txn_get_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_INBOX, key, sizeof(key), &frame, &frame_len);
     if (rc != ERR_OK)
     {
         txn_abort(txn);
         return rc;
     }
-    if (sap_wit_validate_dbi1_inbox_value(frame, frame_len) != 0)
+    if (sap_wit_validate_runtime_schema_dbi1_inbox_value(frame, frame_len) != 0)
     {
         txn_abort(txn);
         return ERR_CORRUPT;
     }
 
-    rc = txn_get_dbi(txn, SAP_WIT_DBI_LEASES, key, sizeof(key), &lease_val, &lease_len);
+    rc = txn_get_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_LEASES, key, sizeof(key), &lease_val, &lease_len);
     if (rc == ERR_NOT_FOUND)
     {
         uint8_t raw[SAP_RUNNER_LEASE_V0_VALUE_SIZE];
@@ -63,7 +63,7 @@ int sap_runner_mailbox_v0_claim(DB *db, uint64_t inbox_worker_id, uint64_t seq,
         next.attempts = 1u;
         sap_runner_lease_v0_encode(&next, raw);
 
-        rc = txn_put_flags_dbi(txn, SAP_WIT_DBI_LEASES, key, sizeof(key), raw, sizeof(raw),
+        rc = txn_put_flags_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_LEASES, key, sizeof(key), raw, sizeof(raw),
                                SAP_NOOVERWRITE, &reserved_out);
         (void)reserved_out;
         if (rc != ERR_OK)
@@ -100,7 +100,7 @@ int sap_runner_mailbox_v0_claim(DB *db, uint64_t inbox_worker_id, uint64_t seq,
         sap_runner_lease_v0_encode(&cur, expected_raw);
         sap_runner_lease_v0_encode(&next, replacement_raw);
 
-        rc = txn_put_if(txn, SAP_WIT_DBI_LEASES, key, sizeof(key), replacement_raw,
+        rc = txn_put_if(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_LEASES, key, sizeof(key), replacement_raw,
                         sizeof(replacement_raw), expected_raw, sizeof(expected_raw));
         if (rc != ERR_OK)
         {
@@ -153,7 +153,7 @@ int sap_runner_mailbox_v0_ack(DB *db, uint64_t worker_id, uint64_t seq,
         return ERR_BUSY;
     }
 
-    rc = txn_get_dbi(txn, SAP_WIT_DBI_LEASES, key, sizeof(key), &lease_val, &lease_len);
+    rc = txn_get_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_LEASES, key, sizeof(key), &lease_val, &lease_len);
     if (rc != ERR_OK)
     {
         txn_abort(txn);
@@ -166,13 +166,13 @@ int sap_runner_mailbox_v0_ack(DB *db, uint64_t worker_id, uint64_t seq,
         return ERR_CONFLICT;
     }
 
-    rc = txn_del_dbi(txn, SAP_WIT_DBI_INBOX, key, sizeof(key));
+    rc = txn_del_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_INBOX, key, sizeof(key));
     if (rc != ERR_OK)
     {
         txn_abort(txn);
         return rc;
     }
-    rc = txn_del_dbi(txn, SAP_WIT_DBI_LEASES, key, sizeof(key));
+    rc = txn_del_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_LEASES, key, sizeof(key));
     if (rc != ERR_OK)
     {
         txn_abort(txn);
@@ -210,7 +210,7 @@ int sap_runner_mailbox_v0_requeue(DB *db, uint64_t worker_id, uint64_t seq,
         return ERR_BUSY;
     }
 
-    rc = txn_get_dbi(txn, SAP_WIT_DBI_LEASES, old_key, sizeof(old_key), &lease_val, &lease_len);
+    rc = txn_get_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_LEASES, old_key, sizeof(old_key), &lease_val, &lease_len);
     if (rc != ERR_OK)
     {
         txn_abort(txn);
@@ -223,19 +223,19 @@ int sap_runner_mailbox_v0_requeue(DB *db, uint64_t worker_id, uint64_t seq,
         return ERR_CONFLICT;
     }
 
-    rc = txn_get_dbi(txn, SAP_WIT_DBI_INBOX, old_key, sizeof(old_key), &frame, &frame_len);
+    rc = txn_get_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_INBOX, old_key, sizeof(old_key), &frame, &frame_len);
     if (rc != ERR_OK)
     {
         txn_abort(txn);
         return rc;
     }
-    if (sap_wit_validate_dbi1_inbox_value(frame, frame_len) != 0)
+    if (sap_wit_validate_runtime_schema_dbi1_inbox_value(frame, frame_len) != 0)
     {
         txn_abort(txn);
         return ERR_CORRUPT;
     }
 
-    rc = txn_put_flags_dbi(txn, SAP_WIT_DBI_INBOX, new_key, sizeof(new_key), frame, frame_len,
+    rc = txn_put_flags_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_INBOX, new_key, sizeof(new_key), frame, frame_len,
                            SAP_NOOVERWRITE, NULL);
     if (rc != ERR_OK)
     {
@@ -243,13 +243,13 @@ int sap_runner_mailbox_v0_requeue(DB *db, uint64_t worker_id, uint64_t seq,
         return rc;
     }
 
-    rc = txn_del_dbi(txn, SAP_WIT_DBI_INBOX, old_key, sizeof(old_key));
+    rc = txn_del_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_INBOX, old_key, sizeof(old_key));
     if (rc != ERR_OK)
     {
         txn_abort(txn);
         return rc;
     }
-    rc = txn_del_dbi(txn, SAP_WIT_DBI_LEASES, old_key, sizeof(old_key));
+    rc = txn_del_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_LEASES, old_key, sizeof(old_key));
     if (rc != ERR_OK)
     {
         txn_abort(txn);

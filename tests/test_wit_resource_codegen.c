@@ -61,8 +61,8 @@ int test_wit_resource_open_command_roundtrip(void)
     SapEnv* env = NULL;
     SapTxnCtx* txn = NULL;
     ThatchRegion* region = NULL;
-    SapWitTextCommand in;
-    SapWitTextCommand out;
+    SapWitCommonCoreTextCommand in;
+    SapWitCommonCoreTextCommand out;
     ThatchCursor cursor = 0u;
 
     wit_codegen_setup(&arena, &env, &txn, &region);
@@ -73,15 +73,15 @@ int test_wit_resource_open_command_roundtrip(void)
 
     memset(&in, 0, sizeof(in));
     memset(&out, 0, sizeof(out));
-    in.case_tag = SAP_WIT_TEXT_COMMAND_OPEN;
+    in.case_tag = SAP_WIT_COMMON_CORE_TEXT_COMMAND_OPEN;
     in.val.open.initial_data = (const uint8_t*)"small binaries";
     in.val.open.initial_len = 14u;
 
-    if (sap_wit_write_text_command(region, &in) != ERR_OK) {
+    if (sap_wit_write_common_core_text_command(region, &in) != ERR_OK) {
         wit_codegen_teardown(arena, env, txn);
         return 1;
     }
-    if (sap_wit_read_text_command(region, &cursor, &out) != ERR_OK) {
+    if (sap_wit_read_common_core_text_command(region, &cursor, &out) != ERR_OK) {
         wit_codegen_teardown(arena, env, txn);
         return 1;
     }
@@ -89,7 +89,7 @@ int test_wit_resource_open_command_roundtrip(void)
         wit_codegen_teardown(arena, env, txn);
         return 1;
     }
-    if (out.case_tag != SAP_WIT_TEXT_COMMAND_OPEN
+    if (out.case_tag != SAP_WIT_COMMON_CORE_TEXT_COMMAND_OPEN
             || out.val.open.initial_len != 14u
             || memcmp(out.val.open.initial_data, "small binaries", 14u) != 0) {
         wit_codegen_teardown(arena, env, txn);
@@ -106,8 +106,8 @@ int test_wit_resource_handle_roundtrip(void)
     SapEnv* env = NULL;
     SapTxnCtx* txn = NULL;
     ThatchRegion* region = NULL;
-    SapWitTextCommand in;
-    SapWitTextCommand out;
+    SapWitCommonCoreTextCommand in;
+    SapWitCommonCoreTextCommand out;
     ThatchCursor cursor = 0u;
 
     wit_codegen_setup(&arena, &env, &txn, &region);
@@ -118,14 +118,14 @@ int test_wit_resource_handle_roundtrip(void)
 
     memset(&in, 0, sizeof(in));
     memset(&out, 0, sizeof(out));
-    in.case_tag = SAP_WIT_TEXT_COMMAND_CLONE;
+    in.case_tag = SAP_WIT_COMMON_CORE_TEXT_COMMAND_CLONE;
     in.val.clone.source = 37u;
 
-    if (sap_wit_write_text_command(region, &in) != ERR_OK) {
+    if (sap_wit_write_common_core_text_command(region, &in) != ERR_OK) {
         wit_codegen_teardown(arena, env, txn);
         return 1;
     }
-    if (sap_wit_read_text_command(region, &cursor, &out) != ERR_OK) {
+    if (sap_wit_read_common_core_text_command(region, &cursor, &out) != ERR_OK) {
         wit_codegen_teardown(arena, env, txn);
         return 1;
     }
@@ -133,7 +133,7 @@ int test_wit_resource_handle_roundtrip(void)
         wit_codegen_teardown(arena, env, txn);
         return 1;
     }
-    if (out.case_tag != SAP_WIT_TEXT_COMMAND_CLONE || out.val.clone.source != 37u) {
+    if (out.case_tag != SAP_WIT_COMMON_CORE_TEXT_COMMAND_CLONE || out.val.clone.source != 37u) {
         wit_codegen_teardown(arena, env, txn);
         return 1;
     }

@@ -1,3 +1,5 @@
+package lambkin:menu-schema@0.1.0;
+
 interface menu-api {
     flags modifiers { cmd, shift, ctrl, alt, }
     

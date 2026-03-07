@@ -13,7 +13,7 @@ typedef void (*host_menu_callback_t)(int32_t action_id);
  * Apply a streamed menu intent representing an abstract node update.
  * Implemented natively per-OS (e.g. mac/host_menu.m).
  */
-void host_menu_apply_intent(const SapWitMenuIntent* intent);
+void host_menu_apply_intent(const SapWitMenuSchemaMenuIntent* intent);
 
 /**
  * Register a global callback to receive action_ids when the user clicks an item.

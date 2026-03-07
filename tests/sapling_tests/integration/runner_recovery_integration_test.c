@@ -172,7 +172,7 @@ static int inbox_exists(DB *db, uint64_t worker_id, uint64_t seq, int *exists_ou
     {
         return ERR_INVALID;
     }
-    rc = txn_get_dbi(txn, SAP_WIT_DBI_INBOX, key, sizeof(key), &val, &val_len);
+    rc = txn_get_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_INBOX, key, sizeof(key), &val, &val_len);
     txn_abort(txn);
     if (rc == ERR_OK)
     {
@@ -206,7 +206,7 @@ static int dead_letter_exists(DB *db, uint64_t worker_id, uint64_t seq, int *exi
     {
         return ERR_INVALID;
     }
-    rc = txn_get_dbi(txn, SAP_WIT_DBI_DEAD_LETTER, key, sizeof(key), &val, &val_len);
+    rc = txn_get_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_DEAD_LETTER, key, sizeof(key), &val, &val_len);
     txn_abort(txn);
     if (rc == ERR_OK)
     {

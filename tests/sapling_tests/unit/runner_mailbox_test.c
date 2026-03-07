@@ -99,7 +99,7 @@ static int inbox_get(DB *db, uint64_t worker_id, uint64_t seq, const void **val_
         return ERR_INVALID;
     }
     sap_runner_v0_inbox_key_encode(worker_id, seq, key);
-    rc = txn_get_dbi(txn, SAP_WIT_DBI_INBOX, key, sizeof(key), val_out, val_len_out);
+    rc = txn_get_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_INBOX, key, sizeof(key), val_out, val_len_out);
     txn_abort(txn);
     return rc;
 }
@@ -125,7 +125,7 @@ static int inbox_get_copy_wire(DB *db, uint64_t worker_id, uint64_t seq, uint8_t
         return ERR_INVALID;
     }
     sap_runner_v0_inbox_key_encode(worker_id, seq, key);
-    rc = txn_get_dbi(txn, SAP_WIT_DBI_INBOX, key, sizeof(key), &val, &val_len);
+    rc = txn_get_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_INBOX, key, sizeof(key), &val, &val_len);
     if (rc != ERR_OK)
     {
         txn_abort(txn);
@@ -182,7 +182,7 @@ static int lease_get(DB *db, uint64_t worker_id, uint64_t seq, const void **val_
         return ERR_INVALID;
     }
     sap_runner_v0_inbox_key_encode(worker_id, seq, key);
-    rc = txn_get_dbi(txn, SAP_WIT_DBI_LEASES, key, sizeof(key), val_out, val_len_out);
+    rc = txn_get_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_LEASES, key, sizeof(key), val_out, val_len_out);
     txn_abort(txn);
     return rc;
 }

@@ -1,0 +1,124 @@
+package lambkin:host-window@0.1.0;
+
+interface types {
+  resource window;
+
+  enum window-error {
+    invalid-handle,
+    unavailable,
+    busy,
+    internal,
+  }
+
+  record window-open {
+    width: u32,
+    height: u32,
+    title: list<u8>,
+  }
+
+  record window-close {
+    window: window,
+  }
+
+  record window-poll {
+    window: window,
+  }
+
+  record window-next-event {
+    window: window,
+  }
+
+  record window-should-close {
+    window: window,
+  }
+
+  record window-framebuffer-size {
+    window: window,
+  }
+
+  record window-size {
+    width: u32,
+    height: u32,
+  }
+
+  record window-key-event {
+    key: s32,
+    action: s32,
+    modifiers: u32,
+  }
+
+  record window-mouse-event {
+    button: s32,
+    action: s32,
+    modifiers: u32,
+  }
+
+  record window-scroll-event {
+    x-milli: s32,
+    y-milli: s32,
+  }
+
+  record window-cursor-event {
+    x-milli: s32,
+    y-milli: s32,
+  }
+
+  record window-char-event {
+    codepoint: u32,
+  }
+
+  variant window-event {
+    key(window-key-event),
+    mouse(window-mouse-event),
+    scroll(window-scroll-event),
+    cursor(window-cursor-event),
+    char-event(window-char-event),
+  }
+
+  variant window-op-result {
+    ok(window),
+    err(window-error),
+  }
+
+  variant window-status {
+    ok,
+    err(window-error),
+  }
+
+  variant window-event-result {
+    ok(window-event),
+    empty,
+    err(window-error),
+  }
+
+  variant window-bool-result {
+    ok(bool),
+    err(window-error),
+  }
+
+  variant window-size-result {
+    ok(window-size),
+    err(window-error),
+  }
+
+  variant window-command {
+    open(window-open),
+    close(window-close),
+    poll(window-poll),
+    next-event(window-next-event),
+    should-close(window-should-close),
+    framebuffer-size(window-framebuffer-size),
+  }
+
+  variant window-reply {
+    window(window-op-result),
+    status(window-status),
+    event(window-event-result),
+    should-close(window-bool-result),
+    size(window-size-result),
+  }
+}
+
+world host-window {
+  export types;
+}

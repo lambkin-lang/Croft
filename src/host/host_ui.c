@@ -69,7 +69,7 @@ static void glfw_scroll_callback(GLFWwindow* window, double xoffset, double yoff
 static void glfw_cursor_pos_callback(GLFWwindow* window, double xpos, double ypos) {
     (void)window;
     if (g_event_cb) {
-        g_event_cb(CROFT_UI_EVENT_CURSOR_POS, 0, 0);
+        g_event_cb(CROFT_UI_EVENT_CURSOR_POS, (int32_t)(xpos * 1000.0), (int32_t)(ypos * 1000.0));
     }
 }
 

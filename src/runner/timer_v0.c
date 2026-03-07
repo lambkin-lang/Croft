@@ -217,7 +217,7 @@ static int seed_bept_from_first_timer_row(DB *db)
         return ERR_OOM;
     }
 
-    cur = cursor_open_dbi(txn, SAP_WIT_DBI_TIMERS);
+    cur = cursor_open_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_TIMERS);
     if (!cur)
     {
         txn_abort(txn);
@@ -334,7 +334,7 @@ static int read_valid_min_timer(DB *db, int64_t *due_ts_out, uint64_t *seq_out,
         sap_runner_timer_v0_bept_key_decode(bept_key, &due_ts, &seq);
         sap_runner_timer_v0_key_encode(due_ts, seq, timer_key);
 
-        rc = txn_get_dbi(txn, SAP_WIT_DBI_TIMERS, timer_key, SAP_RUNNER_TIMER_KEY_V0_SIZE,
+        rc = txn_get_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_TIMERS, timer_key, SAP_RUNNER_TIMER_KEY_V0_SIZE,
                          &db_val, &db_len);
         if (rc == ERR_NOT_FOUND)
         {
@@ -362,7 +362,7 @@ static int read_valid_min_timer(DB *db, int64_t *due_ts_out, uint64_t *seq_out,
             return ERR_CORRUPT;
         }
 
-        dbi_cur = cursor_open_dbi(txn, SAP_WIT_DBI_TIMERS);
+        dbi_cur = cursor_open_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_TIMERS);
         if (!dbi_cur)
         {
             txn_abort(txn);
@@ -482,7 +482,7 @@ int sap_runner_timer_v0_sync_index(DB *db)
         return rc;
     }
 
-    cur = cursor_open_dbi(txn, SAP_WIT_DBI_TIMERS);
+    cur = cursor_open_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_TIMERS);
     if (!cur)
     {
         txn_abort(txn);
@@ -650,7 +650,7 @@ static int delete_timer_if_match(DB *db, const uint8_t *key_bytes, uint32_t key_
         return ERR_BUSY;
     }
 
-    rc = txn_get_dbi(txn, SAP_WIT_DBI_TIMERS, key_bytes, key_len, &current_val, &current_len);
+    rc = txn_get_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_TIMERS, key_bytes, key_len, &current_val, &current_len);
     if (rc != ERR_OK)
     {
         txn_abort(txn);
@@ -663,7 +663,7 @@ static int delete_timer_if_match(DB *db, const uint8_t *key_bytes, uint32_t key_
         return ERR_CONFLICT;
     }
 
-    rc = txn_del_dbi(txn, SAP_WIT_DBI_TIMERS, key_bytes, key_len);
+    rc = txn_del_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_TIMERS, key_bytes, key_len);
     if (rc != ERR_OK)
     {
         txn_abort(txn);
@@ -717,7 +717,7 @@ int sap_runner_timer_v0_append(DB *db, int64_t due_ts, uint64_t seq, const uint8
         return rc;
     }
 
-    rc = txn_put_flags_dbi(txn, SAP_WIT_DBI_TIMERS, timer_key, SAP_RUNNER_TIMER_KEY_V0_SIZE,
+    rc = txn_put_flags_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_TIMERS, timer_key, SAP_RUNNER_TIMER_KEY_V0_SIZE,
                            stored_payload, stored_payload_len, SAP_NOOVERWRITE, NULL);
     if (rc != ERR_OK)
     {

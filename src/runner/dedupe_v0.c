@@ -163,7 +163,7 @@ int sap_runner_dedupe_v0_get(Txn *txn, const void *message_id, uint32_t message_
     uint32_t val_len;
     int rc;
 
-    rc = txn_get_dbi(txn, SAP_WIT_DBI_DEDUPE, message_id, message_id_len, &val, &val_len);
+    rc = txn_get_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_DEDUPE, message_id, message_id_len, &val, &val_len);
     if (rc != ERR_OK)
     {
         return rc;
@@ -184,7 +184,7 @@ int sap_runner_dedupe_v0_put(Txn *txn, const void *message_id, uint32_t message_
     }
     raw_len = sap_runner_dedupe_v0_encoded_len(dedupe);
     sap_runner_dedupe_v0_encode(dedupe, raw);
-    return txn_put_dbi(txn, SAP_WIT_DBI_DEDUPE, message_id, message_id_len, raw, raw_len);
+    return txn_put_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_DEDUPE, message_id, message_id_len, raw, raw_len);
 }
 
 int sap_runner_dedupe_v0_stage_put(SapRunnerTxStackV0 *stack, const void *message_id,
@@ -199,6 +199,6 @@ int sap_runner_dedupe_v0_stage_put(SapRunnerTxStackV0 *stack, const void *messag
     }
     raw_len = sap_runner_dedupe_v0_encoded_len(dedupe);
     sap_runner_dedupe_v0_encode(dedupe, raw);
-    return sap_runner_txstack_v0_stage_put_dbi(stack, SAP_WIT_DBI_DEDUPE, message_id,
+    return sap_runner_txstack_v0_stage_put_dbi(stack, SAP_WIT_RUNTIME_SCHEMA_DBI_DEDUPE, message_id,
                                                message_id_len, raw, raw_len);
 }

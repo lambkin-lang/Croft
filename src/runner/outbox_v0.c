@@ -75,7 +75,7 @@ static int read_next_outbox_frame(DB *db, uint8_t **key_out, uint32_t *key_len_o
         return ERR_OOM;
     }
 
-    cur = cursor_open_dbi(txn, SAP_WIT_DBI_OUTBOX);
+    cur = cursor_open_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_OUTBOX);
     if (!cur)
     {
         txn_abort(txn);
@@ -157,7 +157,7 @@ static int delete_outbox_if_match(DB *db, const uint8_t *key, uint32_t key_len,
     {
         return ERR_BUSY;
     }
-    rc = txn_get_dbi(txn, SAP_WIT_DBI_OUTBOX, key, key_len, &current_val, &current_len);
+    rc = txn_get_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_OUTBOX, key, key_len, &current_val, &current_len);
     if (rc != ERR_OK)
     {
         txn_abort(txn);
@@ -184,7 +184,7 @@ static int delete_outbox_if_match(DB *db, const uint8_t *key, uint32_t key_len,
         txn_abort(txn);
         return ERR_CONFLICT;
     }
-    rc = txn_del_dbi(txn, SAP_WIT_DBI_OUTBOX, key, key_len);
+    rc = txn_del_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_OUTBOX, key, key_len);
     free(current_wire_owned);
     if (rc != ERR_OK)
     {
@@ -240,7 +240,7 @@ int sap_runner_outbox_v0_append_frame(DB *db, uint64_t seq, const uint8_t *frame
         return rc;
     }
 
-    rc = txn_put_flags_dbi(txn, SAP_WIT_DBI_OUTBOX, key, sizeof(key), stored_value,
+    rc = txn_put_flags_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_OUTBOX, key, sizeof(key), stored_value,
                            stored_value_len, SAP_NOOVERWRITE, NULL);
     if (rc != ERR_OK)
     {

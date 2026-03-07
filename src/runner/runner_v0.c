@@ -334,7 +334,7 @@ static int read_next_inbox_frame(DB *db, uint32_t worker_id, uint8_t **key_out,
         return ERR_OOM;
     }
 
-    cur = cursor_open_dbi(txn, SAP_WIT_DBI_INBOX);
+    cur = cursor_open_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_INBOX);
     if (!cur)
     {
         txn_abort(txn);
@@ -674,7 +674,7 @@ static int retry_count_increment(DB *db, const uint8_t *message_id, uint32_t mes
         return ERR_BUSY;
     }
 
-    rc = txn_get_dbi(txn, SAP_WIT_DBI_DEDUPE, key, key_len, &cur, &cur_len);
+    rc = txn_get_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_DEDUPE, key, key_len, &cur, &cur_len);
     if (rc == ERR_NOT_FOUND)
     {
         count = 1u;
@@ -704,7 +704,7 @@ static int retry_count_increment(DB *db, const uint8_t *message_id, uint32_t mes
     }
 
     wr32(raw_count, count);
-    rc = txn_put_dbi(txn, SAP_WIT_DBI_DEDUPE, key, key_len, raw_count, sizeof(raw_count));
+    rc = txn_put_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_DEDUPE, key, key_len, raw_count, sizeof(raw_count));
     free(key);
     if (rc != ERR_OK)
     {
@@ -747,7 +747,7 @@ static int retry_count_clear(DB *db, const uint8_t *message_id, uint32_t message
         return ERR_BUSY;
     }
 
-    rc = txn_del_dbi(txn, SAP_WIT_DBI_DEDUPE, key, key_len);
+    rc = txn_del_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_DEDUPE, key, key_len);
     free(key);
     if (rc == ERR_NOT_FOUND)
     {
@@ -783,7 +783,7 @@ static int next_inbox_seq_for_worker(DB *db, uint64_t worker_id, uint64_t *next_
     {
         return ERR_OOM;
     }
-    cur = cursor_open_dbi(txn, SAP_WIT_DBI_INBOX);
+    cur = cursor_open_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_INBOX);
     if (!cur)
     {
         txn_abort(txn);
@@ -919,7 +919,7 @@ int sap_runner_v0_bootstrap_dbis(DB *db)
     {
         return ERR_INVALID;
     }
-    if (sap_wit_dbi_schema_count == 0u)
+    if (sap_wit_runtime_schema_dbi_schema_count == 0u)
     {
         return ERR_INVALID;
     }
@@ -928,14 +928,14 @@ int sap_runner_v0_bootstrap_dbis(DB *db)
     {
         return rc;
     }
-    if (sap_wit_dbi_schema[0].dbi != SAP_WIT_DBI_APP_STATE)
+    if (sap_wit_runtime_schema_dbi_schema[0].dbi != SAP_WIT_RUNTIME_SCHEMA_DBI_APP_STATE)
     {
         return ERR_INVALID;
     }
 
-    for (i = 1u; i < sap_wit_dbi_schema_count; i++)
+    for (i = 1u; i < sap_wit_runtime_schema_dbi_schema_count; i++)
     {
-        const SapWitDbiSchema *entry = &sap_wit_dbi_schema[i];
+        const SapWitDbiSchema *entry = &sap_wit_runtime_schema_dbi_schema[i];
 
         if (entry->dbi != i)
         {
@@ -974,7 +974,7 @@ int sap_runner_v0_ensure_schema_version(DB *db, uint16_t expected_major, uint16_
         return ERR_OOM;
     }
 
-    rc = txn_get_dbi(txn, SAP_WIT_DBI_APP_STATE, k_runner_schema_key, RUNNER_SCHEMA_KEY_LEN, &val,
+    rc = txn_get_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_APP_STATE, k_runner_schema_key, RUNNER_SCHEMA_KEY_LEN, &val,
                      &val_len);
     txn_abort(txn);
 
@@ -1004,7 +1004,7 @@ int sap_runner_v0_ensure_schema_version(DB *db, uint16_t expected_major, uint16_
         {
             return ERR_BUSY;
         }
-        rc = txn_get_dbi(wtxn, SAP_WIT_DBI_APP_STATE, k_runner_schema_key, RUNNER_SCHEMA_KEY_LEN,
+        rc = txn_get_dbi(wtxn, SAP_WIT_RUNTIME_SCHEMA_DBI_APP_STATE, k_runner_schema_key, RUNNER_SCHEMA_KEY_LEN,
                          &existing_val, &existing_len);
         if (rc == ERR_OK)
         {
@@ -1017,7 +1017,7 @@ int sap_runner_v0_ensure_schema_version(DB *db, uint16_t expected_major, uint16_
         }
         else if (rc == ERR_NOT_FOUND)
         {
-            rc = txn_put_dbi(wtxn, SAP_WIT_DBI_APP_STATE, k_runner_schema_key,
+            rc = txn_put_dbi(wtxn, SAP_WIT_RUNTIME_SCHEMA_DBI_APP_STATE, k_runner_schema_key,
                              RUNNER_SCHEMA_KEY_LEN, schema_val, RUNNER_SCHEMA_VAL_LEN);
             if (rc != ERR_OK)
             {
@@ -1243,7 +1243,7 @@ int sap_runner_v0_inbox_put(DB *db, uint64_t worker_id, uint64_t seq, const uint
         return rc;
     }
 
-    rc = txn_put_dbi(txn, SAP_WIT_DBI_INBOX, key, sizeof(key), stored_value, stored_value_len);
+    rc = txn_put_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_INBOX, key, sizeof(key), stored_value, stored_value_len);
     if (rc != ERR_OK)
     {
         txn_abort(txn);

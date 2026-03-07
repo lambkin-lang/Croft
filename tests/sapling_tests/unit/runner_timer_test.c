@@ -157,7 +157,7 @@ static int force_bept_min_only(DB *db, int64_t due_ts, uint64_t seq)
     }
 
     sap_runner_timer_v0_key_encode(due_ts, seq, timer_key);
-    rc = txn_get_dbi(txn, SAP_WIT_DBI_TIMERS, timer_key, sizeof(timer_key), &payload, &payload_len);
+    rc = txn_get_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_TIMERS, timer_key, sizeof(timer_key), &payload, &payload_len);
     if (rc != ERR_OK)
     {
         txn_abort(txn);

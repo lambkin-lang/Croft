@@ -147,6 +147,9 @@ needs stable local rules:
 - No hidden cross-boundary heap ownership.
 - Host implementation tables sit behind generated facades rather than leaking
   implementation structs into model programs.
+- Generated C symbol names are package-qualified from the WIT `package`
+  declaration, and generated files emit traceability comments that record the
+  source schema plus the chosen qualifier mapping.
 
 If a future change violates one of these rules, it should be treated as an
 architectural regression rather than a convenience improvement.
@@ -188,9 +191,18 @@ Current status:
 - The next host mix-in WIT package now exists in `schemas/wit/host-clock.wit`
   and is exercised by `example_wit_clock_now` as a stateless service-shaped
   boundary over `host_time_millis()`.
+- The next major host pressure point now has a first model in
+  `schemas/wit/host-window.wit`, exercised by `example_wit_window_events`.
+  It adapts the current singleton/callback GLFW host into a `window` resource
+  plus a polled event stream.
+- `tools/wit_codegen.c` now owns package-qualified C naming,
+  reserved-word sanitization, and generated traceability comments instead of
+  relying on per-schema manual prefixes to keep independently evolved packages
+  linkable together.
 - The remaining cleanup is to move the same common-core logic across more than
   one world shape and to start defining the first host mix-in WIT packages.
-  The next mix-in candidates are likely window/input or GPU-facing facets.
+  The next mix-in candidates are now GPU-facing facets and richer window/menu
+  or accessibility surfaces.
 
 ## World Plan
 
@@ -294,8 +306,9 @@ The next concrete implementation work should happen in this order:
 
 1. Reuse the new common-core WIT handles across more than one world shape,
    starting with CLI-style and host-Wasm-facing samples.
-2. Define the next host mix-in WIT packages, likely window/input and then GPU
-   facets, without letting them bleed back into `common-core`.
+2. Define the next host mix-in WIT packages, likely GPU-facing facets and then
+   richer window/menu or accessibility surfaces, without letting them bleed
+   back into `common-core`.
 3. Read `docs/LAMBKIN_XPI_JOURNAL.md` before expanding host/editor surface area
    so the current join-point questions remain explicit.
 

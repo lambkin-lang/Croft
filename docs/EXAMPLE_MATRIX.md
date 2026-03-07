@@ -24,6 +24,7 @@ cmake --build build --target croft_examples
 | `example_fs_inspect` | Host filesystem access and resource-path discovery | `croft_fs` |
 | `example_wit_fs_read` | Host filesystem open/read/close through generated WIT file resource handles | `croft_wit_host_fs_runtime` |
 | `example_wit_clock_now` | Host monotonic clock query through generated WIT service commands | `croft_wit_host_clock_runtime` |
+| `example_wit_window_events` | Window lifecycle and polled UI events through generated WIT window commands | `croft_wit_host_window_runtime`, `croft_wit_host_clock_runtime` |
 | `example_sapling_text` | Sapling text clone-on-write editing over the single-thread linear arena profile | `sapling_core` |
 | `example_wit_text_handles` | Sapling text editing through generated WIT commands and opaque resource handles | `croft_wit_text_runtime` |
 | `example_wit_db_kv` | Sapling key-value round-trip through generated WIT `db` and `txn` resource handles | `croft_wit_store_runtime` |
@@ -65,6 +66,10 @@ Notes:
 - `example_wit_clock_now` is the first stateless host mix-in WIT sample. It is
   intentionally service-shaped rather than resource-shaped, which keeps the
   boundary honest: not every host capability owns lifetime-managed state.
+- `example_wit_window_events` is the first host-window/input mix-in sample. It
+  deliberately adapts Croft’s current singleton/callback UI host into a
+  `window` resource plus polled event queue, which makes the mismatch explicit
+  instead of hiding it behind direct callbacks.
 - The editor document layer is now split: `croft_editor_document_core` carries
   Sapling state, history, and edit semantics, while
   `croft_editor_document_fs` is the host-fs adapter for open/save.

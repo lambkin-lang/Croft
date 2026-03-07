@@ -56,7 +56,7 @@ static int read_next_dead_letter(DB *db, uint8_t **key_out, uint32_t *key_len_ou
         return ERR_OOM;
     }
 
-    cur = cursor_open_dbi(txn, SAP_WIT_DBI_DEAD_LETTER);
+    cur = cursor_open_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_DEAD_LETTER);
     if (!cur)
     {
         txn_abort(txn);
@@ -128,7 +128,7 @@ static int delete_dead_letter_if_match(DB *db, const uint8_t *key, uint32_t key_
         return ERR_BUSY;
     }
 
-    rc = txn_get_dbi(txn, SAP_WIT_DBI_DEAD_LETTER, key, key_len, &cur, &cur_len);
+    rc = txn_get_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_DEAD_LETTER, key, key_len, &cur, &cur_len);
     if (rc != ERR_OK)
     {
         txn_abort(txn);
@@ -140,7 +140,7 @@ static int delete_dead_letter_if_match(DB *db, const uint8_t *key, uint32_t key_
         return ERR_CONFLICT;
     }
 
-    rc = txn_del_dbi(txn, SAP_WIT_DBI_DEAD_LETTER, key, key_len);
+    rc = txn_del_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_DEAD_LETTER, key, key_len);
     if (rc != ERR_OK)
     {
         txn_abort(txn);
@@ -233,7 +233,7 @@ int sap_runner_dead_letter_v0_move(DB *db, uint64_t worker_id, uint64_t seq,
         return ERR_BUSY;
     }
 
-    rc = txn_get_dbi(txn, SAP_WIT_DBI_LEASES, key, sizeof(key), &lease_val, &lease_len);
+    rc = txn_get_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_LEASES, key, sizeof(key), &lease_val, &lease_len);
     if (rc != ERR_OK)
     {
         txn_abort(txn);
@@ -246,7 +246,7 @@ int sap_runner_dead_letter_v0_move(DB *db, uint64_t worker_id, uint64_t seq,
         return ERR_CONFLICT;
     }
 
-    rc = txn_get_dbi(txn, SAP_WIT_DBI_INBOX, key, sizeof(key), &frame, &frame_len);
+    rc = txn_get_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_INBOX, key, sizeof(key), &frame, &frame_len);
     if (rc != ERR_OK)
     {
         txn_abort(txn);
@@ -290,7 +290,7 @@ int sap_runner_dead_letter_v0_move(DB *db, uint64_t worker_id, uint64_t seq,
         return rc;
     }
 
-    rc = txn_put_dbi(txn, SAP_WIT_DBI_DEAD_LETTER, key, sizeof(key), dlq_val, dlq_len);
+    rc = txn_put_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_DEAD_LETTER, key, sizeof(key), dlq_val, dlq_len);
     free(frame_wire);
     if (rc != ERR_OK)
     {
@@ -298,13 +298,13 @@ int sap_runner_dead_letter_v0_move(DB *db, uint64_t worker_id, uint64_t seq,
         return rc;
     }
 
-    rc = txn_del_dbi(txn, SAP_WIT_DBI_INBOX, key, sizeof(key));
+    rc = txn_del_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_INBOX, key, sizeof(key));
     if (rc != ERR_OK)
     {
         txn_abort(txn);
         return rc;
     }
-    rc = txn_del_dbi(txn, SAP_WIT_DBI_LEASES, key, sizeof(key));
+    rc = txn_del_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_LEASES, key, sizeof(key));
     if (rc != ERR_OK)
     {
         txn_abort(txn);
@@ -432,7 +432,7 @@ int sap_runner_dead_letter_v0_replay(DB *db, uint64_t worker_id, uint64_t seq, u
         return ERR_BUSY;
     }
 
-    rc = txn_get_dbi(txn, SAP_WIT_DBI_DEAD_LETTER, dead_key, sizeof(dead_key), &dead_raw,
+    rc = txn_get_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_DEAD_LETTER, dead_key, sizeof(dead_key), &dead_raw,
                      &dead_raw_len);
     if (rc != ERR_OK)
     {
@@ -457,7 +457,7 @@ int sap_runner_dead_letter_v0_replay(DB *db, uint64_t worker_id, uint64_t seq, u
         return rc;
     }
 
-    rc = txn_put_flags_dbi(txn, SAP_WIT_DBI_INBOX, replay_key, sizeof(replay_key), inbox_val,
+    rc = txn_put_flags_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_INBOX, replay_key, sizeof(replay_key), inbox_val,
                            inbox_val_len, SAP_NOOVERWRITE, NULL);
     if (rc != ERR_OK)
     {
@@ -466,7 +466,7 @@ int sap_runner_dead_letter_v0_replay(DB *db, uint64_t worker_id, uint64_t seq, u
         return rc;
     }
 
-    rc = txn_del_dbi(txn, SAP_WIT_DBI_DEAD_LETTER, dead_key, sizeof(dead_key));
+    rc = txn_del_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_DEAD_LETTER, dead_key, sizeof(dead_key));
     if (rc != ERR_OK)
     {
         txn_abort(txn);

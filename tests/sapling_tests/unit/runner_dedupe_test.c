@@ -76,7 +76,7 @@ static int test_dedupe_storage(void)
     int rc;
 
     CHECK(db != NULL);
-    CHECK(dbi_open(db, SAP_WIT_DBI_DEDUPE, NULL, NULL, 0u) == ERR_OK);
+    CHECK(dbi_open(db, SAP_WIT_RUNTIME_SCHEMA_DBI_DEDUPE, NULL, NULL, 0u) == ERR_OK);
 
     in.accepted = 1;
     in.last_seen_ts = 999;
@@ -156,7 +156,7 @@ static int test_dedupe_checksum_clamp_and_stage_put(void)
     uint32_t i;
 
     CHECK(db != NULL);
-    CHECK(dbi_open(db, SAP_WIT_DBI_DEDUPE, NULL, NULL, 0u) == ERR_OK);
+    CHECK(dbi_open(db, SAP_WIT_RUNTIME_SCHEMA_DBI_DEDUPE, NULL, NULL, 0u) == ERR_OK);
 
     in.accepted = 1;
     in.last_seen_ts = 777;

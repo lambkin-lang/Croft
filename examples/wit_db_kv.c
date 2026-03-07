@@ -4,46 +4,46 @@
 #include <stdio.h>
 #include <string.h>
 
-static int expect_db_handle(const SapWitStoreReply* reply, SapWitDbResource* handle_out)
+static int expect_db_handle(const SapWitCommonCoreStoreReply* reply, SapWitCommonCoreDbResource* handle_out)
 {
     if (!reply || !handle_out) {
         return 0;
     }
-    if (reply->case_tag != SAP_WIT_STORE_REPLY_DB
-            || reply->val.db.case_tag != SAP_WIT_DB_OP_RESULT_OK) {
+    if (reply->case_tag != SAP_WIT_COMMON_CORE_STORE_REPLY_DB
+            || reply->val.db.case_tag != SAP_WIT_COMMON_CORE_DB_OP_RESULT_OK) {
         return 0;
     }
     *handle_out = reply->val.db.val.ok;
     return 1;
 }
 
-static int expect_txn_handle(const SapWitStoreReply* reply, SapWitTxnResource* handle_out)
+static int expect_txn_handle(const SapWitCommonCoreStoreReply* reply, SapWitCommonCoreTxnResource* handle_out)
 {
     if (!reply || !handle_out) {
         return 0;
     }
-    if (reply->case_tag != SAP_WIT_STORE_REPLY_TXN
-            || reply->val.txn.case_tag != SAP_WIT_TXN_OP_RESULT_OK) {
+    if (reply->case_tag != SAP_WIT_COMMON_CORE_STORE_REPLY_TXN
+            || reply->val.txn.case_tag != SAP_WIT_COMMON_CORE_TXN_OP_RESULT_OK) {
         return 0;
     }
     *handle_out = reply->val.txn.val.ok;
     return 1;
 }
 
-static int expect_status_ok(const SapWitStoreReply* reply)
+static int expect_status_ok(const SapWitCommonCoreStoreReply* reply)
 {
     return reply
-        && reply->case_tag == SAP_WIT_STORE_REPLY_STATUS
-        && reply->val.status.case_tag == SAP_WIT_STATUS_OK;
+        && reply->case_tag == SAP_WIT_COMMON_CORE_STORE_REPLY_STATUS
+        && reply->val.status.case_tag == SAP_WIT_COMMON_CORE_STATUS_OK;
 }
 
-static int expect_get_ok(const SapWitStoreReply* reply, const uint8_t** data_out, uint32_t* len_out)
+static int expect_get_ok(const SapWitCommonCoreStoreReply* reply, const uint8_t** data_out, uint32_t* len_out)
 {
     if (!reply || !data_out || !len_out) {
         return 0;
     }
-    if (reply->case_tag != SAP_WIT_STORE_REPLY_GET
-            || reply->val.get.case_tag != SAP_WIT_KV_GET_RESULT_OK) {
+    if (reply->case_tag != SAP_WIT_COMMON_CORE_STORE_REPLY_GET
+            || reply->val.get.case_tag != SAP_WIT_COMMON_CORE_KV_GET_RESULT_OK) {
         return 0;
     }
     *data_out = reply->val.get.val.ok.data;
@@ -54,11 +54,11 @@ static int expect_get_ok(const SapWitStoreReply* reply, const uint8_t** data_out
 int main(void)
 {
     croft_wit_store_runtime* runtime;
-    SapWitStoreCommand command = {0};
-    SapWitStoreReply reply = {0};
-    SapWitDbResource db = SAP_WIT_DB_RESOURCE_INVALID;
-    SapWitTxnResource write_txn = SAP_WIT_TXN_RESOURCE_INVALID;
-    SapWitTxnResource read_txn = SAP_WIT_TXN_RESOURCE_INVALID;
+    SapWitCommonCoreStoreCommand command = {0};
+    SapWitCommonCoreStoreReply reply = {0};
+    SapWitCommonCoreDbResource db = SAP_WIT_COMMON_CORE_DB_RESOURCE_INVALID;
+    SapWitCommonCoreTxnResource write_txn = SAP_WIT_COMMON_CORE_TXN_RESOURCE_INVALID;
+    SapWitCommonCoreTxnResource read_txn = SAP_WIT_COMMON_CORE_TXN_RESOURCE_INVALID;
     const uint8_t* value = NULL;
     uint32_t value_len = 0u;
 
@@ -68,7 +68,7 @@ int main(void)
         return 1;
     }
 
-    command.case_tag = SAP_WIT_STORE_COMMAND_DB_OPEN;
+    command.case_tag = SAP_WIT_COMMON_CORE_STORE_COMMAND_DB_OPEN;
     command.val.db_open.page_size = 4096u;
     if (croft_wit_store_runtime_dispatch(runtime, &command, &reply) != 0
             || !expect_db_handle(&reply, &db)) {
@@ -79,7 +79,7 @@ int main(void)
     }
     croft_wit_store_reply_dispose(&reply);
 
-    command.case_tag = SAP_WIT_STORE_COMMAND_TXN_BEGIN;
+    command.case_tag = SAP_WIT_COMMON_CORE_STORE_COMMAND_TXN_BEGIN;
     command.val.txn_begin.db = db;
     command.val.txn_begin.read_only = 0u;
     if (croft_wit_store_runtime_dispatch(runtime, &command, &reply) != 0
@@ -91,7 +91,7 @@ int main(void)
     }
     croft_wit_store_reply_dispose(&reply);
 
-    command.case_tag = SAP_WIT_STORE_COMMAND_KV_PUT;
+    command.case_tag = SAP_WIT_COMMON_CORE_STORE_COMMAND_KV_PUT;
     command.val.kv_put.txn = write_txn;
     command.val.kv_put.key_data = (const uint8_t*)"editor";
     command.val.kv_put.key_len = 6u;
@@ -106,7 +106,7 @@ int main(void)
     }
     croft_wit_store_reply_dispose(&reply);
 
-    command.case_tag = SAP_WIT_STORE_COMMAND_TXN_COMMIT;
+    command.case_tag = SAP_WIT_COMMON_CORE_STORE_COMMAND_TXN_COMMIT;
     command.val.txn_commit.txn = write_txn;
     if (croft_wit_store_runtime_dispatch(runtime, &command, &reply) != 0
             || !expect_status_ok(&reply)) {
@@ -117,7 +117,7 @@ int main(void)
     }
     croft_wit_store_reply_dispose(&reply);
 
-    command.case_tag = SAP_WIT_STORE_COMMAND_TXN_BEGIN;
+    command.case_tag = SAP_WIT_COMMON_CORE_STORE_COMMAND_TXN_BEGIN;
     command.val.txn_begin.db = db;
     command.val.txn_begin.read_only = 1u;
     if (croft_wit_store_runtime_dispatch(runtime, &command, &reply) != 0
@@ -129,7 +129,7 @@ int main(void)
     }
     croft_wit_store_reply_dispose(&reply);
 
-    command.case_tag = SAP_WIT_STORE_COMMAND_KV_GET;
+    command.case_tag = SAP_WIT_COMMON_CORE_STORE_COMMAND_KV_GET;
     command.val.kv_get.txn = read_txn;
     command.val.kv_get.key_data = (const uint8_t*)"editor";
     command.val.kv_get.key_len = 6u;
@@ -143,7 +143,7 @@ int main(void)
     printf("editor=\"%.*s\"\n", (int)value_len, (const char*)value);
     croft_wit_store_reply_dispose(&reply);
 
-    command.case_tag = SAP_WIT_STORE_COMMAND_TXN_ABORT;
+    command.case_tag = SAP_WIT_COMMON_CORE_STORE_COMMAND_TXN_ABORT;
     command.val.txn_abort.txn = read_txn;
     if (croft_wit_store_runtime_dispatch(runtime, &command, &reply) != 0
             || !expect_status_ok(&reply)) {
@@ -154,7 +154,7 @@ int main(void)
     }
     croft_wit_store_reply_dispose(&reply);
 
-    command.case_tag = SAP_WIT_STORE_COMMAND_DB_DROP;
+    command.case_tag = SAP_WIT_COMMON_CORE_STORE_COMMAND_DB_DROP;
     command.val.db_drop.db = db;
     if (croft_wit_store_runtime_dispatch(runtime, &command, &reply) != 0
             || !expect_status_ok(&reply)) {

@@ -15,22 +15,22 @@ static uint32_t wit_message_flags_from_wire_flags(uint8_t wire_flags)
 {
     uint32_t out = 0u;
     if ((wire_flags & SAP_RUNNER_MESSAGE_FLAG_DURABLE) != 0u)
-        out |= SAP_WIT_MESSAGE_FLAGS_DURABLE;
+        out |= SAP_WIT_RUNTIME_SCHEMA_MESSAGE_FLAGS_DURABLE;
     if ((wire_flags & SAP_RUNNER_MESSAGE_FLAG_HIGH_PRIORITY) != 0u)
-        out |= SAP_WIT_MESSAGE_FLAGS_HIGH_PRIORITY;
+        out |= SAP_WIT_RUNTIME_SCHEMA_MESSAGE_FLAGS_HIGH_PRIORITY;
     if ((wire_flags & SAP_RUNNER_MESSAGE_FLAG_DEDUPE_REQUIRED) != 0u)
-        out |= SAP_WIT_MESSAGE_FLAGS_DEDUPE_REQUIRED;
+        out |= SAP_WIT_RUNTIME_SCHEMA_MESSAGE_FLAGS_DEDUPE_REQUIRED;
     return out;
 }
 
-static uint8_t wire_flags_from_wit_message(const SapWitMessageEnvelope *envelope)
+static uint8_t wire_flags_from_wit_message(const SapWitRuntimeSchemaMessageEnvelope *envelope)
 {
     uint8_t out = 0u;
-    if ((envelope->message_flags & SAP_WIT_MESSAGE_FLAGS_DURABLE) != 0u)
+    if ((envelope->message_flags & SAP_WIT_RUNTIME_SCHEMA_MESSAGE_FLAGS_DURABLE) != 0u)
         out |= SAP_RUNNER_MESSAGE_FLAG_DURABLE;
-    if ((envelope->message_flags & SAP_WIT_MESSAGE_FLAGS_HIGH_PRIORITY) != 0u)
+    if ((envelope->message_flags & SAP_WIT_RUNTIME_SCHEMA_MESSAGE_FLAGS_HIGH_PRIORITY) != 0u)
         out |= SAP_RUNNER_MESSAGE_FLAG_HIGH_PRIORITY;
-    if ((envelope->message_flags & SAP_WIT_MESSAGE_FLAGS_DEDUPE_REQUIRED) != 0u)
+    if ((envelope->message_flags & SAP_WIT_RUNTIME_SCHEMA_MESSAGE_FLAGS_DEDUPE_REQUIRED) != 0u)
         out |= SAP_RUNNER_MESSAGE_FLAG_DEDUPE_REQUIRED;
     if (envelope->requires_ack)
         out |= SAP_RUNNER_MESSAGE_FLAG_REQUIRES_ACK;
@@ -41,7 +41,7 @@ static uint8_t wire_flags_from_wit_message(const SapWitMessageEnvelope *envelope
     return out;
 }
 
-static void wit_envelope_from_wire_message(const SapRunnerMessageV0 *msg, SapWitMessageEnvelope *envelope)
+static void wit_envelope_from_wire_message(const SapRunnerMessageV0 *msg, SapWitRuntimeSchemaMessageEnvelope *envelope)
 {
     if (!msg || !envelope)
         return;
@@ -66,7 +66,7 @@ static void wit_envelope_from_wire_message(const SapRunnerMessageV0 *msg, SapWit
     envelope->payload_len = msg->payload_len;
 }
 
-static void wire_message_from_wit_envelope(const SapWitMessageEnvelope *envelope, SapRunnerMessageV0 *msg)
+static void wire_message_from_wit_envelope(const SapWitRuntimeSchemaMessageEnvelope *envelope, SapRunnerMessageV0 *msg)
 {
     if (!envelope || !msg)
         return;
@@ -118,7 +118,7 @@ int sap_runner_wit_wire_v0_value_is_dbi1_inbox(const void *raw, uint32_t raw_len
 {
     if (!raw || raw_len == 0u)
         return 0;
-    return sap_wit_validate_dbi1_inbox_value(raw, raw_len) == 0;
+    return sap_wit_validate_runtime_schema_dbi1_inbox_value(raw, raw_len) == 0;
 }
 
 int sap_runner_wit_wire_v0_encode_dbi1_inbox_value_from_wire(SapTxnCtx *txn,
@@ -128,7 +128,7 @@ int sap_runner_wit_wire_v0_encode_dbi1_inbox_value_from_wire(SapTxnCtx *txn,
                                                               uint32_t *value_len_out)
 {
     SapRunnerMessageV0 msg;
-    SapWitDbi1InboxValue wit_value;
+    SapWitRuntimeSchemaDbi1InboxValue wit_value;
     ThatchRegion *region = NULL;
     ThatchCursor cursor = 0;
     const void *raw = NULL;
@@ -149,7 +149,7 @@ int sap_runner_wit_wire_v0_encode_dbi1_inbox_value_from_wire(SapTxnCtx *txn,
     rc = thatch_region_new(txn, &region);
     if (rc != ERR_OK)
         return rc;
-    rc = sap_wit_write_dbi1_inbox_value(region, &wit_value);
+    rc = sap_wit_write_runtime_schema_dbi1_inbox_value(region, &wit_value);
     if (rc != ERR_OK)
         return rc;
     *value_len_out = thatch_region_used(region);
@@ -169,7 +169,7 @@ int sap_runner_wit_wire_v0_decode_dbi1_inbox_value_to_wire(const uint8_t *value,
 {
     ThatchRegion view;
     ThatchCursor cursor = 0;
-    SapWitDbi1InboxValue wit_value;
+    SapWitRuntimeSchemaDbi1InboxValue wit_value;
     SapRunnerMessageV0 msg;
     int rc;
 
@@ -178,14 +178,14 @@ int sap_runner_wit_wire_v0_decode_dbi1_inbox_value_to_wire(const uint8_t *value,
     *frame_out = NULL;
     *frame_len_out = 0u;
 
-    if (sap_wit_validate_dbi1_inbox_value(value, value_len) != 0)
+    if (sap_wit_validate_runtime_schema_dbi1_inbox_value(value, value_len) != 0)
         return ERR_INVALID;
     rc = thatch_region_init_readonly(&view, value, value_len);
     if (rc != ERR_OK)
         return rc;
 
     memset(&wit_value, 0, sizeof(wit_value));
-    rc = sap_wit_read_dbi1_inbox_value(&view, &cursor, &wit_value);
+    rc = sap_wit_read_runtime_schema_dbi1_inbox_value(&view, &cursor, &wit_value);
     if (rc != ERR_OK)
         return ERR_CORRUPT;
     if (cursor != value_len)
@@ -199,7 +199,7 @@ int sap_runner_wit_wire_v0_value_is_dbi2_outbox(const void *raw, uint32_t raw_le
 {
     if (!raw || raw_len == 0u)
         return 0;
-    return sap_wit_validate_dbi2_outbox_value(raw, raw_len) == 0;
+    return sap_wit_validate_runtime_schema_dbi2_outbox_value(raw, raw_len) == 0;
 }
 
 int sap_runner_wit_wire_v0_encode_dbi2_outbox_value_from_wire(SapTxnCtx *txn,
@@ -210,7 +210,7 @@ int sap_runner_wit_wire_v0_encode_dbi2_outbox_value_from_wire(SapTxnCtx *txn,
                                                                uint32_t *value_len_out)
 {
     SapRunnerMessageV0 msg;
-    SapWitDbi2OutboxValue wit_value;
+    SapWitRuntimeSchemaDbi2OutboxValue wit_value;
     ThatchRegion *region = NULL;
     ThatchCursor cursor = 0;
     const void *raw = NULL;
@@ -232,7 +232,7 @@ int sap_runner_wit_wire_v0_encode_dbi2_outbox_value_from_wire(SapTxnCtx *txn,
     rc = thatch_region_new(txn, &region);
     if (rc != ERR_OK)
         return rc;
-    rc = sap_wit_write_dbi2_outbox_value(region, &wit_value);
+    rc = sap_wit_write_runtime_schema_dbi2_outbox_value(region, &wit_value);
     if (rc != ERR_OK)
         return rc;
     *value_len_out = thatch_region_used(region);
@@ -253,7 +253,7 @@ int sap_runner_wit_wire_v0_decode_dbi2_outbox_value_to_wire(const uint8_t *value
 {
     ThatchRegion view;
     ThatchCursor cursor = 0;
-    SapWitDbi2OutboxValue wit_value;
+    SapWitRuntimeSchemaDbi2OutboxValue wit_value;
     SapRunnerMessageV0 msg;
     int rc;
 
@@ -264,14 +264,14 @@ int sap_runner_wit_wire_v0_decode_dbi2_outbox_value_to_wire(const uint8_t *value
     if (committed_at_out)
         *committed_at_out = 0;
 
-    if (sap_wit_validate_dbi2_outbox_value(value, value_len) != 0)
+    if (sap_wit_validate_runtime_schema_dbi2_outbox_value(value, value_len) != 0)
         return ERR_INVALID;
     rc = thatch_region_init_readonly(&view, value, value_len);
     if (rc != ERR_OK)
         return rc;
 
     memset(&wit_value, 0, sizeof(wit_value));
-    rc = sap_wit_read_dbi2_outbox_value(&view, &cursor, &wit_value);
+    rc = sap_wit_read_runtime_schema_dbi2_outbox_value(&view, &cursor, &wit_value);
     if (rc != ERR_OK)
         return ERR_CORRUPT;
     if (cursor != value_len)
@@ -287,7 +287,7 @@ int sap_runner_wit_wire_v0_value_is_dbi4_timers(const void *raw, uint32_t raw_le
 {
     if (!raw || raw_len == 0u)
         return 0;
-    return sap_wit_validate_dbi4_timers_value(raw, raw_len) == 0;
+    return sap_wit_validate_runtime_schema_dbi4_timers_value(raw, raw_len) == 0;
 }
 
 int sap_runner_wit_wire_v0_encode_dbi4_timers_value_from_wire(SapTxnCtx *txn,
@@ -297,7 +297,7 @@ int sap_runner_wit_wire_v0_encode_dbi4_timers_value_from_wire(SapTxnCtx *txn,
                                                                uint32_t *value_len_out)
 {
     SapRunnerMessageV0 msg;
-    SapWitDbi4TimersValue wit_value;
+    SapWitRuntimeSchemaDbi4TimersValue wit_value;
     ThatchRegion *region = NULL;
     ThatchCursor cursor = 0;
     const void *raw = NULL;
@@ -318,7 +318,7 @@ int sap_runner_wit_wire_v0_encode_dbi4_timers_value_from_wire(SapTxnCtx *txn,
     rc = thatch_region_new(txn, &region);
     if (rc != ERR_OK)
         return rc;
-    rc = sap_wit_write_dbi4_timers_value(region, &wit_value);
+    rc = sap_wit_write_runtime_schema_dbi4_timers_value(region, &wit_value);
     if (rc != ERR_OK)
         return rc;
     *value_len_out = thatch_region_used(region);
@@ -338,7 +338,7 @@ int sap_runner_wit_wire_v0_decode_dbi4_timers_value_to_wire(const uint8_t *value
 {
     ThatchRegion view;
     ThatchCursor cursor = 0;
-    SapWitDbi4TimersValue wit_value;
+    SapWitRuntimeSchemaDbi4TimersValue wit_value;
     SapRunnerMessageV0 msg;
     int rc;
 
@@ -347,14 +347,14 @@ int sap_runner_wit_wire_v0_decode_dbi4_timers_value_to_wire(const uint8_t *value
     *frame_out = NULL;
     *frame_len_out = 0u;
 
-    if (sap_wit_validate_dbi4_timers_value(value, value_len) != 0)
+    if (sap_wit_validate_runtime_schema_dbi4_timers_value(value, value_len) != 0)
         return ERR_INVALID;
     rc = thatch_region_init_readonly(&view, value, value_len);
     if (rc != ERR_OK)
         return rc;
 
     memset(&wit_value, 0, sizeof(wit_value));
-    rc = sap_wit_read_dbi4_timers_value(&view, &cursor, &wit_value);
+    rc = sap_wit_read_runtime_schema_dbi4_timers_value(&view, &cursor, &wit_value);
     if (rc != ERR_OK)
         return ERR_CORRUPT;
     if (cursor != value_len)
@@ -368,7 +368,7 @@ int sap_runner_wit_wire_v0_value_is_dbi6_dead_letter(const void *raw, uint32_t r
 {
     if (!raw || raw_len == 0u)
         return 0;
-    return sap_wit_validate_dbi6_dead_letter_value(raw, raw_len) == 0;
+    return sap_wit_validate_runtime_schema_dbi6_dead_letter_value(raw, raw_len) == 0;
 }
 
 int sap_runner_wit_wire_v0_encode_dbi6_dead_letter_value_from_wire(SapTxnCtx *txn,
@@ -381,7 +381,7 @@ int sap_runner_wit_wire_v0_encode_dbi6_dead_letter_value_from_wire(SapTxnCtx *tx
                                                                     uint32_t *value_len_out)
 {
     SapRunnerMessageV0 msg;
-    SapWitDbi6DeadLetterValue wit_value;
+    SapWitRuntimeSchemaDbi6DeadLetterValue wit_value;
     ThatchRegion *region = NULL;
     ThatchCursor cursor = 0;
     const void *raw = NULL;
@@ -405,7 +405,7 @@ int sap_runner_wit_wire_v0_encode_dbi6_dead_letter_value_from_wire(SapTxnCtx *tx
     rc = thatch_region_new(txn, &region);
     if (rc != ERR_OK)
         return rc;
-    rc = sap_wit_write_dbi6_dead_letter_value(region, &wit_value);
+    rc = sap_wit_write_runtime_schema_dbi6_dead_letter_value(region, &wit_value);
     if (rc != ERR_OK)
         return rc;
     *value_len_out = thatch_region_used(region);
@@ -428,7 +428,7 @@ int sap_runner_wit_wire_v0_decode_dbi6_dead_letter_value_to_wire(const uint8_t *
 {
     ThatchRegion view;
     ThatchCursor cursor = 0;
-    SapWitDbi6DeadLetterValue wit_value;
+    SapWitRuntimeSchemaDbi6DeadLetterValue wit_value;
     SapRunnerMessageV0 msg;
     int rc;
 
@@ -443,14 +443,14 @@ int sap_runner_wit_wire_v0_decode_dbi6_dead_letter_value_to_wire(const uint8_t *
     if (failed_at_out)
         *failed_at_out = 0;
 
-    if (sap_wit_validate_dbi6_dead_letter_value(value, value_len) != 0)
+    if (sap_wit_validate_runtime_schema_dbi6_dead_letter_value(value, value_len) != 0)
         return ERR_INVALID;
     rc = thatch_region_init_readonly(&view, value, value_len);
     if (rc != ERR_OK)
         return rc;
 
     memset(&wit_value, 0, sizeof(wit_value));
-    rc = sap_wit_read_dbi6_dead_letter_value(&view, &cursor, &wit_value);
+    rc = sap_wit_read_runtime_schema_dbi6_dead_letter_value(&view, &cursor, &wit_value);
     if (rc != ERR_OK)
         return ERR_CORRUPT;
     if (cursor != value_len)

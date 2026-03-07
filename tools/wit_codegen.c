@@ -19,7 +19,8 @@
 #define MAX_FIELDS     32
 #define MAX_CASES      16
 #define MAX_TYPES      64
-#define MAX_NAME       64
+#define MAX_NAME       128
+#define MAX_PACKAGE    128
 #define MAX_TYPE_NODES 512
 
 /* ------------------------------------------------------------------ */
@@ -219,6 +220,13 @@ typedef struct {
 } WitResource;
 
 typedef struct {
+    char      package_full[MAX_PACKAGE];
+    char      package_namespace[MAX_NAME];
+    char      package_name[MAX_NAME];
+    char      package_version[MAX_NAME];
+    char      package_snake[MAX_NAME];
+    char      package_upper[MAX_NAME];
+    char      package_camel[MAX_NAME];
     WitRecord  records[MAX_TYPES];
     int        record_count;
     WitVariant variants[MAX_TYPES];
@@ -331,6 +339,152 @@ static int match_keyword(Scanner *s, const char *kw)
     for (int i = 0; i < kwlen; i++)
         scanner_advance(s);
     return 1;
+}
+
+static int is_c_keyword(const char *ident)
+{
+    static const char *keywords[] = {
+        "auto", "break", "case", "char", "const", "continue", "default",
+        "do", "double", "else", "enum", "extern", "float", "for", "goto",
+        "if", "inline", "int", "long", "register", "restrict", "return",
+        "short", "signed", "sizeof", "static", "struct", "switch",
+        "typedef", "union", "unsigned", "void", "volatile", "while",
+        "_Alignas", "_Alignof", "_Atomic", "_Bool", "_Complex", "_Generic",
+        "_Imaginary", "_Noreturn", "_Static_assert", "_Thread_local",
+        "alignas", "alignof", "bool", "complex", "imaginary", "noreturn",
+        "static_assert", "thread_local", NULL
+    };
+    for (const char **kw = keywords; *kw; kw++) {
+        if (strcmp(*kw, ident) == 0) return 1;
+    }
+    return 0;
+}
+
+static void wit_name_to_snake_raw(const char *in, char *out, int n)
+{
+    int i = 0;
+    int wrote_sep = 1;
+
+    if (n <= 0) return;
+    while (*in && i < n - 1) {
+        unsigned char ch = (unsigned char)*in++;
+        if (isalnum(ch)) {
+            out[i++] = (char)tolower(ch);
+            wrote_sep = 0;
+        } else if (!wrote_sep) {
+            out[i++] = '_';
+            wrote_sep = 1;
+        }
+    }
+    while (i > 0 && out[i - 1] == '_') i--;
+    out[i] = '\0';
+}
+
+static void wit_name_to_upper_raw(const char *in, char *out, int n)
+{
+    int i = 0;
+    int wrote_sep = 1;
+
+    if (n <= 0) return;
+    while (*in && i < n - 1) {
+        unsigned char ch = (unsigned char)*in++;
+        if (isalnum(ch)) {
+            out[i++] = (char)toupper(ch);
+            wrote_sep = 0;
+        } else if (!wrote_sep) {
+            out[i++] = '_';
+            wrote_sep = 1;
+        }
+    }
+    while (i > 0 && out[i - 1] == '_') i--;
+    out[i] = '\0';
+}
+
+static void wit_name_to_camel_raw(const char *in, char *out, int n)
+{
+    int i = 0;
+    int cap = 1;
+
+    if (n <= 0) return;
+    while (*in && i < n - 1) {
+        unsigned char ch = (unsigned char)*in++;
+        if (!isalnum(ch)) {
+            cap = 1;
+            continue;
+        }
+        if (cap) {
+            out[i++] = (char)toupper(ch);
+            cap = 0;
+        } else {
+            out[i++] = (char)tolower(ch);
+        }
+    }
+    out[i] = '\0';
+}
+
+static void wit_name_to_snake_ident(const char *in, char *out, int n)
+{
+    char raw[MAX_NAME];
+
+    wit_name_to_snake_raw(in, raw, (int)sizeof(raw));
+    if (raw[0] == '\0') {
+        snprintf(out, n, "wit_value");
+        return;
+    }
+    if (isdigit((unsigned char)raw[0]) || is_c_keyword(raw)) {
+        snprintf(out, n, "wit_%s", raw);
+        return;
+    }
+    snprintf(out, n, "%s", raw);
+}
+
+static void wit_name_to_upper_ident(const char *in, char *out, int n)
+{
+    char raw[MAX_NAME];
+
+    wit_name_to_upper_raw(in, raw, (int)sizeof(raw));
+    if (raw[0] == '\0') {
+        snprintf(out, n, "WIT_VALUE");
+        return;
+    }
+    if (isdigit((unsigned char)raw[0])) {
+        snprintf(out, n, "WIT_%s", raw);
+        return;
+    }
+    snprintf(out, n, "%s", raw);
+}
+
+static void wit_name_to_camel_ident(const char *in, char *out, int n)
+{
+    char raw[MAX_NAME];
+
+    wit_name_to_camel_raw(in, raw, (int)sizeof(raw));
+    if (raw[0] == '\0') {
+        snprintf(out, n, "WitValue");
+        return;
+    }
+    if (isdigit((unsigned char)raw[0])) {
+        snprintf(out, n, "Wit%s", raw);
+        return;
+    }
+    snprintf(out, n, "%s", raw);
+}
+
+static void wit_trim(char *buf)
+{
+    size_t len;
+    size_t start = 0;
+
+    if (!buf) return;
+    len = strlen(buf);
+    while (start < len && isspace((unsigned char)buf[start])) start++;
+    while (len > start && isspace((unsigned char)buf[len - 1])) len--;
+    if (start > 0 && len > start) memmove(buf, buf + start, len - start);
+    if (start >= len) {
+        buf[0] = '\0';
+        return;
+    }
+    buf[len - start] = '\0';
 }
 
 /* ------------------------------------------------------------------ */
@@ -485,6 +639,87 @@ static int parse_resource(Scanner *s, WitResource *resource)
     return 1;
 }
 
+static int parse_package_decl(Scanner *s, WitRegistry *reg)
+{
+    char raw[MAX_PACKAGE];
+    int i = 0;
+    const char *cursor;
+    const char *colon;
+    const char *at;
+
+    skip_whitespace(s);
+    while (!scanner_eof(s) && scanner_peek(s) != ';' && i < MAX_PACKAGE - 1) {
+        raw[i++] = scanner_advance(s);
+    }
+    raw[i] = '\0';
+    if (!expect_char(s, ';')) return 0;
+
+    wit_trim(raw);
+    if (raw[0] == '\0') {
+        codegen_die("package declaration is empty");
+    }
+
+    snprintf(reg->package_full, sizeof(reg->package_full), "%s", raw);
+
+    cursor = raw;
+    colon = strchr(cursor, ':');
+    at = strrchr(cursor, '@');
+    if (colon) {
+        size_t namespace_len = (size_t)(colon - cursor);
+        if (namespace_len >= sizeof(reg->package_namespace))
+            namespace_len = sizeof(reg->package_namespace) - 1u;
+        memcpy(reg->package_namespace, cursor, namespace_len);
+        reg->package_namespace[namespace_len] = '\0';
+        cursor = colon + 1;
+    }
+
+    if (at && at > cursor) {
+        size_t name_len = (size_t)(at - cursor);
+        if (name_len >= sizeof(reg->package_name))
+            name_len = sizeof(reg->package_name) - 1u;
+        memcpy(reg->package_name, cursor, name_len);
+        reg->package_name[name_len] = '\0';
+        snprintf(reg->package_version, sizeof(reg->package_version), "%s", at + 1);
+    } else {
+        snprintf(reg->package_name, sizeof(reg->package_name), "%s", cursor);
+    }
+
+    return 1;
+}
+
+static void finalize_package_info(WitRegistry *reg, const char *wit_path)
+{
+    const char *base = wit_path;
+    char fallback[MAX_NAME];
+    const char *dot;
+
+    if (!reg) return;
+
+    if (reg->package_name[0] == '\0') {
+        if (wit_path) {
+            for (const char *p = wit_path; *p; p++) {
+                if (*p == '/' || *p == '\\') base = p + 1;
+            }
+            snprintf(fallback, sizeof(fallback), "%s", base);
+            dot = strrchr(fallback, '.');
+            if (dot) {
+                fallback[dot - fallback] = '\0';
+            }
+        } else {
+            snprintf(fallback, sizeof(fallback), "anonymous-schema");
+        }
+        snprintf(reg->package_name, sizeof(reg->package_name), "%s", fallback);
+        snprintf(reg->package_full, sizeof(reg->package_full), "%s", reg->package_name);
+    }
+
+    wit_name_to_snake_ident(reg->package_name, reg->package_snake,
+                            (int)sizeof(reg->package_snake));
+    wit_name_to_upper_ident(reg->package_name, reg->package_upper,
+                            (int)sizeof(reg->package_upper));
+    wit_name_to_camel_ident(reg->package_name, reg->package_camel,
+                            (int)sizeof(reg->package_camel));
+}
+
 static int parse_wit(Scanner *s, WitRegistry *reg)
 {
     memset(reg, 0, sizeof(*reg));
@@ -493,8 +728,10 @@ static int parse_wit(Scanner *s, WitRegistry *reg)
         skip_whitespace(s);
         if (scanner_eof(s)) break;
 
-        if (match_keyword(s, "package") || match_keyword(s, "world") ||
-            match_keyword(s, "interface") || match_keyword(s, "export")) {
+        if (match_keyword(s, "package")) {
+            if (!parse_package_decl(s, reg)) return 0;
+        } else if (match_keyword(s, "world") || match_keyword(s, "interface") ||
+                   match_keyword(s, "export")) {
             while (!scanner_eof(s) && scanner_peek(s) != '{' && scanner_peek(s) != ';')
                 scanner_advance(s);
             if (scanner_peek(s) == ';') { scanner_advance(s); continue; }
@@ -682,51 +919,86 @@ static int is_list_u8(const WitRegistry *reg, const WitTypeExpr *t)
 /* Name conversion helpers                                            */
 /* ------------------------------------------------------------------ */
 
-/* kebab-case → snake_case: "message-envelope" → "message_envelope" */
-static void kebab_to_snake(const char *in, char *out, int n)
-{
-    int i = 0;
-    while (*in && i < n - 1) {
-        out[i++] = (*in == '-') ? '_' : *in;
-        in++;
-    }
-    out[i] = '\0';
-}
-
-/* kebab-case → UPPER_SNAKE: "message-kind" → "MESSAGE_KIND" */
-static void kebab_to_upper(const char *in, char *out, int n)
-{
-    int i = 0;
-    while (*in && i < n - 1) {
-        char ch = (*in == '-') ? '_' : *in;
-        out[i++] = (char)toupper((unsigned char)ch);
-        in++;
-    }
-    out[i] = '\0';
-}
-
-/* kebab-case → CamelCase: "message-envelope" → "MessageEnvelope" */
-static void kebab_to_camel(const char *in, char *out, int n)
-{
-    int i = 0;
-    int cap = 1;
-    while (*in && i < n - 1) {
-        if (*in == '-') {
-            cap = 1;
-        } else {
-            out[i++] = cap ? (char)toupper((unsigned char)*in) : *in;
-            cap = 0;
-        }
-        in++;
-    }
-    out[i] = '\0';
-}
-
-static void resource_c_typename(const char *resource_name, char *out, int n)
+static void wit_type_c_typename(const WitRegistry *reg, const char *wit_name, char *out, int n)
 {
     char camel[MAX_NAME];
-    kebab_to_camel(resource_name, camel, MAX_NAME);
-    snprintf(out, n, "SapWit%sResource", camel);
+
+    wit_name_to_camel_ident(wit_name, camel, (int)sizeof(camel));
+    if (reg->package_camel[0] != '\0')
+        snprintf(out, n, "SapWit%s%s", reg->package_camel, camel);
+    else
+        snprintf(out, n, "SapWit%s", camel);
+}
+
+static void wit_resource_c_typename(const WitRegistry *reg, const char *resource_name,
+                                    char *out, int n)
+{
+    char base[MAX_NAME];
+
+    wit_type_c_typename(reg, resource_name, base, (int)sizeof(base));
+    snprintf(out, n, "%sResource", base);
+}
+
+static void wit_macro_name(const WitRegistry *reg, const char *wit_name, char *out, int n)
+{
+    char upper[MAX_NAME];
+
+    wit_name_to_upper_ident(wit_name, upper, (int)sizeof(upper));
+    if (reg->package_upper[0] != '\0')
+        snprintf(out, n, "SAP_WIT_%s_%s", reg->package_upper, upper);
+    else
+        snprintf(out, n, "SAP_WIT_%s", upper);
+}
+
+static void wit_function_suffix(const WitRegistry *reg, const char *wit_name, char *out, int n)
+{
+    char snake[MAX_NAME];
+
+    wit_name_to_snake_ident(wit_name, snake, (int)sizeof(snake));
+    if (reg->package_snake[0] != '\0')
+        snprintf(out, n, "%s_%s", reg->package_snake, snake);
+    else
+        snprintf(out, n, "%s", snake);
+}
+
+static void wit_writer_name(const WitRegistry *reg, const char *wit_name, char *out, int n)
+{
+    char suffix[MAX_NAME * 2];
+
+    wit_function_suffix(reg, wit_name, suffix, (int)sizeof(suffix));
+    snprintf(out, n, "sap_wit_write_%s", suffix);
+}
+
+static void wit_reader_name(const WitRegistry *reg, const char *wit_name, char *out, int n)
+{
+    char suffix[MAX_NAME * 2];
+
+    wit_function_suffix(reg, wit_name, suffix, (int)sizeof(suffix));
+    snprintf(out, n, "sap_wit_read_%s", suffix);
+}
+
+static void wit_validator_name(const WitRegistry *reg, const char *wit_name, char *out, int n)
+{
+    char suffix[MAX_NAME * 2];
+
+    wit_function_suffix(reg, wit_name, suffix, (int)sizeof(suffix));
+    snprintf(out, n, "sap_wit_validate_%s", suffix);
+}
+
+static void wit_dbi_schema_symbol(const WitRegistry *reg, char *out, int n)
+{
+    if (reg->package_snake[0] != '\0')
+        snprintf(out, n, "sap_wit_%s_dbi_schema", reg->package_snake);
+    else
+        snprintf(out, n, "sap_wit_dbi_schema");
+}
+
+static void wit_dbi_schema_count_symbol(const WitRegistry *reg, char *out, int n)
+{
+    if (reg->package_snake[0] != '\0')
+        snprintf(out, n, "sap_wit_%s_dbi_schema_count", reg->package_snake);
+    else
+        snprintf(out, n, "sap_wit_dbi_schema_count");
 }
 
 /* ------------------------------------------------------------------ */
@@ -921,7 +1193,7 @@ static void emit_c_fields(FILE *out, const WitRegistry *reg,
         }
         if (find_resource(reg, t->ident)) {
             char resource_type[MAX_NAME];
-            resource_c_typename(t->ident, resource_type, MAX_NAME);
+            wit_resource_c_typename(reg, t->ident, resource_type, (int)sizeof(resource_type));
             fprintf(out, "%s%s %s;\n", indent, resource_type, name);
             return;
         }
@@ -935,9 +1207,9 @@ static void emit_c_fields(FILE *out, const WitRegistry *reg,
         }
         /* Named record or variant — by value */
         if (find_record(reg, t->ident) || find_variant(reg, t->ident)) {
-            char camel[MAX_NAME];
-            kebab_to_camel(t->ident, camel, MAX_NAME);
-            fprintf(out, "%sSapWit%s %s;\n", indent, camel, name);
+            char type_name[MAX_NAME * 2];
+            wit_type_c_typename(reg, t->ident, type_name, (int)sizeof(type_name));
+            fprintf(out, "%s%s %s;\n", indent, type_name, name);
             return;
         }
         codegen_die("unsupported identifier in C field emission: %s", t->ident);
@@ -1014,14 +1286,14 @@ static void emit_variant_payload(FILE *out, const WitRegistry *reg,
         }
         if (find_resource(reg, t->ident)) {
             char resource_type[MAX_NAME];
-            resource_c_typename(t->ident, resource_type, MAX_NAME);
+            wit_resource_c_typename(reg, t->ident, resource_type, (int)sizeof(resource_type));
             fprintf(out, "        %s %s;\n", resource_type, case_name);
             return;
         }
         if (find_record(reg, t->ident) || find_variant(reg, t->ident)) {
-            char camel[MAX_NAME];
-            kebab_to_camel(t->ident, camel, MAX_NAME);
-            fprintf(out, "        SapWit%s %s;\n", camel, case_name);
+            char type_name[MAX_NAME * 2];
+            wit_type_c_typename(reg, t->ident, type_name, (int)sizeof(type_name));
+            fprintf(out, "        %s %s;\n", type_name, case_name);
             return;
         }
         if (find_enum(reg, t->ident)) {
@@ -1058,9 +1330,15 @@ static void emit_variant_payload(FILE *out, const WitRegistry *reg,
 
 static void emit_header(FILE *out, const WitRegistry *reg,
                         const DbiEntry *dbis, int ndbi,
+                        const char *wit_path,
                         const char *header_path)
 {
-    char upper[MAX_NAME], camel[MAX_NAME], snake[MAX_NAME];
+    char upper[MAX_NAME];
+    char macro_name[MAX_NAME * 2];
+    char type_name[MAX_NAME * 2];
+    char fn_name[MAX_NAME * 2];
+    char dbi_schema_symbol[MAX_NAME * 2];
+    char dbi_schema_count_symbol[MAX_NAME * 2];
 
     /* Derive include guard from header filename (basename, uppercased). */
     char guard[MAX_NAME];
@@ -1077,7 +1355,14 @@ static void emit_header(FILE *out, const WitRegistry *reg,
     }
     guard[gi] = '\0';
 
-    fprintf(out, "/* Auto-generated by tools/wit_codegen; DO NOT EDIT. */\n");
+    fprintf(out, "/* Auto-generated by tools/wit_codegen; DO NOT EDIT.\n");
+    fprintf(out, " * Source WIT: %s\n", wit_path ? wit_path : "<unknown>");
+    fprintf(out, " * WIT package: %s\n", reg->package_full[0] ? reg->package_full : "<none>");
+    fprintf(out, " * Generated qualifier: camel=%s snake=%s upper=%s\n",
+            reg->package_camel[0] ? reg->package_camel : "<none>",
+            reg->package_snake[0] ? reg->package_snake : "<none>",
+            reg->package_upper[0] ? reg->package_upper : "<none>");
+    fprintf(out, " */\n");
     fprintf(out, "#ifndef %s\n", guard);
     fprintf(out, "#define %s\n\n", guard);
     fprintf(out, "#include <stdint.h>\n");
@@ -1086,11 +1371,9 @@ static void emit_header(FILE *out, const WitRegistry *reg,
     fprintf(out, "#include \"sapling/thatch.h\"\n");
     fprintf(out, "#include \"sapling/err.h\"\n\n");
 
-    /* --- Wire version --- */
-    fprintf(out, "/* Wire format version — bump on any wire format change. */\n");
+    fprintf(out, "/* Wire format version shared across all generated WIT bindings. */\n");
     fprintf(out, "#define SAP_WIT_WIRE_VERSION 1u\n\n");
 
-    /* --- Wire format documentation --- */
     fprintf(out, "/*\n");
     fprintf(out, " * Thatch WIT wire format (version 1):\n");
     fprintf(out, " *\n");
@@ -1116,27 +1399,29 @@ static void emit_header(FILE *out, const WitRegistry *reg,
     fprintf(out, " *             itself, up to (but not including) the next sibling.\n");
     fprintf(out, " */\n\n");
 
-    /* --- DBI index constants --- */
     for (int i = 0; i < ndbi; i++) {
-        kebab_to_upper(dbis[i].name, upper, MAX_NAME);
-        fprintf(out, "#define SAP_WIT_DBI_%s %du\n", upper, dbis[i].dbi);
+        char dbi_upper[MAX_NAME];
+        wit_name_to_upper_ident(dbis[i].name, dbi_upper, (int)sizeof(dbi_upper));
+        fprintf(out, "/* WIT DBI slot %d (%s). */\n", dbis[i].dbi, dbis[i].name);
+        fprintf(out, "#define SAP_WIT_%s_DBI_%s %du\n", reg->package_upper, dbi_upper, dbis[i].dbi);
     }
-    fprintf(out, "\n");
+    if (ndbi > 0) fprintf(out, "\n");
 
     if (reg->resource_count > 0) {
-        fprintf(out, "/* Resource handle typedefs */\n");
+        fprintf(out, "/* Resource handle typedefs traced back to WIT `resource` items. */\n");
         for (int i = 0; i < reg->resource_count; i++) {
-            char resource_type[MAX_NAME];
-            kebab_to_upper(reg->resources[i].name, upper, MAX_NAME);
-            resource_c_typename(reg->resources[i].name, resource_type, MAX_NAME);
-            fprintf(out, "typedef uint32_t %s;\n", resource_type);
-            fprintf(out, "#define SAP_WIT_%s_RESOURCE_INVALID ((%s)0u)\n", upper, resource_type);
+            wit_name_to_upper_ident(reg->resources[i].name, upper, (int)sizeof(upper));
+            wit_resource_c_typename(reg, reg->resources[i].name, type_name, (int)sizeof(type_name));
+            fprintf(out, "/* WIT resource %s. */\n", reg->resources[i].name);
+            fprintf(out, "typedef uint32_t %s;\n", type_name);
+            fprintf(out, "#define SAP_WIT_%s_%s_RESOURCE_INVALID ((%s)0u)\n",
+                    reg->package_upper, upper, type_name);
         }
         fprintf(out, "\n");
     }
 
-    /* --- DBI schema metadata type --- */
     if (ndbi > 0) {
+        fprintf(out, "/* Shared DBI schema metadata shape used by runtime-schema packages. */\n");
         fprintf(out, "typedef struct {\n");
         fprintf(out, "    uint32_t dbi;\n");
         fprintf(out, "    const char *name;\n");
@@ -1145,43 +1430,42 @@ static void emit_header(FILE *out, const WitRegistry *reg,
         fprintf(out, "} SapWitDbiSchema;\n\n");
     }
 
-    /* --- Enum case constants --- */
     for (int i = 0; i < reg->enum_count; i++) {
         const WitEnum *en = &reg->enums[i];
-        kebab_to_upper(en->name, upper, MAX_NAME);
+        wit_macro_name(reg, en->name, macro_name, (int)sizeof(macro_name));
+        fprintf(out, "/* WIT enum %s. */\n", en->name);
         for (int j = 0; j < en->case_count; j++) {
-            char cu[MAX_NAME];
-            kebab_to_upper(en->cases[j], cu, MAX_NAME);
-            fprintf(out, "#define SAP_WIT_%s_%s %d\n", upper, cu, j);
+            char case_upper[MAX_NAME];
+            wit_name_to_upper_ident(en->cases[j], case_upper, (int)sizeof(case_upper));
+            fprintf(out, "#define %s_%s %d\n", macro_name, case_upper, j);
         }
         fprintf(out, "\n");
     }
 
-    /* --- Flags bit constants --- */
     for (int i = 0; i < reg->flags_count; i++) {
         const WitFlags *fl = &reg->flags[i];
-        kebab_to_upper(fl->name, upper, MAX_NAME);
+        wit_macro_name(reg, fl->name, macro_name, (int)sizeof(macro_name));
+        fprintf(out, "/* WIT flags %s. */\n", fl->name);
         for (int j = 0; j < fl->bit_count; j++) {
-            char bu[MAX_NAME];
-            kebab_to_upper(fl->bits[j], bu, MAX_NAME);
-            fprintf(out, "#define SAP_WIT_%s_%s (1u << %d)\n", upper, bu, j);
+            char bit_upper[MAX_NAME];
+            wit_name_to_upper_ident(fl->bits[j], bit_upper, (int)sizeof(bit_upper));
+            fprintf(out, "#define %s_%s (1u << %d)\n", macro_name, bit_upper, j);
         }
         fprintf(out, "\n");
     }
 
-    /* --- Variant case tag constants --- */
     for (int i = 0; i < reg->variant_count; i++) {
         const WitVariant *var = &reg->variants[i];
-        kebab_to_upper(var->name, upper, MAX_NAME);
+        wit_macro_name(reg, var->name, macro_name, (int)sizeof(macro_name));
+        fprintf(out, "/* WIT variant %s case tags. */\n", var->name);
         for (int j = 0; j < var->case_count; j++) {
-            char cu[MAX_NAME];
-            kebab_to_upper(var->cases[j].name, cu, MAX_NAME);
-            fprintf(out, "#define SAP_WIT_%s_%s %d\n", upper, cu, j);
+            char case_upper[MAX_NAME];
+            wit_name_to_upper_ident(var->cases[j].name, case_upper, (int)sizeof(case_upper));
+            fprintf(out, "#define %s_%s %d\n", macro_name, case_upper, j);
         }
         fprintf(out, "\n");
     }
 
-    /* --- Struct typedefs in topological order --- */
     const char *order[MAX_TYPES * 2];
     int norder = topo_sort_types(reg, order, MAX_TYPES * 2);
     if (norder < 0) return;
@@ -1190,19 +1474,21 @@ static void emit_header(FILE *out, const WitRegistry *reg,
         const char *tname = order[idx];
         const WitRecord *rec = find_record(reg, tname);
         if (rec) {
-            kebab_to_camel(tname, camel, MAX_NAME);
+            wit_type_c_typename(reg, tname, type_name, (int)sizeof(type_name));
+            fprintf(out, "/* WIT record %s -> %s. */\n", tname, type_name);
             fprintf(out, "typedef struct {\n");
             for (int j = 0; j < rec->field_count; j++) {
-                char fname[MAX_NAME];
-                kebab_to_snake(rec->fields[j].name, fname, MAX_NAME);
-                emit_c_fields(out, reg, rec->fields[j].wit_type, fname, "    ");
+                char field_name[MAX_NAME];
+                wit_name_to_snake_ident(rec->fields[j].name, field_name, (int)sizeof(field_name));
+                emit_c_fields(out, reg, rec->fields[j].wit_type, field_name, "    ");
             }
-            fprintf(out, "} SapWit%s;\n\n", camel);
+            fprintf(out, "} %s;\n\n", type_name);
             continue;
         }
         const WitVariant *var = find_variant(reg, tname);
         if (var) {
-            kebab_to_camel(tname, camel, MAX_NAME);
+            wit_type_c_typename(reg, tname, type_name, (int)sizeof(type_name));
+            fprintf(out, "/* WIT variant %s -> %s. */\n", tname, type_name);
             fprintf(out, "typedef struct {\n");
             fprintf(out, "    uint8_t case_tag;\n");
             int has_payload = 0;
@@ -1212,53 +1498,51 @@ static void emit_header(FILE *out, const WitRegistry *reg,
                 fprintf(out, "    union {\n");
                 for (int j = 0; j < var->case_count; j++) {
                     if (var->cases[j].payload_type < 0) continue;
-                    char cname[MAX_NAME];
-                    kebab_to_snake(var->cases[j].name, cname, MAX_NAME);
-                    emit_variant_payload(out, reg, var->cases[j].payload_type, cname);
+                    char case_name[MAX_NAME];
+                    wit_name_to_snake_ident(var->cases[j].name, case_name, (int)sizeof(case_name));
+                    emit_variant_payload(out, reg, var->cases[j].payload_type, case_name);
                 }
                 fprintf(out, "    } val;\n");
             }
-            fprintf(out, "} SapWit%s;\n\n", camel);
-            continue;
+            fprintf(out, "} %s;\n\n", type_name);
         }
     }
 
-    /* --- Writer declarations --- */
-    fprintf(out, "/* Writer functions */\n");
+    fprintf(out, "/* Writer functions keyed by WIT package-qualified names. */\n");
     for (int idx = 0; idx < norder; idx++) {
-        kebab_to_camel(order[idx], camel, MAX_NAME);
-        kebab_to_snake(order[idx], snake, MAX_NAME);
-        fprintf(out, "int sap_wit_write_%s(ThatchRegion *region, const SapWit%s *val);\n",
-                snake, camel);
+        wit_type_c_typename(reg, order[idx], type_name, (int)sizeof(type_name));
+        wit_writer_name(reg, order[idx], fn_name, (int)sizeof(fn_name));
+        fprintf(out, "/* WIT %s writer. */\n", order[idx]);
+        fprintf(out, "int %s(ThatchRegion *region, const %s *val);\n", fn_name, type_name);
     }
     fprintf(out, "\n");
 
-    /* --- Reader declarations --- */
-    fprintf(out, "/* Reader functions */\n");
+    fprintf(out, "/* Reader functions keyed by WIT package-qualified names. */\n");
     for (int idx = 0; idx < norder; idx++) {
-        kebab_to_camel(order[idx], camel, MAX_NAME);
-        kebab_to_snake(order[idx], snake, MAX_NAME);
-        fprintf(out, "int sap_wit_read_%s(const ThatchRegion *region, ThatchCursor *cursor, SapWit%s *out);\n",
-                snake, camel);
+        wit_type_c_typename(reg, order[idx], type_name, (int)sizeof(type_name));
+        wit_reader_name(reg, order[idx], fn_name, (int)sizeof(fn_name));
+        fprintf(out, "/* WIT %s reader. */\n", order[idx]);
+        fprintf(out, "int %s(const ThatchRegion *region, ThatchCursor *cursor, %s *out);\n",
+                fn_name, type_name);
     }
     fprintf(out, "\n");
 
-    /* --- Skip declaration --- */
-    fprintf(out, "/* Universal skip */\n");
+    fprintf(out, "/* Shared universal skip routine for generated readers. */\n");
     fprintf(out, "int sap_wit_skip_value(const ThatchRegion *region, ThatchCursor *cursor);\n\n");
 
-    /* --- DBI blob validators (extern, full structural validation) --- */
-    fprintf(out, "/* DBI blob validators */\n");
+    fprintf(out, "/* DBI blob validators. */\n");
     for (int i = 0; i < ndbi; i++) {
-        kebab_to_snake(dbis[i].val_rec, snake, MAX_NAME);
-        fprintf(out, "int sap_wit_validate_%s(const void *data, uint32_t len);\n", snake);
+        wit_validator_name(reg, dbis[i].val_rec, fn_name, (int)sizeof(fn_name));
+        fprintf(out, "/* WIT validator for %s. */\n", dbis[i].val_rec);
+        fprintf(out, "int %s(const void *data, uint32_t len);\n", fn_name);
     }
     fprintf(out, "\n");
 
-    /* --- Extern declarations --- */
     if (ndbi > 0) {
-        fprintf(out, "extern const SapWitDbiSchema sap_wit_dbi_schema[];\n");
-        fprintf(out, "extern const uint32_t sap_wit_dbi_schema_count;\n\n");
+        wit_dbi_schema_symbol(reg, dbi_schema_symbol, (int)sizeof(dbi_schema_symbol));
+        wit_dbi_schema_count_symbol(reg, dbi_schema_count_symbol, (int)sizeof(dbi_schema_count_symbol));
+        fprintf(out, "extern const SapWitDbiSchema %s[];\n", dbi_schema_symbol);
+        fprintf(out, "extern const uint32_t %s;\n\n", dbi_schema_count_symbol);
     }
     fprintf(out, "#endif /* %s */\n", guard);
 }
@@ -1340,9 +1624,9 @@ static void emit_write_type_expr(FILE *out, const WitRegistry *reg,
         }
         /* named record or variant — delegate to its writer */
         if (find_record(reg, t->ident) || find_variant(reg, t->ident)) {
-            char snake[MAX_NAME];
-            kebab_to_snake(t->ident, snake, MAX_NAME);
-            fprintf(out, "%sSAP_WIT_CHECK(sap_wit_write_%s(region, &%s));\n", indent, snake, access);
+            char fn_name[MAX_NAME * 2];
+            wit_writer_name(reg, t->ident, fn_name, (int)sizeof(fn_name));
+            fprintf(out, "%sSAP_WIT_CHECK(%s(region, &%s));\n", indent, fn_name, access);
             return;
         }
         codegen_die("unsupported identifier in writer emission: %s", t->ident);
@@ -1442,12 +1726,14 @@ static void emit_write_type_expr(FILE *out, const WitRegistry *reg,
 static void emit_write_record(FILE *out, const WitRegistry *reg,
                                const WitRecord *rec)
 {
-    char snake[MAX_NAME], camel[MAX_NAME];
-    kebab_to_snake(rec->name, snake, MAX_NAME);
-    kebab_to_camel(rec->name, camel, MAX_NAME);
+    char fn_name[MAX_NAME * 2];
+    char type_name[MAX_NAME * 2];
 
-    fprintf(out, "int sap_wit_write_%s(ThatchRegion *region, const SapWit%s *val)\n{\n",
-            snake, camel);
+    wit_writer_name(reg, rec->name, fn_name, (int)sizeof(fn_name));
+    wit_type_c_typename(reg, rec->name, type_name, (int)sizeof(type_name));
+
+    fprintf(out, "/* WIT record writer for %s. */\n", rec->name);
+    fprintf(out, "int %s(ThatchRegion *region, const %s *val)\n{\n", fn_name, type_name);
 
     /* All records get skip pointers so sap_wit_skip_value works uniformly. */
     fprintf(out, "    SAP_WIT_CHECK(thatch_write_tag(region, SAP_WIT_TAG_RECORD));\n");
@@ -1456,7 +1742,7 @@ static void emit_write_record(FILE *out, const WitRegistry *reg,
 
     for (int i = 0; i < rec->field_count; i++) {
         char fname[MAX_NAME], access[256];
-        kebab_to_snake(rec->fields[i].name, fname, MAX_NAME);
+        wit_name_to_snake_ident(rec->fields[i].name, fname, (int)sizeof(fname));
 
         /* For option fields, the guard is has_X and we pass that as the condition */
         int res = resolve_type(reg, rec->fields[i].wit_type);
@@ -1487,13 +1773,16 @@ static void emit_write_record(FILE *out, const WitRegistry *reg,
 static void emit_write_variant(FILE *out, const WitRegistry *reg,
                                 const WitVariant *var)
 {
-    char snake[MAX_NAME], camel[MAX_NAME], upper_var[MAX_NAME];
-    kebab_to_snake(var->name, snake, MAX_NAME);
-    kebab_to_camel(var->name, camel, MAX_NAME);
-    kebab_to_upper(var->name, upper_var, MAX_NAME);
+    char fn_name[MAX_NAME * 2];
+    char type_name[MAX_NAME * 2];
+    char macro_name[MAX_NAME * 2];
 
-    fprintf(out, "int sap_wit_write_%s(ThatchRegion *region, const SapWit%s *val)\n{\n",
-            snake, camel);
+    wit_writer_name(reg, var->name, fn_name, (int)sizeof(fn_name));
+    wit_type_c_typename(reg, var->name, type_name, (int)sizeof(type_name));
+    wit_macro_name(reg, var->name, macro_name, (int)sizeof(macro_name));
+
+    fprintf(out, "/* WIT variant writer for %s. */\n", var->name);
+    fprintf(out, "int %s(ThatchRegion *region, const %s *val)\n{\n", fn_name, type_name);
     fprintf(out, "    SAP_WIT_CHECK(thatch_write_tag(region, SAP_WIT_TAG_VARIANT));\n");
     fprintf(out, "    ThatchCursor skip_loc;\n");
     fprintf(out, "    SAP_WIT_CHECK(thatch_reserve_skip(region, &skip_loc));\n");
@@ -1502,9 +1791,9 @@ static void emit_write_variant(FILE *out, const WitRegistry *reg,
 
     for (int j = 0; j < var->case_count; j++) {
         char cu[MAX_NAME], cs[MAX_NAME];
-        kebab_to_upper(var->cases[j].name, cu, MAX_NAME);
-        kebab_to_snake(var->cases[j].name, cs, MAX_NAME);
-        fprintf(out, "    case SAP_WIT_%s_%s:\n", upper_var, cu);
+        wit_name_to_upper_ident(var->cases[j].name, cu, (int)sizeof(cu));
+        wit_name_to_snake_ident(var->cases[j].name, cs, (int)sizeof(cs));
+        fprintf(out, "    case %s_%s:\n", macro_name, cu);
         if (var->cases[j].payload_type >= 0) {
             char access[256];
             snprintf(access, sizeof(access), "val->val.%s", cs);
@@ -1601,9 +1890,9 @@ static void emit_read_type_expr(FILE *out, const WitRegistry *reg,
         }
         /* named record or variant — delegate to its reader */
         if (find_record(reg, t->ident) || find_variant(reg, t->ident)) {
-            char sn[MAX_NAME];
-            kebab_to_snake(t->ident, sn, MAX_NAME);
-            fprintf(out, "%sSAP_WIT_CHECK(sap_wit_read_%s(region, cursor, &%s));\n", indent, sn, access);
+            char fn_name[MAX_NAME * 2];
+            wit_reader_name(reg, t->ident, fn_name, (int)sizeof(fn_name));
+            fprintf(out, "%sSAP_WIT_CHECK(%s(region, cursor, &%s));\n", indent, fn_name, access);
             return;
         }
         codegen_die("unsupported identifier in reader emission: %s", t->ident);
@@ -1714,12 +2003,15 @@ static void emit_read_type_expr(FILE *out, const WitRegistry *reg,
 static void emit_read_record(FILE *out, const WitRegistry *reg,
                               const WitRecord *rec)
 {
-    char snake[MAX_NAME], camel[MAX_NAME];
-    kebab_to_snake(rec->name, snake, MAX_NAME);
-    kebab_to_camel(rec->name, camel, MAX_NAME);
+    char fn_name[MAX_NAME * 2];
+    char type_name[MAX_NAME * 2];
 
-    fprintf(out, "int sap_wit_read_%s(const ThatchRegion *region, ThatchCursor *cursor, SapWit%s *out)\n{\n",
-            snake, camel);
+    wit_reader_name(reg, rec->name, fn_name, (int)sizeof(fn_name));
+    wit_type_c_typename(reg, rec->name, type_name, (int)sizeof(type_name));
+
+    fprintf(out, "/* WIT record reader for %s. */\n", rec->name);
+    fprintf(out, "int %s(const ThatchRegion *region, ThatchCursor *cursor, %s *out)\n{\n",
+            fn_name, type_name);
 
     /* All records have skip pointers (uniform encoding).
      * Read skip_len and enforce segment-end: cursor must equal
@@ -1735,7 +2027,7 @@ static void emit_read_record(FILE *out, const WitRegistry *reg,
 
     for (int i = 0; i < rec->field_count; i++) {
         char fname[MAX_NAME], access[256];
-        kebab_to_snake(rec->fields[i].name, fname, MAX_NAME);
+        wit_name_to_snake_ident(rec->fields[i].name, fname, (int)sizeof(fname));
 
         int res = resolve_type(reg, rec->fields[i].wit_type);
         WitTypeExpr *ft = (res >= 0) ? &g_type_pool[res] : NULL;
@@ -1764,13 +2056,17 @@ static void emit_read_record(FILE *out, const WitRegistry *reg,
 static void emit_read_variant(FILE *out, const WitRegistry *reg,
                                const WitVariant *var)
 {
-    char snake[MAX_NAME], camel[MAX_NAME], upper_var[MAX_NAME];
-    kebab_to_snake(var->name, snake, MAX_NAME);
-    kebab_to_camel(var->name, camel, MAX_NAME);
-    kebab_to_upper(var->name, upper_var, MAX_NAME);
+    char fn_name[MAX_NAME * 2];
+    char type_name[MAX_NAME * 2];
+    char macro_name[MAX_NAME * 2];
 
-    fprintf(out, "int sap_wit_read_%s(const ThatchRegion *region, ThatchCursor *cursor, SapWit%s *out)\n{\n",
-            snake, camel);
+    wit_reader_name(reg, var->name, fn_name, (int)sizeof(fn_name));
+    wit_type_c_typename(reg, var->name, type_name, (int)sizeof(type_name));
+    wit_macro_name(reg, var->name, macro_name, (int)sizeof(macro_name));
+
+    fprintf(out, "/* WIT variant reader for %s. */\n", var->name);
+    fprintf(out, "int %s(const ThatchRegion *region, ThatchCursor *cursor, %s *out)\n{\n",
+            fn_name, type_name);
     fprintf(out, "    { uint8_t tag; SAP_WIT_CHECK(thatch_read_tag(region, cursor, &tag));\n");
     fprintf(out, "      if (tag != SAP_WIT_TAG_VARIANT) return ERR_TYPE; }\n");
     fprintf(out, "    uint32_t _skip_len;\n");
@@ -1783,9 +2079,9 @@ static void emit_read_variant(FILE *out, const WitRegistry *reg,
 
     for (int j = 0; j < var->case_count; j++) {
         char cu[MAX_NAME], cs[MAX_NAME];
-        kebab_to_upper(var->cases[j].name, cu, MAX_NAME);
-        kebab_to_snake(var->cases[j].name, cs, MAX_NAME);
-        fprintf(out, "    case SAP_WIT_%s_%s:\n", upper_var, cu);
+        wit_name_to_upper_ident(var->cases[j].name, cu, (int)sizeof(cu));
+        wit_name_to_snake_ident(var->cases[j].name, cs, (int)sizeof(cs));
+        fprintf(out, "    case %s_%s:\n", macro_name, cu);
         if (var->cases[j].payload_type >= 0) {
             char access[256];
             snprintf(access, sizeof(access), "out->val.%s", cs);
@@ -1875,31 +2171,41 @@ static void emit_skip_function(FILE *out)
 
 static void emit_source(FILE *out, const WitRegistry *reg,
                         const DbiEntry *dbis, int ndbi,
+                        const char *wit_path,
                         const char *header_path)
 {
-    char snake[MAX_NAME];
+    char dbi_schema_symbol[MAX_NAME * 2];
+    char dbi_schema_count_symbol[MAX_NAME * 2];
+    char fn_name[MAX_NAME * 2];
+    char type_name[MAX_NAME * 2];
 
-    fprintf(out, "/* Auto-generated by tools/wit_codegen; DO NOT EDIT. */\n");
+    fprintf(out, "/* Auto-generated by tools/wit_codegen; DO NOT EDIT.\n");
+    fprintf(out, " * Source WIT: %s\n", wit_path ? wit_path : "<unknown>");
+    fprintf(out, " * WIT package: %s\n", reg->package_full[0] ? reg->package_full : "<none>");
+    fprintf(out, " */\n");
     fprintf(out, "#include \"%s\"\n", header_path);
     fprintf(out, "#include <string.h>\n\n");
 
-    /* Error propagation macro */
     fprintf(out, "#define SAP_WIT_CHECK(rc) do { if ((rc) != ERR_OK) return (rc); } while (0)\n\n");
 
-    /* DBI schema table */
     if (ndbi > 0) {
-        fprintf(out, "const SapWitDbiSchema sap_wit_dbi_schema[] = {\n");
+        wit_dbi_schema_symbol(reg, dbi_schema_symbol, (int)sizeof(dbi_schema_symbol));
+        wit_dbi_schema_count_symbol(reg, dbi_schema_count_symbol,
+                                    (int)sizeof(dbi_schema_count_symbol));
+        fprintf(out, "/* WIT DBI schema table for package %s. */\n", reg->package_full);
+        fprintf(out, "const SapWitDbiSchema %s[] = {\n", dbi_schema_symbol);
         for (int i = 0; i < ndbi; i++) {
-            kebab_to_snake(dbis[i].name, snake, MAX_NAME);
+            char dbi_snake[MAX_NAME];
+            wit_name_to_snake_ident(dbis[i].name, dbi_snake, (int)sizeof(dbi_snake));
             fprintf(out, "    {%du, \"%s\", \"%s\", \"%s\"},\n",
-                    dbis[i].dbi, snake, dbis[i].key_rec, dbis[i].val_rec);
+                    dbis[i].dbi, dbi_snake, dbis[i].key_rec, dbis[i].val_rec);
         }
         fprintf(out, "};\n\n");
-        fprintf(out, "const uint32_t sap_wit_dbi_schema_count =\n");
-        fprintf(out, "    (uint32_t)(sizeof(sap_wit_dbi_schema) / sizeof(sap_wit_dbi_schema[0]));\n\n");
+        fprintf(out, "const uint32_t %s =\n", dbi_schema_count_symbol);
+        fprintf(out, "    (uint32_t)(sizeof(%s) / sizeof(%s[0]));\n\n",
+                dbi_schema_symbol, dbi_schema_symbol);
     }
 
-    /* Writer functions in topological order */
     const char *order[MAX_TYPES * 2];
     int norder = topo_sort_types(reg, order, MAX_TYPES * 2);
     if (norder < 0) return;
@@ -1912,7 +2218,6 @@ static void emit_source(FILE *out, const WitRegistry *reg,
         if (var) { emit_write_variant(out, reg, var); continue; }
     }
 
-    /* Reader functions in topological order */
     fprintf(out, "/* ---- Reader functions ---- */\n\n");
     for (int idx = 0; idx < norder; idx++) {
         const WitRecord *rec = find_record(reg, order[idx]);
@@ -1921,25 +2226,26 @@ static void emit_source(FILE *out, const WitRegistry *reg,
         if (var) { emit_read_variant(out, reg, var); continue; }
     }
 
-    /* DBI blob validators — full structural validation via typed readers */
     fprintf(out, "/* ---- DBI blob validators ---- */\n\n");
     for (int i = 0; i < ndbi; i++) {
-        char val_snake[MAX_NAME], val_camel[MAX_NAME];
-        kebab_to_snake(dbis[i].val_rec, val_snake, MAX_NAME);
-        kebab_to_camel(dbis[i].val_rec, val_camel, MAX_NAME);
-        fprintf(out, "int sap_wit_validate_%s(const void *data, uint32_t len)\n{\n", val_snake);
+        wit_validator_name(reg, dbis[i].val_rec, fn_name, (int)sizeof(fn_name));
+        wit_type_c_typename(reg, dbis[i].val_rec, type_name, (int)sizeof(type_name));
+        fprintf(out, "/* WIT validator for %s. */\n", dbis[i].val_rec);
+        fprintf(out, "int %s(const void *data, uint32_t len)\n{\n", fn_name);
         fprintf(out, "    if (!data && !len) return 0;\n");
         fprintf(out, "    if (!data || !len) return -1;\n");
         fprintf(out, "    ThatchRegion view;\n");
         fprintf(out, "    if (thatch_region_init_readonly(&view, data, len) != ERR_OK) return -1;\n");
         fprintf(out, "    ThatchCursor cur = 0;\n");
-        fprintf(out, "    SapWit%s scratch;\n", val_camel);
+        fprintf(out, "    %s scratch;\n", type_name);
         fprintf(out, "    memset(&scratch, 0, sizeof(scratch));\n");
-        fprintf(out, "    int rc = sap_wit_read_%s(&view, &cur, &scratch);\n", val_snake);
+        wit_reader_name(reg, dbis[i].val_rec, type_name, (int)sizeof(type_name));
+        fprintf(out, "    int rc = %s(&view, &cur, &scratch);\n", type_name);
         fprintf(out, "    if (rc != ERR_OK) return -1;\n");
         fprintf(out, "    if (cur != len) return -1;\n");
         fprintf(out, "    return 0;\n");
         fprintf(out, "}\n\n");
+        wit_type_c_typename(reg, dbis[i].val_rec, type_name, (int)sizeof(type_name));
     }
 }
 
@@ -1995,6 +2301,7 @@ int main(int argc, char **argv)
         free(src);
         return 1;
     }
+    finalize_package_info(&reg, wit_path);
 
     DbiEntry dbis[MAX_TYPES];
     int ndbi = extract_dbis(&reg, dbis, MAX_TYPES);
@@ -2010,7 +2317,7 @@ int main(int argc, char **argv)
             fprintf(stderr, "wit_codegen: cannot create %s\n", header_path);
             free(src); return 1;
         }
-        emit_header(hdr, &reg, dbis, ndbi, header_path);
+        emit_header(hdr, &reg, dbis, ndbi, wit_path, header_path);
         fclose(hdr);
     }
 
@@ -2020,7 +2327,7 @@ int main(int argc, char **argv)
             fprintf(stderr, "wit_codegen: cannot create %s\n", source_path);
             free(src); return 1;
         }
-        emit_source(csrc, &reg, dbis, ndbi, header_path);
+        emit_source(csrc, &reg, dbis, ndbi, wit_path, header_path);
         fclose(csrc);
     }
 

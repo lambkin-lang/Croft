@@ -387,32 +387,32 @@ int sap_runner_txctx_v0_stage_put_dbi(SapRunnerTxCtxV0 *ctx, uint32_t dbi, const
     /* Enforce liquid WIT schema refinement boundaries dynamically per DBI. */
     switch (dbi)
     {
-    case SAP_WIT_DBI_APP_STATE:
-        if (sap_wit_validate_dbi0_app_state_value(val, val_len) != 0)
+    case SAP_WIT_RUNTIME_SCHEMA_DBI_APP_STATE:
+        if (sap_wit_validate_runtime_schema_dbi0_app_state_value(val, val_len) != 0)
             return ERR_CORRUPT;
         break;
-    case SAP_WIT_DBI_INBOX:
-        if (sap_wit_validate_dbi1_inbox_value(val, val_len) != 0)
+    case SAP_WIT_RUNTIME_SCHEMA_DBI_INBOX:
+        if (sap_wit_validate_runtime_schema_dbi1_inbox_value(val, val_len) != 0)
             return ERR_CORRUPT;
         break;
-    case SAP_WIT_DBI_OUTBOX:
-        if (sap_wit_validate_dbi2_outbox_value(val, val_len) != 0)
+    case SAP_WIT_RUNTIME_SCHEMA_DBI_OUTBOX:
+        if (sap_wit_validate_runtime_schema_dbi2_outbox_value(val, val_len) != 0)
             return ERR_CORRUPT;
         break;
-    case SAP_WIT_DBI_LEASES:
-        if (sap_wit_validate_dbi3_leases_value(val, val_len) != 0)
+    case SAP_WIT_RUNTIME_SCHEMA_DBI_LEASES:
+        if (sap_wit_validate_runtime_schema_dbi3_leases_value(val, val_len) != 0)
             return ERR_CORRUPT;
         break;
-    case SAP_WIT_DBI_TIMERS:
-        if (sap_wit_validate_dbi4_timers_value(val, val_len) != 0)
+    case SAP_WIT_RUNTIME_SCHEMA_DBI_TIMERS:
+        if (sap_wit_validate_runtime_schema_dbi4_timers_value(val, val_len) != 0)
             return ERR_CORRUPT;
         break;
-    case SAP_WIT_DBI_DEDUPE:
-        if (sap_wit_validate_dbi5_dedupe_value(val, val_len) != 0)
+    case SAP_WIT_RUNTIME_SCHEMA_DBI_DEDUPE:
+        if (sap_wit_validate_runtime_schema_dbi5_dedupe_value(val, val_len) != 0)
             return ERR_CORRUPT;
         break;
-    case SAP_WIT_DBI_DEAD_LETTER:
-        if (sap_wit_validate_dbi6_dead_letter_value(val, val_len) != 0)
+    case SAP_WIT_RUNTIME_SCHEMA_DBI_DEAD_LETTER:
+        if (sap_wit_validate_runtime_schema_dbi6_dead_letter_value(val, val_len) != 0)
             return ERR_CORRUPT;
         break;
     default:

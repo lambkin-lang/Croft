@@ -114,7 +114,7 @@ static int outbox_get(DB *db, uint64_t seq, const void **val_out, uint32_t *val_
         return ERR_INVALID;
     }
     sap_wasi_shim_v0_outbox_key_encode(seq, key);
-    rc = txn_get_dbi(txn, SAP_WIT_DBI_OUTBOX, key, sizeof(key), &val, &val_len);
+    rc = txn_get_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_OUTBOX, key, sizeof(key), &val, &val_len);
     if (rc == ERR_OK)
     {
         *exists_out = 1;
@@ -167,7 +167,7 @@ static int inbox_exists(DB *db, uint64_t worker, uint64_t seq, int *exists_out)
         return ERR_INVALID;
     }
     sap_runner_v0_inbox_key_encode(worker, seq, key);
-    rc = txn_get_dbi(txn, SAP_WIT_DBI_INBOX, key, sizeof(key), &val, &val_len);
+    rc = txn_get_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_INBOX, key, sizeof(key), &val, &val_len);
     txn_abort(txn);
 
     if (rc == ERR_OK)

@@ -169,6 +169,9 @@ set(HOST_FS_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_fs.c
 set(HOST_CLOCK_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_clock.h")
 set(HOST_CLOCK_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_clock.c")
 
+set(HOST_WINDOW_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_window.h")
+set(HOST_WINDOW_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_window.c")
+
 set(TEST_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/test_result_types.h")
 set(TEST_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/test_result_types.c")
 
@@ -220,6 +223,17 @@ add_custom_command(
     COMMENT "Generating Host-Clock WIT C Layouts..."
 )
 add_custom_target(host_clock_wit_schema_gen DEPENDS ${HOST_CLOCK_WIT_GENERATED_H} ${HOST_CLOCK_WIT_GENERATED_C})
+
+# Host-window schema
+add_custom_command(
+    OUTPUT ${HOST_WINDOW_WIT_GENERATED_H} ${HOST_WINDOW_WIT_GENERATED_C}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
+    COMMAND wit_codegen --wit "${CMAKE_CURRENT_SOURCE_DIR}/schemas/wit/host-window.wit"
+                        --header "${HOST_WINDOW_WIT_GENERATED_H}" --source "${HOST_WINDOW_WIT_GENERATED_C}"
+    DEPENDS wit_codegen "${CMAKE_CURRENT_SOURCE_DIR}/schemas/wit/host-window.wit"
+    COMMENT "Generating Host-Window WIT C Layouts..."
+)
+add_custom_target(host_window_wit_schema_gen DEPENDS ${HOST_WINDOW_WIT_GENERATED_H} ${HOST_WINDOW_WIT_GENERATED_C})
 
 # Test fixture schema
 add_custom_command(
@@ -490,6 +504,15 @@ croft_apply_public_includes(croft_wit_host_clock)
 target_link_libraries(croft_wit_host_clock PUBLIC croft_thatch_core)
 croft_register_artifact(croft_wit_host_clock wit
     TAGS wit host-clock service xpi
+    DEPENDS croft_thatch_core
+)
+
+add_library(croft_wit_host_window STATIC ${HOST_WINDOW_WIT_GENERATED_C})
+add_dependencies(croft_wit_host_window host_window_wit_schema_gen)
+croft_apply_public_includes(croft_wit_host_window)
+target_link_libraries(croft_wit_host_window PUBLIC croft_thatch_core)
+croft_register_artifact(croft_wit_host_window wit
+    TAGS wit host-window resource-handles xpi
     DEPENDS croft_thatch_core
 )
 
@@ -779,6 +802,27 @@ if(CROFT_GLFW_TARGET)
             DEPENDS croft_host_log
         )
     endif()
+endif()
+
+set(CROFT_WIT_HOST_WINDOW_UI_TARGET "")
+if(TARGET croft_ui_glfw_metal)
+    set(CROFT_WIT_HOST_WINDOW_UI_TARGET croft_ui_glfw_metal)
+elseif(TARGET croft_ui_glfw_opengl)
+    set(CROFT_WIT_HOST_WINDOW_UI_TARGET croft_ui_glfw_opengl)
+endif()
+
+if(CROFT_WIT_HOST_WINDOW_UI_TARGET)
+    add_library(croft_wit_host_window_runtime STATIC src/runtime/wit_host_window_runtime.c)
+    add_dependencies(croft_wit_host_window_runtime host_window_wit_schema_gen)
+    croft_apply_public_includes(croft_wit_host_window_runtime)
+    target_link_libraries(croft_wit_host_window_runtime PUBLIC
+        ${CROFT_WIT_HOST_WINDOW_UI_TARGET}
+        croft_wit_host_window
+    )
+    croft_register_artifact(croft_wit_host_window_runtime wit
+        TAGS tier8 wit host-window resource-handles host-mix-in event-queue machine-generated-model
+        DEPENDS ${CROFT_WIT_HOST_WINDOW_UI_TARGET} croft_wit_host_window
+    )
 endif()
 
 if(CROFT_GLFW_TARGET AND CROFT_TGFX_TARGET AND CROFT_TGFX_REQUEST_OPENGL)
@@ -1086,6 +1130,17 @@ croft_add_example(example_wit_clock_now
     FOCUS "Host monotonic clock access driven through generated WIT service commands."
 )
 add_dependencies(example_wit_clock_now host_clock_wit_schema_gen)
+
+if(TARGET croft_wit_host_window_runtime)
+    croft_add_example(example_wit_window_events
+        SOURCES examples/wit_window_events.c
+        LINKS croft_wit_host_window_runtime croft_wit_host_clock_runtime
+        REQUIRES croft_wit_host_window_runtime croft_wit_host_clock_runtime
+        TAGS wit xpi host-window host-clock host-mix-in event-queue
+        FOCUS "Window lifecycle and polled UI events driven through generated WIT commands."
+    )
+    add_dependencies(example_wit_window_events host_window_wit_schema_gen host_clock_wit_schema_gen)
+endif()
 
 croft_add_example(example_sapling_text
     SOURCES examples/sapling_text.c

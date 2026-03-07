@@ -30,10 +30,10 @@ void croft_wit_text_runtime_destroy(croft_wit_text_runtime* runtime);
  * resource handles on success.
  */
 int32_t croft_wit_text_runtime_dispatch(croft_wit_text_runtime* runtime,
-                                        const SapWitTextCommand* command,
-                                        SapWitTextReply* reply_out);
+                                        const SapWitCommonCoreTextCommand* command,
+                                        SapWitCommonCoreTextReply* reply_out);
 
-void croft_wit_text_reply_dispose(SapWitTextReply* reply);
+void croft_wit_text_reply_dispose(SapWitCommonCoreTextReply* reply);
 
 #ifdef __cplusplus
 }

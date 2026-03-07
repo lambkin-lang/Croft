@@ -98,7 +98,7 @@ static int outbox_get(DB *db, uint64_t seq, const void **val_out, uint32_t *val_
         return ERR_INVALID;
     }
     sap_runner_outbox_v0_key_encode(seq, key);
-    rc = txn_get_dbi(txn, SAP_WIT_DBI_OUTBOX, key, sizeof(key), &val, &val_len);
+    rc = txn_get_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_OUTBOX, key, sizeof(key), &val, &val_len);
     if (rc == ERR_NOT_FOUND)
     {
         txn_abort(txn);

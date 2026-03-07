@@ -62,7 +62,7 @@ void sap_runner_lease_v0_encode(const SapRunnerLeaseV0 *lease,
 
     out[5] = SAP_WIT_TAG_VARIANT;
     wr32(out + 6, 33u); /* [case_tag][lease-info-record] */
-    out[10] = SAP_WIT_LEASE_STATE_LEASED;
+    out[10] = SAP_WIT_RUNTIME_SCHEMA_LEASE_STATE_LEASED;
 
     out[11] = SAP_WIT_TAG_RECORD;
     wr32(out + 12, 27u); /* three s64 fields */
@@ -91,7 +91,7 @@ int sap_runner_lease_v0_decode(const uint8_t *raw, uint32_t raw_len, SapRunnerLe
         return ERR_CORRUPT;
     }
     if (raw[5] != SAP_WIT_TAG_VARIANT || rd32(raw + 6) != 33u ||
-        raw[10] != SAP_WIT_LEASE_STATE_LEASED)
+        raw[10] != SAP_WIT_RUNTIME_SCHEMA_LEASE_STATE_LEASED)
     {
         return ERR_CORRUPT;
     }
@@ -132,7 +132,7 @@ int sap_runner_lease_v0_stage_acquire(SapRunnerTxStackV0 *stack, Txn *read_txn, 
         return ERR_INVALID;
     }
 
-    rc = sap_runner_txstack_v0_read_dbi(stack, read_txn, SAP_WIT_DBI_LEASES, key, key_len, &val,
+    rc = sap_runner_txstack_v0_read_dbi(stack, read_txn, SAP_WIT_RUNTIME_SCHEMA_DBI_LEASES, key, key_len, &val,
                                         &val_len);
     if (rc == ERR_OK)
     {
@@ -164,7 +164,7 @@ int sap_runner_lease_v0_stage_acquire(SapRunnerTxStackV0 *stack, Txn *read_txn, 
     }
 
     sap_runner_lease_v0_encode(&next, raw);
-    rc = sap_runner_txstack_v0_stage_put_dbi(stack, SAP_WIT_DBI_LEASES, key, key_len, raw,
+    rc = sap_runner_txstack_v0_stage_put_dbi(stack, SAP_WIT_RUNTIME_SCHEMA_DBI_LEASES, key, key_len, raw,
                                              sizeof(raw));
     if (rc == ERR_OK)
     {
@@ -186,7 +186,7 @@ int sap_runner_lease_v0_stage_release(SapRunnerTxStackV0 *stack, Txn *read_txn, 
         return ERR_INVALID;
     }
 
-    rc = sap_runner_txstack_v0_read_dbi(stack, read_txn, SAP_WIT_DBI_LEASES, key, key_len, &val,
+    rc = sap_runner_txstack_v0_read_dbi(stack, read_txn, SAP_WIT_RUNTIME_SCHEMA_DBI_LEASES, key, key_len, &val,
                                         &val_len);
     if (rc != ERR_OK)
     {
@@ -204,5 +204,5 @@ int sap_runner_lease_v0_stage_release(SapRunnerTxStackV0 *stack, Txn *read_txn, 
         return ERR_CONFLICT;
     }
 
-    return sap_runner_txstack_v0_stage_del_dbi(stack, SAP_WIT_DBI_LEASES, key, key_len);
+    return sap_runner_txstack_v0_stage_del_dbi(stack, SAP_WIT_RUNTIME_SCHEMA_DBI_LEASES, key, key_len);
 }

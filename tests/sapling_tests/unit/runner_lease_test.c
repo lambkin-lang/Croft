@@ -85,7 +85,7 @@ static int test_lease_acquire_busy_and_expire(void)
     int rc;
 
     CHECK(db != NULL);
-    CHECK(dbi_open(db, SAP_WIT_DBI_LEASES, NULL, NULL, 0u) == ERR_OK);
+    CHECK(dbi_open(db, SAP_WIT_RUNTIME_SCHEMA_DBI_LEASES, NULL, NULL, 0u) == ERR_OK);
 
     sap_runner_txstack_v0_init(&stack);
     read_txn = txn_begin(db, NULL, TXN_RDONLY);
@@ -136,7 +136,7 @@ static int test_lease_same_owner_renew_and_release(void)
     uint32_t val_len = 0u;
 
     CHECK(db != NULL);
-    CHECK(dbi_open(db, SAP_WIT_DBI_LEASES, NULL, NULL, 0u) == ERR_OK);
+    CHECK(dbi_open(db, SAP_WIT_RUNTIME_SCHEMA_DBI_LEASES, NULL, NULL, 0u) == ERR_OK);
 
     sap_runner_txstack_v0_init(&stack);
 
@@ -187,7 +187,7 @@ static int test_lease_same_owner_renew_and_release(void)
 
     read_txn = txn_begin(db, NULL, TXN_RDONLY);
     CHECK(read_txn != NULL);
-    rc = txn_get_dbi(read_txn, SAP_WIT_DBI_LEASES, key, klen, &val, &val_len);
+    rc = txn_get_dbi(read_txn, SAP_WIT_RUNTIME_SCHEMA_DBI_LEASES, key, klen, &val, &val_len);
     CHECK(rc == ERR_NOT_FOUND);
     txn_abort(read_txn);
 
@@ -212,9 +212,9 @@ static int test_lease_decode_guardrails(void)
     CHECK(out.deadline_ts == in.deadline_ts);
     CHECK(out.attempts == in.attempts);
 
-    raw[10] = SAP_WIT_LEASE_STATE_DONE;
+    raw[10] = SAP_WIT_RUNTIME_SCHEMA_LEASE_STATE_DONE;
     CHECK(sap_runner_lease_v0_decode(raw, sizeof(raw), &out) == ERR_CORRUPT);
-    raw[10] = SAP_WIT_LEASE_STATE_LEASED;
+    raw[10] = SAP_WIT_RUNTIME_SCHEMA_LEASE_STATE_LEASED;
 
     raw[0] = SAP_WIT_TAG_VARIANT;
     CHECK(sap_runner_lease_v0_decode(raw, sizeof(raw), &out) == ERR_CORRUPT);

@@ -38,16 +38,16 @@ int32_t croft_msg_validate_payload(uint32_t msg_type, const uint8_t *payload, ui
         }
         return 0;
     case CROFT_MSG_TYPE_WIT_DBI1_INBOX_VALUE:
-        rc = sap_wit_validate_dbi1_inbox_value(payload, payload_len);
+        rc = sap_wit_validate_runtime_schema_dbi1_inbox_value(payload, payload_len);
         return (rc == 0) ? 0 : CROFT_MSG_ERR_INVALID_PAYLOAD;
     case CROFT_MSG_TYPE_WIT_DBI2_OUTBOX_VALUE:
-        rc = sap_wit_validate_dbi2_outbox_value(payload, payload_len);
+        rc = sap_wit_validate_runtime_schema_dbi2_outbox_value(payload, payload_len);
         return (rc == 0) ? 0 : CROFT_MSG_ERR_INVALID_PAYLOAD;
     case CROFT_MSG_TYPE_WIT_DBI4_TIMERS_VALUE:
-        rc = sap_wit_validate_dbi4_timers_value(payload, payload_len);
+        rc = sap_wit_validate_runtime_schema_dbi4_timers_value(payload, payload_len);
         return (rc == 0) ? 0 : CROFT_MSG_ERR_INVALID_PAYLOAD;
     case CROFT_MSG_TYPE_WIT_DBI6_DEAD_LETTER_VALUE:
-        rc = sap_wit_validate_dbi6_dead_letter_value(payload, payload_len);
+        rc = sap_wit_validate_runtime_schema_dbi6_dead_letter_value(payload, payload_len);
         return (rc == 0) ? 0 : CROFT_MSG_ERR_INVALID_PAYLOAD;
     default:
         return CROFT_MSG_ERR_UNSUPPORTED_TYPE;

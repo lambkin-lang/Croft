@@ -94,7 +94,7 @@ static int inbox_exists(DB *db, uint64_t worker_id, uint64_t seq, int *exists_ou
     {
         return ERR_INVALID;
     }
-    rc = txn_get_dbi(txn, SAP_WIT_DBI_INBOX, key, sizeof(key), &val, &val_len);
+    rc = txn_get_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_INBOX, key, sizeof(key), &val, &val_len);
     txn_abort(txn);
 
     if (rc == ERR_OK)
@@ -128,7 +128,7 @@ static int inbox_put_raw(DB *db, uint64_t worker_id, uint64_t seq, const uint8_t
     {
         return ERR_BUSY;
     }
-    rc = txn_put_dbi(txn, SAP_WIT_DBI_INBOX, key, sizeof(key), raw, raw_len);
+    rc = txn_put_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_INBOX, key, sizeof(key), raw, raw_len);
     if (rc != ERR_OK)
     {
         txn_abort(txn);
@@ -158,7 +158,7 @@ static int inbox_get_copy(DB *db, uint64_t worker_id, uint64_t seq, uint8_t *dst
     {
         return ERR_INVALID;
     }
-    rc = txn_get_dbi(txn, SAP_WIT_DBI_INBOX, key, sizeof(key), &val, &val_len);
+    rc = txn_get_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_INBOX, key, sizeof(key), &val, &val_len);
     if (rc != ERR_OK)
     {
         txn_abort(txn);
@@ -214,7 +214,7 @@ static int lease_exists(DB *db, uint64_t worker_id, uint64_t seq, int *exists_ou
     {
         return ERR_INVALID;
     }
-    rc = txn_get_dbi(txn, SAP_WIT_DBI_LEASES, key, sizeof(key), &val, &val_len);
+    rc = txn_get_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_LEASES, key, sizeof(key), &val, &val_len);
     txn_abort(txn);
 
     if (rc == ERR_OK)
@@ -257,7 +257,7 @@ static int dead_letter_read(DB *db, uint64_t worker_id, uint64_t seq, SapRunnerD
     {
         return ERR_INVALID;
     }
-    rc = txn_get_dbi(txn, SAP_WIT_DBI_DEAD_LETTER, key, sizeof(key), &val, &val_len);
+    rc = txn_get_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_DEAD_LETTER, key, sizeof(key), &val, &val_len);
     if (rc == ERR_NOT_FOUND)
     {
         txn_abort(txn);
@@ -333,7 +333,7 @@ static int lease_put(DB *db, uint64_t worker_id, uint64_t seq, const SapRunnerLe
     {
         return ERR_BUSY;
     }
-    rc = txn_put_dbi(txn, SAP_WIT_DBI_LEASES, key, sizeof(key), raw, sizeof(raw));
+    rc = txn_put_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_LEASES, key, sizeof(key), raw, sizeof(raw));
     if (rc != ERR_OK)
     {
         txn_abort(txn);

@@ -4,33 +4,33 @@
 #include <stdio.h>
 #include <string.h>
 
-static int expect_mailbox_ok(const SapWitMailboxReply* reply, SapWitMailboxResource* handle_out)
+static int expect_mailbox_ok(const SapWitCommonCoreMailboxReply* reply, SapWitCommonCoreMailboxResource* handle_out)
 {
     if (!reply || !handle_out) {
         return 0;
     }
-    if (reply->case_tag != SAP_WIT_MAILBOX_REPLY_MAILBOX
-            || reply->val.mailbox.case_tag != SAP_WIT_MAILBOX_OP_RESULT_OK) {
+    if (reply->case_tag != SAP_WIT_COMMON_CORE_MAILBOX_REPLY_MAILBOX
+            || reply->val.mailbox.case_tag != SAP_WIT_COMMON_CORE_MAILBOX_OP_RESULT_OK) {
         return 0;
     }
     *handle_out = reply->val.mailbox.val.ok;
     return 1;
 }
 
-static int expect_status_ok(const SapWitMailboxReply* reply)
+static int expect_status_ok(const SapWitCommonCoreMailboxReply* reply)
 {
     return reply
-        && reply->case_tag == SAP_WIT_MAILBOX_REPLY_STATUS
-        && reply->val.status.case_tag == SAP_WIT_STATUS_OK;
+        && reply->case_tag == SAP_WIT_COMMON_CORE_MAILBOX_REPLY_STATUS
+        && reply->val.status.case_tag == SAP_WIT_COMMON_CORE_STATUS_OK;
 }
 
-static int expect_recv_ok(const SapWitMailboxReply* reply, const uint8_t** data_out, uint32_t* len_out)
+static int expect_recv_ok(const SapWitCommonCoreMailboxReply* reply, const uint8_t** data_out, uint32_t* len_out)
 {
     if (!reply || !data_out || !len_out) {
         return 0;
     }
-    if (reply->case_tag != SAP_WIT_MAILBOX_REPLY_RECV
-            || reply->val.recv.case_tag != SAP_WIT_MAILBOX_RECV_RESULT_OK) {
+    if (reply->case_tag != SAP_WIT_COMMON_CORE_MAILBOX_REPLY_RECV
+            || reply->val.recv.case_tag != SAP_WIT_COMMON_CORE_MAILBOX_RECV_RESULT_OK) {
         return 0;
     }
     *data_out = reply->val.recv.val.ok.data;
@@ -41,9 +41,9 @@ static int expect_recv_ok(const SapWitMailboxReply* reply, const uint8_t** data_
 int main(void)
 {
     croft_wit_mailbox_runtime* runtime;
-    SapWitMailboxCommand command = {0};
-    SapWitMailboxReply reply = {0};
-    SapWitMailboxResource mailbox = SAP_WIT_MAILBOX_RESOURCE_INVALID;
+    SapWitCommonCoreMailboxCommand command = {0};
+    SapWitCommonCoreMailboxReply reply = {0};
+    SapWitCommonCoreMailboxResource mailbox = SAP_WIT_COMMON_CORE_MAILBOX_RESOURCE_INVALID;
     const uint8_t* payload = NULL;
     uint32_t payload_len = 0u;
 
@@ -53,7 +53,7 @@ int main(void)
         return 1;
     }
 
-    command.case_tag = SAP_WIT_MAILBOX_COMMAND_OPEN;
+    command.case_tag = SAP_WIT_COMMON_CORE_MAILBOX_COMMAND_OPEN;
     command.val.open.max_messages = 4u;
     if (croft_wit_mailbox_runtime_dispatch(runtime, &command, &reply) != 0
             || !expect_mailbox_ok(&reply, &mailbox)) {
@@ -64,7 +64,7 @@ int main(void)
     }
     croft_wit_mailbox_reply_dispose(&reply);
 
-    command.case_tag = SAP_WIT_MAILBOX_COMMAND_SEND;
+    command.case_tag = SAP_WIT_COMMON_CORE_MAILBOX_COMMAND_SEND;
     command.val.send.mailbox = mailbox;
     command.val.send.payload_data = (const uint8_t*)"ping";
     command.val.send.payload_len = 4u;
@@ -77,7 +77,7 @@ int main(void)
     }
     croft_wit_mailbox_reply_dispose(&reply);
 
-    command.case_tag = SAP_WIT_MAILBOX_COMMAND_RECV;
+    command.case_tag = SAP_WIT_COMMON_CORE_MAILBOX_COMMAND_RECV;
     command.val.recv.mailbox = mailbox;
     if (croft_wit_mailbox_runtime_dispatch(runtime, &command, &reply) != 0
             || !expect_recv_ok(&reply, &payload, &payload_len)) {
@@ -95,7 +95,7 @@ int main(void)
     }
     croft_wit_mailbox_reply_dispose(&reply);
 
-    command.case_tag = SAP_WIT_MAILBOX_COMMAND_DROP;
+    command.case_tag = SAP_WIT_COMMON_CORE_MAILBOX_COMMAND_DROP;
     command.val.drop.mailbox = mailbox;
     if (croft_wit_mailbox_runtime_dispatch(runtime, &command, &reply) != 0
             || !expect_status_ok(&reply)) {

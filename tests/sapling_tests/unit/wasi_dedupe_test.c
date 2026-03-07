@@ -93,8 +93,8 @@ static int test_shim_dedupe_skips_invoke(void)
     Txn *rtxn = NULL;
 
     CHECK(db != NULL);
-    CHECK(dbi_open(db, SAP_WIT_DBI_INBOX, NULL, NULL, 0u) == ERR_OK);
-    CHECK(dbi_open(db, SAP_WIT_DBI_DEDUPE, NULL, NULL, 0u) == ERR_OK);
+    CHECK(dbi_open(db, SAP_WIT_RUNTIME_SCHEMA_DBI_INBOX, NULL, NULL, 0u) == ERR_OK);
+    CHECK(dbi_open(db, SAP_WIT_RUNTIME_SCHEMA_DBI_DEDUPE, NULL, NULL, 0u) == ERR_OK);
 
     cfg.db = db;
     cfg.worker_id = 7u;

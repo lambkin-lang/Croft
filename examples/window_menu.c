@@ -12,7 +12,7 @@ static void on_menu_action(int32_t action_id) {
 }
 
 int main(void) {
-    SapWitMenuIntent intent;
+    SapWitMenuSchemaMenuIntent intent;
 
     if (host_ui_init() != 0) {
         return 1;
@@ -24,10 +24,10 @@ int main(void) {
 
     host_menu_set_callback(on_menu_action);
 
-    intent.case_tag = SAP_WIT_MENU_INTENT_BEGIN_UPDATE;
+    intent.case_tag = SAP_WIT_MENU_SCHEMA_MENU_INTENT_BEGIN_UPDATE;
     host_menu_apply_intent(&intent);
 
-    intent.case_tag = SAP_WIT_MENU_INTENT_ADD_ITEM;
+    intent.case_tag = SAP_WIT_MENU_SCHEMA_MENU_INTENT_ADD_ITEM;
     intent.val.add_item.action_id = 1;
     intent.val.add_item.parent_action_id = -1;
     intent.val.add_item.label_data = (const uint8_t*)"App";
@@ -36,7 +36,7 @@ int main(void) {
     intent.val.add_item.mods = 0;
     host_menu_apply_intent(&intent);
 
-    intent.case_tag = SAP_WIT_MENU_INTENT_ADD_ITEM;
+    intent.case_tag = SAP_WIT_MENU_SCHEMA_MENU_INTENT_ADD_ITEM;
     intent.val.add_item.action_id = 99;
     intent.val.add_item.parent_action_id = 1;
     intent.val.add_item.label_data = (const uint8_t*)"Quit Croft";
@@ -44,10 +44,10 @@ int main(void) {
     intent.val.add_item.has_shortcut = 1;
     intent.val.add_item.shortcut_data = (const uint8_t*)"q";
     intent.val.add_item.shortcut_len = 1;
-    intent.val.add_item.mods = SAP_WIT_MODIFIERS_CMD;
+    intent.val.add_item.mods = SAP_WIT_MENU_SCHEMA_MODIFIERS_CMD;
     host_menu_apply_intent(&intent);
 
-    intent.case_tag = SAP_WIT_MENU_INTENT_COMMIT_UPDATE;
+    intent.case_tag = SAP_WIT_MENU_SCHEMA_MENU_INTENT_COMMIT_UPDATE;
     host_menu_apply_intent(&intent);
 
     printf("Menu registered natively. Use Cmd+Q or the Quit menu item to exit.\n");

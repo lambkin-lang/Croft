@@ -25,10 +25,10 @@ croft_wit_store_runtime* croft_wit_store_runtime_create(
 void croft_wit_store_runtime_destroy(croft_wit_store_runtime* runtime);
 
 int32_t croft_wit_store_runtime_dispatch(croft_wit_store_runtime* runtime,
-                                         const SapWitStoreCommand* command,
-                                         SapWitStoreReply* reply_out);
+                                         const SapWitCommonCoreStoreCommand* command,
+                                         SapWitCommonCoreStoreReply* reply_out);
 
-void croft_wit_store_reply_dispose(SapWitStoreReply* reply);
+void croft_wit_store_reply_dispose(SapWitCommonCoreStoreReply* reply);
 
 #ifdef __cplusplus
 }

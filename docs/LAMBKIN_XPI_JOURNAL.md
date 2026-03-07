@@ -49,17 +49,24 @@ This is a strong argument for a Lambkin-side aspect library that can weave
 package-independent support around generated interfaces without pretending the
 interfaces are independent.
 
-The first host mix-in package exposed a related pressure point: generated C
-names are still effectively global at the package boundary. A second package
-cannot casually reuse generic type names like `status`, `bytes`, or `error`
-without risking collisions. For now, the host-fs schema uses explicit `fs-`
-prefixes to stay linkable beside `common-core`, but that is only a stopgap.
+That pressure point is now partially resolved in code: `tools/wit_codegen.c`
+now uses the WIT `package` name as the generated C qualifier source, sanitizes
+C identifiers centrally, and emits traceability comments in generated headers
+and sources. That shifts symbol hygiene from schema-local naming folklore into
+one place where Lambkin can later extend it deliberately.
 
 This opens another likely XPI/codegen join-point:
 
-- package-aware naming and namespacing strategy
+- package-aware naming refinement
 - generated symbol hygiene across independently evolved WIT packages
 - what should be made globally canonical versus package-local
+- how generated names should collapse duplicated stems like
+  `HostFsFsCommand` or `ResultTestTestResultCarrier`
+
+The first `host-window` package exposed a second generator hygiene issue: WIT
+case names also need C-keyword awareness. A case named `char` generated illegal
+C until it was renamed to `char-event`. That is another reminder that the WIT
+surface and the generated-C surface are not independent concerns.
 
 ### 2. Resource Handles Are the First Honest XPI Boundary
 
@@ -178,6 +185,28 @@ That is likely to matter later for other mix-ins too:
 - menu construction may create handles, but command routing may be service-like
 - GPU may split between surface/resource ownership and stateless capability
   queries
+
+### 6. Callback Hosts and Polled Worlds Need an Explicit Bridge
+
+`host_ui` currently exposes a singleton window plus global callbacks. The new
+`host-window` package deliberately does *not* pretend that is already a clean
+WIT boundary. Instead it wraps that host in:
+
+- a `window` resource
+- a polled `next-event` command
+- an internal queue that captures callback traffic
+
+That bridge is itself a crosscutting concern:
+
+- event ordering and queue overflow policy
+- callback-to-command translation
+- singleton host state versus resource multiplicity
+- whether cursor positions, modifiers, and future IME state are sampled or
+  pushed
+
+This looks exactly like the kind of place where Lambkin advice or XPIs will
+need to choose among several legitimate strategies rather than inheriting one
+hard-coded runtime shape.
 
 ## Likely Join-Points / XPIs
 
@@ -324,12 +353,16 @@ solves them.
    command advice, or a separate scheduler resource family?
 9. Which transaction policies should be explicit in WIT worlds versus woven by
    Lambkin as advice around command sequences?
-10. Should WIT package names participate directly in generated C symbol names,
-    or should Lambkin weave a separate symbol-hygiene layer around codegen?
+10. Now that WIT package names do participate directly in generated C symbol
+    names, how much additional normalization should Lambkin/codegen perform to
+    avoid duplicated stems without hiding the source package provenance?
 11. Which host capabilities are stable enough to present as reusable mix-ins
     (`fs`, `clock`) versus which should stay family-specific (`window`, `gpu`)?
 12. Which future host interfaces should deliberately *avoid* `resource` and
     remain pure command/service surfaces?
+13. When a native host is callback-driven but the target world wants polling,
+    should the bridge live in generated code, runtime advice, or a reusable XPI
+    library?
 
 ## Near-Term Follow-Through
 
@@ -338,7 +371,7 @@ The next high-value steps look like this:
 - reuse the current `text`/`db`/`txn`/`mailbox` WIT barrier in a CLI-style
   sample and a host-Wasm-facing sample
 - define the next host mix-in WIT package after `host-fs` and `host-clock`,
-  likely window/input or GPU-facing facets
+  likely GPU-facing facets and richer menu/accessibility/window follow-ons
 - isolate direct-Metal editor concerns into explicit layout/input/accessibility
   seams instead of letting them accumulate inside one renderer-centric module
 - start naming candidate Lambkin aspect libraries from the join-points above,

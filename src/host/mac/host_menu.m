@@ -23,8 +23,8 @@ void host_menu_set_callback(host_menu_callback_t cb) {
     g_callback = cb;
 }
 
-void host_menu_apply_intent(const SapWitMenuIntent* intent) {
-    if (intent->case_tag == SAP_WIT_MENU_INTENT_BEGIN_UPDATE) {
+void host_menu_apply_intent(const SapWitMenuSchemaMenuIntent* intent) {
+    if (intent->case_tag == SAP_WIT_MENU_SCHEMA_MENU_INTENT_BEGIN_UPDATE) {
         // Reset everything
         if (!g_item_map) {
             g_item_map = [[NSMutableDictionary alloc] init];
@@ -33,8 +33,8 @@ void host_menu_apply_intent(const SapWitMenuIntent* intent) {
         }
         g_root_menu = [[NSMenu alloc] initWithTitle:@"Main Menu"];
     } 
-    else if (intent->case_tag == SAP_WIT_MENU_INTENT_ADD_ITEM) {
-        const SapWitMenuItem* md = &intent->val.add_item;
+    else if (intent->case_tag == SAP_WIT_MENU_SCHEMA_MENU_INTENT_ADD_ITEM) {
+        const SapWitMenuSchemaMenuItem* md = &intent->val.add_item;
         
         NSString* title = [[NSString alloc] initWithBytes:md->label_data 
                                                    length:md->label_len 
@@ -61,10 +61,10 @@ void host_menu_apply_intent(const SapWitMenuIntent* intent) {
 
         // Apple Mac Modifiers
         NSEventModifierFlags mask = 0;
-        if (md->mods & SAP_WIT_MODIFIERS_CMD)   mask |= NSEventModifierFlagCommand;
-        if (md->mods & SAP_WIT_MODIFIERS_SHIFT) mask |= NSEventModifierFlagShift;
-        if (md->mods & SAP_WIT_MODIFIERS_CTRL)  mask |= NSEventModifierFlagControl;
-        if (md->mods & SAP_WIT_MODIFIERS_ALT)   mask |= NSEventModifierFlagOption;
+        if (md->mods & SAP_WIT_MENU_SCHEMA_MODIFIERS_CMD)   mask |= NSEventModifierFlagCommand;
+        if (md->mods & SAP_WIT_MENU_SCHEMA_MODIFIERS_SHIFT) mask |= NSEventModifierFlagShift;
+        if (md->mods & SAP_WIT_MENU_SCHEMA_MODIFIERS_CTRL)  mask |= NSEventModifierFlagControl;
+        if (md->mods & SAP_WIT_MENU_SCHEMA_MODIFIERS_ALT)   mask |= NSEventModifierFlagOption;
         
         if (md->has_shortcut) {
             [item setKeyEquivalentModifierMask:mask];
@@ -85,7 +85,7 @@ void host_menu_apply_intent(const SapWitMenuIntent* intent) {
             }
         }
     }
-    else if (intent->case_tag == SAP_WIT_MENU_INTENT_COMMIT_UPDATE) {
+    else if (intent->case_tag == SAP_WIT_MENU_SCHEMA_MENU_INTENT_COMMIT_UPDATE) {
         // Force the OS Global Application Menu to adopt our WIT-formulated tree
         [NSApp setMainMenu:g_root_menu];
     }

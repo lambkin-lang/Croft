@@ -21,19 +21,19 @@ static uint8_t croft_wit_host_fs_error_from_rc(int32_t rc)
 {
     switch (rc) {
         case HOST_FS_ERR_NOT_FOUND:
-            return SAP_WIT_FS_ERROR_NOT_FOUND;
+            return SAP_WIT_HOST_FS_FS_ERROR_NOT_FOUND;
         case HOST_FS_ERR_ACCES:
-            return SAP_WIT_FS_ERROR_ACCESS;
+            return SAP_WIT_HOST_FS_FS_ERROR_ACCESS;
         case HOST_FS_ERR_IO:
-            return SAP_WIT_FS_ERROR_IO;
+            return SAP_WIT_HOST_FS_FS_ERROR_IO;
         case HOST_FS_ERR_INVALID:
-            return SAP_WIT_FS_ERROR_INVALID;
+            return SAP_WIT_HOST_FS_FS_ERROR_INVALID;
         default:
-            return SAP_WIT_FS_ERROR_INTERNAL;
+            return SAP_WIT_HOST_FS_FS_ERROR_INTERNAL;
     }
 }
 
-static void croft_wit_host_fs_reply_zero(SapWitFsReply* reply)
+static void croft_wit_host_fs_reply_zero(SapWitHostFsFsReply* reply)
 {
     if (!reply) {
         return;
@@ -41,62 +41,62 @@ static void croft_wit_host_fs_reply_zero(SapWitFsReply* reply)
     memset(reply, 0, sizeof(*reply));
 }
 
-static void croft_wit_host_fs_reply_file_ok(SapWitFsReply* reply, SapWitFileResource handle)
+static void croft_wit_host_fs_reply_file_ok(SapWitHostFsFsReply* reply, SapWitHostFsFileResource handle)
 {
     croft_wit_host_fs_reply_zero(reply);
-    reply->case_tag = SAP_WIT_FS_REPLY_FILE;
-    reply->val.file.case_tag = SAP_WIT_FS_FILE_OP_RESULT_OK;
+    reply->case_tag = SAP_WIT_HOST_FS_FS_REPLY_FILE;
+    reply->val.file.case_tag = SAP_WIT_HOST_FS_FS_FILE_OP_RESULT_OK;
     reply->val.file.val.ok = handle;
 }
 
-static void croft_wit_host_fs_reply_file_err(SapWitFsReply* reply, uint8_t err)
+static void croft_wit_host_fs_reply_file_err(SapWitHostFsFsReply* reply, uint8_t err)
 {
     croft_wit_host_fs_reply_zero(reply);
-    reply->case_tag = SAP_WIT_FS_REPLY_FILE;
-    reply->val.file.case_tag = SAP_WIT_FS_FILE_OP_RESULT_ERR;
+    reply->case_tag = SAP_WIT_HOST_FS_FS_REPLY_FILE;
+    reply->val.file.case_tag = SAP_WIT_HOST_FS_FS_FILE_OP_RESULT_ERR;
     reply->val.file.val.err = err;
 }
 
-static void croft_wit_host_fs_reply_status_ok(SapWitFsReply* reply)
+static void croft_wit_host_fs_reply_status_ok(SapWitHostFsFsReply* reply)
 {
     croft_wit_host_fs_reply_zero(reply);
-    reply->case_tag = SAP_WIT_FS_REPLY_STATUS;
-    reply->val.status.case_tag = SAP_WIT_FS_STATUS_OK;
+    reply->case_tag = SAP_WIT_HOST_FS_FS_REPLY_STATUS;
+    reply->val.status.case_tag = SAP_WIT_HOST_FS_FS_STATUS_OK;
 }
 
-static void croft_wit_host_fs_reply_status_err(SapWitFsReply* reply, uint8_t err)
+static void croft_wit_host_fs_reply_status_err(SapWitHostFsFsReply* reply, uint8_t err)
 {
     croft_wit_host_fs_reply_zero(reply);
-    reply->case_tag = SAP_WIT_FS_REPLY_STATUS;
-    reply->val.status.case_tag = SAP_WIT_FS_STATUS_ERR;
+    reply->case_tag = SAP_WIT_HOST_FS_FS_REPLY_STATUS;
+    reply->val.status.case_tag = SAP_WIT_HOST_FS_FS_STATUS_ERR;
     reply->val.status.val.err = err;
 }
 
-static void croft_wit_host_fs_reply_read_ok(SapWitFsReply* reply, uint8_t* data, uint32_t len)
+static void croft_wit_host_fs_reply_read_ok(SapWitHostFsFsReply* reply, uint8_t* data, uint32_t len)
 {
     croft_wit_host_fs_reply_zero(reply);
-    reply->case_tag = SAP_WIT_FS_REPLY_READ;
-    reply->val.read.case_tag = SAP_WIT_FS_FILE_READ_RESULT_OK;
+    reply->case_tag = SAP_WIT_HOST_FS_FS_REPLY_READ;
+    reply->val.read.case_tag = SAP_WIT_HOST_FS_FS_FILE_READ_RESULT_OK;
     reply->val.read.val.ok.data = data;
     reply->val.read.val.ok.len = len;
 }
 
-static void croft_wit_host_fs_reply_read_err(SapWitFsReply* reply, uint8_t err)
+static void croft_wit_host_fs_reply_read_err(SapWitHostFsFsReply* reply, uint8_t err)
 {
     croft_wit_host_fs_reply_zero(reply);
-    reply->case_tag = SAP_WIT_FS_REPLY_READ;
-    reply->val.read.case_tag = SAP_WIT_FS_FILE_READ_RESULT_ERR;
+    reply->case_tag = SAP_WIT_HOST_FS_FS_REPLY_READ;
+    reply->val.read.case_tag = SAP_WIT_HOST_FS_FS_FILE_READ_RESULT_ERR;
     reply->val.read.val.err = err;
 }
 
-void croft_wit_host_fs_reply_dispose(SapWitFsReply* reply)
+void croft_wit_host_fs_reply_dispose(SapWitHostFsFsReply* reply)
 {
     if (!reply) {
         return;
     }
 
-    if (reply->case_tag == SAP_WIT_FS_REPLY_READ
-            && reply->val.read.case_tag == SAP_WIT_FS_FILE_READ_RESULT_OK
+    if (reply->case_tag == SAP_WIT_HOST_FS_FS_REPLY_READ
+            && reply->val.read.case_tag == SAP_WIT_HOST_FS_FS_FILE_READ_RESULT_OK
             && reply->val.read.val.ok.data) {
         free((void*)reply->val.read.val.ok.data);
     }
@@ -135,7 +135,7 @@ static int32_t croft_wit_host_fs_slots_reserve(croft_wit_host_fs_runtime* runtim
 
 static int32_t croft_wit_host_fs_slots_insert(croft_wit_host_fs_runtime* runtime,
                                               uint64_t fd,
-                                              SapWitFileResource* handle_out)
+                                              SapWitHostFsFileResource* handle_out)
 {
     size_t i;
     int32_t rc;
@@ -148,7 +148,7 @@ static int32_t croft_wit_host_fs_slots_insert(croft_wit_host_fs_runtime* runtime
         if (!runtime->slots[i].live) {
             runtime->slots[i].live = 1u;
             runtime->slots[i].fd = fd;
-            *handle_out = (SapWitFileResource)(i + 1u);
+            *handle_out = (SapWitHostFsFileResource)(i + 1u);
             return HOST_FS_OK;
         }
     }
@@ -161,16 +161,16 @@ static int32_t croft_wit_host_fs_slots_insert(croft_wit_host_fs_runtime* runtime
     runtime->slots[runtime->slot_count].live = 1u;
     runtime->slots[runtime->slot_count].fd = fd;
     runtime->slot_count++;
-    *handle_out = (SapWitFileResource)runtime->slot_count;
+    *handle_out = (SapWitHostFsFileResource)runtime->slot_count;
     return HOST_FS_OK;
 }
 
 static croft_wit_host_file_slot* croft_wit_host_fs_slots_lookup(croft_wit_host_fs_runtime* runtime,
-                                                                SapWitFileResource handle)
+                                                                SapWitHostFsFileResource handle)
 {
     size_t slot;
 
-    if (!runtime || handle == SAP_WIT_FILE_RESOURCE_INVALID) {
+    if (!runtime || handle == SAP_WIT_HOST_FS_FILE_RESOURCE_INVALID) {
         return NULL;
     }
 
@@ -205,7 +205,7 @@ void croft_wit_host_fs_runtime_destroy(croft_wit_host_fs_runtime* runtime)
     free(runtime);
 }
 
-static uint32_t croft_wit_host_fs_flags_from_open(const SapWitFsFileOpen* request)
+static uint32_t croft_wit_host_fs_flags_from_open(const SapWitHostFsFsFileOpen* request)
 {
     uint32_t flags = 0u;
 
@@ -231,11 +231,11 @@ static uint32_t croft_wit_host_fs_flags_from_open(const SapWitFsFileOpen* reques
 }
 
 static int32_t croft_wit_host_fs_dispatch_open(croft_wit_host_fs_runtime* runtime,
-                                               const SapWitFsFileOpen* request,
-                                               SapWitFsReply* reply_out)
+                                               const SapWitHostFsFsFileOpen* request,
+                                               SapWitHostFsFsReply* reply_out)
 {
     uint64_t fd = 0u;
-    SapWitFileResource handle = SAP_WIT_FILE_RESOURCE_INVALID;
+    SapWitHostFsFileResource handle = SAP_WIT_HOST_FS_FILE_RESOURCE_INVALID;
     int32_t rc;
 
     if (!runtime || !request || !reply_out) {
@@ -254,7 +254,7 @@ static int32_t croft_wit_host_fs_dispatch_open(croft_wit_host_fs_runtime* runtim
     rc = croft_wit_host_fs_slots_insert(runtime, fd, &handle);
     if (rc != HOST_FS_OK) {
         host_fs_close(fd);
-        croft_wit_host_fs_reply_file_err(reply_out, SAP_WIT_FS_ERROR_OOM);
+        croft_wit_host_fs_reply_file_err(reply_out, SAP_WIT_HOST_FS_FS_ERROR_OOM);
         return HOST_FS_OK;
     }
 
@@ -263,8 +263,8 @@ static int32_t croft_wit_host_fs_dispatch_open(croft_wit_host_fs_runtime* runtim
 }
 
 static int32_t croft_wit_host_fs_dispatch_close(croft_wit_host_fs_runtime* runtime,
-                                                const SapWitFsFileClose* request,
-                                                SapWitFsReply* reply_out)
+                                                const SapWitHostFsFsFileClose* request,
+                                                SapWitHostFsFsReply* reply_out)
 {
     croft_wit_host_file_slot* slot;
     int32_t rc;
@@ -275,7 +275,7 @@ static int32_t croft_wit_host_fs_dispatch_close(croft_wit_host_fs_runtime* runti
 
     slot = croft_wit_host_fs_slots_lookup(runtime, request->file);
     if (!slot) {
-        croft_wit_host_fs_reply_status_err(reply_out, SAP_WIT_FS_ERROR_INVALID_HANDLE);
+        croft_wit_host_fs_reply_status_err(reply_out, SAP_WIT_HOST_FS_FS_ERROR_INVALID_HANDLE);
         return HOST_FS_OK;
     }
 
@@ -297,8 +297,8 @@ static int32_t croft_wit_host_fs_dispatch_close(croft_wit_host_fs_runtime* runti
  * same handle is not yet modeled as a stable capability.
  */
 static int32_t croft_wit_host_fs_dispatch_read_all(croft_wit_host_fs_runtime* runtime,
-                                                   const SapWitFsFileReadAll* request,
-                                                   SapWitFsReply* reply_out)
+                                                   const SapWitHostFsFsFileReadAll* request,
+                                                   SapWitHostFsFsReply* reply_out)
 {
     croft_wit_host_file_slot* slot;
     uint64_t file_size = 0u;
@@ -314,7 +314,7 @@ static int32_t croft_wit_host_fs_dispatch_read_all(croft_wit_host_fs_runtime* ru
 
     slot = croft_wit_host_fs_slots_lookup(runtime, request->file);
     if (!slot) {
-        croft_wit_host_fs_reply_read_err(reply_out, SAP_WIT_FS_ERROR_INVALID_HANDLE);
+        croft_wit_host_fs_reply_read_err(reply_out, SAP_WIT_HOST_FS_FS_ERROR_INVALID_HANDLE);
         return HOST_FS_OK;
     }
 
@@ -324,14 +324,14 @@ static int32_t croft_wit_host_fs_dispatch_read_all(croft_wit_host_fs_runtime* ru
         return HOST_FS_OK;
     }
     if (file_size > (uint64_t)UINT_MAX) {
-        croft_wit_host_fs_reply_read_err(reply_out, SAP_WIT_FS_ERROR_TOO_LARGE);
+        croft_wit_host_fs_reply_read_err(reply_out, SAP_WIT_HOST_FS_FS_ERROR_TOO_LARGE);
         return HOST_FS_OK;
     }
 
     alloc_len = file_size > 0u ? (size_t)file_size : 1u;
     buffer = (uint8_t*)malloc(alloc_len);
     if (!buffer) {
-        croft_wit_host_fs_reply_read_err(reply_out, SAP_WIT_FS_ERROR_OOM);
+        croft_wit_host_fs_reply_read_err(reply_out, SAP_WIT_HOST_FS_FS_ERROR_OOM);
         return HOST_FS_OK;
     }
 
@@ -356,19 +356,19 @@ static int32_t croft_wit_host_fs_dispatch_read_all(croft_wit_host_fs_runtime* ru
 }
 
 int32_t croft_wit_host_fs_runtime_dispatch(croft_wit_host_fs_runtime* runtime,
-                                           const SapWitFsCommand* command,
-                                           SapWitFsReply* reply_out)
+                                           const SapWitHostFsFsCommand* command,
+                                           SapWitHostFsFsReply* reply_out)
 {
     if (!runtime || !command || !reply_out) {
         return HOST_FS_ERR_INVALID;
     }
 
     switch (command->case_tag) {
-        case SAP_WIT_FS_COMMAND_OPEN:
+        case SAP_WIT_HOST_FS_FS_COMMAND_OPEN:
             return croft_wit_host_fs_dispatch_open(runtime, &command->val.open, reply_out);
-        case SAP_WIT_FS_COMMAND_CLOSE:
+        case SAP_WIT_HOST_FS_FS_COMMAND_CLOSE:
             return croft_wit_host_fs_dispatch_close(runtime, &command->val.close, reply_out);
-        case SAP_WIT_FS_COMMAND_READ_ALL:
+        case SAP_WIT_HOST_FS_FS_COMMAND_READ_ALL:
             return croft_wit_host_fs_dispatch_read_all(runtime, &command->val.read_all, reply_out);
         default:
             return HOST_FS_ERR_INVALID;

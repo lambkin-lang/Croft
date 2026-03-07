@@ -195,7 +195,7 @@ static int inbox_entry_exists(DB *db, uint64_t worker_id, uint64_t seq, int *exi
         return ERR_INVALID;
     }
     sap_runner_v0_inbox_key_encode(worker_id, seq, key);
-    rc = txn_get_dbi(txn, SAP_WIT_DBI_INBOX, key, sizeof(key), &val, &val_len);
+    rc = txn_get_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_INBOX, key, sizeof(key), &val, &val_len);
     txn_abort(txn);
 
     if (rc == ERR_OK)
@@ -265,7 +265,7 @@ static int lease_entry_exists(DB *db, uint64_t worker_id, uint64_t seq, int *exi
         return ERR_INVALID;
     }
     sap_runner_v0_inbox_key_encode(worker_id, seq, key);
-    rc = txn_get_dbi(txn, SAP_WIT_DBI_LEASES, key, sizeof(key), &val, &val_len);
+    rc = txn_get_dbi(txn, SAP_WIT_RUNTIME_SCHEMA_DBI_LEASES, key, sizeof(key), &val, &val_len);
     txn_abort(txn);
 
     if (rc == ERR_OK)
@@ -633,7 +633,7 @@ static int test_retry_budget_moves_to_dead_letter(void)
         CHECK(rc == ERR_OK);
         CHECK(processed == 0u);
 
-        CHECK(count_worker_entries(db, SAP_WIT_DBI_DEAD_LETTER, 7u, &dead_letter_count) == ERR_OK);
+        CHECK(count_worker_entries(db, SAP_WIT_RUNTIME_SCHEMA_DBI_DEAD_LETTER, 7u, &dead_letter_count) == ERR_OK);
         if (dead_letter_count > 0u)
         {
             break;
@@ -641,7 +641,7 @@ static int test_retry_budget_moves_to_dead_letter(void)
     }
 
     CHECK(dead_letter_count == 1u);
-    CHECK(count_worker_entries(db, SAP_WIT_DBI_INBOX, 7u, &inbox_count) == ERR_OK);
+    CHECK(count_worker_entries(db, SAP_WIT_RUNTIME_SCHEMA_DBI_INBOX, 7u, &inbox_count) == ERR_OK);
     CHECK(inbox_count == 0u);
 
     db_close(db);
@@ -681,9 +681,9 @@ static int test_runner_policy_override_retry_budget(void)
 
     CHECK(sap_runner_v0_poll_inbox(&runner, 1u, on_message, &dispatch_state, &processed) == ERR_OK);
     CHECK(processed == 0u);
-    CHECK(count_worker_entries(db, SAP_WIT_DBI_DEAD_LETTER, 7u, &dead_letter_count) == ERR_OK);
+    CHECK(count_worker_entries(db, SAP_WIT_RUNTIME_SCHEMA_DBI_DEAD_LETTER, 7u, &dead_letter_count) == ERR_OK);
     CHECK(dead_letter_count == 1u);
-    CHECK(count_worker_entries(db, SAP_WIT_DBI_INBOX, 7u, &inbox_count) == ERR_OK);
+    CHECK(count_worker_entries(db, SAP_WIT_RUNTIME_SCHEMA_DBI_INBOX, 7u, &inbox_count) == ERR_OK);
     CHECK(inbox_count == 0u);
 
     sap_runner_v0_metrics_snapshot(&runner, &metrics);
@@ -791,7 +791,7 @@ static int test_runner_metrics_retryable_dead_letter_path(void)
         CHECK(sap_runner_v0_poll_inbox(&runner, 1u, on_message, &dispatch_state, &processed) ==
               ERR_OK);
         CHECK(processed == 0u);
-        CHECK(count_worker_entries(db, SAP_WIT_DBI_DEAD_LETTER, 7u, &dead_letter_count) == ERR_OK);
+        CHECK(count_worker_entries(db, SAP_WIT_RUNTIME_SCHEMA_DBI_DEAD_LETTER, 7u, &dead_letter_count) == ERR_OK);
         if (dead_letter_count == 1u)
         {
             break;
