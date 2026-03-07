@@ -722,9 +722,18 @@ file(GLOB SAPLING_CORE_SOURCES CONFIGURE_DEPENDS "src/sapling/*.c")
 file(GLOB SAPLING_RUNNER_CORE_SOURCES CONFIGURE_DEPENDS "src/runner/*.c")
 list(REMOVE_ITEM SAPLING_RUNNER_CORE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/runner/runner_v0.c")
 
+function(croft_apply_sapling_profile target)
+    cmake_parse_arguments(SAPLING_PROFILE "THREADED" "" "" ${ARGN})
+    target_compile_definitions(${target} PUBLIC SAPLING_PAGE_SIZE=4096)
+    if(SAPLING_PROFILE_THREADED)
+        target_compile_definitions(${target} PUBLIC SAPLING_THREADED)
+        target_link_libraries(${target} PUBLIC Threads::Threads)
+    endif()
+endfunction()
+
 add_library(sapling_core STATIC ${SAPLING_CORE_SOURCES})
 croft_apply_public_includes(sapling_core)
-target_compile_definitions(sapling_core PUBLIC SAPLING_PAGE_SIZE=4096)
+croft_apply_sapling_profile(sapling_core)
 target_link_libraries(sapling_core PUBLIC croft_thatch_core)
 if(CROFT_BUILD_TESTS)
     target_compile_definitions(sapling_core PRIVATE SAPLING_HAMT_TESTING)
@@ -733,51 +742,81 @@ croft_register_artifact(sapling_core datastore
     TAGS tier3 tier4 sapling core single-thread linear-memory
 )
 
+add_library(sapling_core_threaded STATIC ${SAPLING_CORE_SOURCES})
+croft_apply_public_includes(sapling_core_threaded)
+croft_apply_sapling_profile(sapling_core_threaded THREADED)
+target_link_libraries(sapling_core_threaded PUBLIC croft_thatch_core)
+if(CROFT_BUILD_TESTS)
+    target_compile_definitions(sapling_core_threaded PRIVATE SAPLING_HAMT_TESTING)
+endif()
+croft_register_artifact(sapling_core_threaded datastore
+    TAGS tier3 tier4 sapling core threaded
+)
+
 add_library(sapling_runner_core STATIC ${SAPLING_RUNNER_CORE_SOURCES})
 add_dependencies(sapling_runner_core wit_schema_gen)
 croft_apply_public_includes(sapling_runner_core)
-target_compile_definitions(sapling_runner_core PUBLIC SAPLING_PAGE_SIZE=4096)
+croft_apply_sapling_profile(sapling_runner_core)
 target_link_libraries(sapling_runner_core PUBLIC sapling_core croft_wire_runtime)
 croft_register_artifact(sapling_runner_core runner
     TAGS tier4 sapling runner common protocol wire intent replay
     DEPENDS sapling_core croft_wire_runtime
 )
 
+add_library(sapling_runner_core_threaded STATIC ${SAPLING_RUNNER_CORE_SOURCES})
+add_dependencies(sapling_runner_core_threaded wit_schema_gen)
+croft_apply_public_includes(sapling_runner_core_threaded)
+croft_apply_sapling_profile(sapling_runner_core_threaded THREADED)
+target_link_libraries(sapling_runner_core_threaded PUBLIC sapling_core_threaded croft_wire_runtime)
+croft_register_artifact(sapling_runner_core_threaded runner
+    TAGS tier4 sapling runner common protocol wire intent replay threaded
+    DEPENDS sapling_core_threaded croft_wire_runtime
+)
+
 add_library(sapling_wasi_runtime STATIC src/wasi/runtime_v0.c)
 croft_apply_public_includes(sapling_wasi_runtime)
-target_compile_definitions(sapling_wasi_runtime PUBLIC SAPLING_PAGE_SIZE=4096)
+croft_apply_sapling_profile(sapling_wasi_runtime)
 target_link_libraries(sapling_wasi_runtime PUBLIC sapling_runner_core)
 croft_register_artifact(sapling_wasi_runtime wasi
     TAGS tier4 wasi runtime adapter common
     DEPENDS sapling_runner_core
 )
 
+add_library(sapling_wasi_runtime_threaded STATIC src/wasi/runtime_v0.c)
+croft_apply_public_includes(sapling_wasi_runtime_threaded)
+croft_apply_sapling_profile(sapling_wasi_runtime_threaded THREADED)
+target_link_libraries(sapling_wasi_runtime_threaded PUBLIC sapling_runner_core_threaded)
+croft_register_artifact(sapling_wasi_runtime_threaded wasi
+    TAGS tier4 wasi runtime adapter common threaded
+    DEPENDS sapling_runner_core_threaded
+)
+
 add_library(sapling_runner_host STATIC src/runner/runner_v0.c)
 add_dependencies(sapling_runner_host wit_schema_gen)
 croft_apply_public_includes(sapling_runner_host)
-target_compile_definitions(sapling_runner_host PUBLIC SAPLING_PAGE_SIZE=4096 SAPLING_THREADED)
-target_link_libraries(sapling_runner_host PUBLIC Threads::Threads sapling_runner_core)
+croft_apply_sapling_profile(sapling_runner_host THREADED)
+target_link_libraries(sapling_runner_host PUBLIC sapling_runner_core_threaded)
 croft_register_artifact(sapling_runner_host runner
     TAGS tier4 sapling runner host threaded clocks sleep polling
-    DEPENDS sapling_runner_core
+    DEPENDS sapling_runner_core_threaded
 )
 
 add_library(sapling_wasi_host STATIC src/wasi/shim_v0.c)
 add_dependencies(sapling_wasi_host wit_schema_gen)
 croft_apply_public_includes(sapling_wasi_host)
-target_compile_definitions(sapling_wasi_host PUBLIC SAPLING_PAGE_SIZE=4096 SAPLING_THREADED)
-target_link_libraries(sapling_wasi_host PUBLIC sapling_runner_host sapling_wasi_runtime)
+croft_apply_sapling_profile(sapling_wasi_host THREADED)
+target_link_libraries(sapling_wasi_host PUBLIC sapling_runner_host sapling_wasi_runtime_threaded)
 croft_register_artifact(sapling_wasi_host wasi
     TAGS tier4 wasi shim host reply-routing
-    DEPENDS sapling_runner_host sapling_wasi_runtime
+    DEPENDS sapling_runner_host sapling_wasi_runtime_threaded
 )
 
 add_library(sapling STATIC src/runtime/sapling_aggregate.c)
 croft_apply_public_includes(sapling)
 target_link_libraries(sapling PUBLIC
-    sapling_core
-    sapling_runner_core
-    sapling_wasi_runtime
+    sapling_core_threaded
+    sapling_runner_core_threaded
+    sapling_wasi_runtime_threaded
     sapling_runner_host
     sapling_wasi_host
 )
@@ -786,7 +825,7 @@ if(CROFT_BUILD_TESTS)
 endif()
 croft_register_artifact(sapling compatibility
     TAGS tier3 tier4 sapling threaded runner wasi datastore persistent-text aggregate
-    DEPENDS sapling_core sapling_runner_core sapling_wasi_runtime sapling_runner_host sapling_wasi_host
+    DEPENDS sapling_core_threaded sapling_runner_core_threaded sapling_wasi_runtime_threaded sapling_runner_host sapling_wasi_host
 )
 
 add_library(croft_editor_core STATIC src/editor/editor_text_model.c)
@@ -1782,7 +1821,7 @@ if(CROFT_BUILD_TESTS)
         add_executable(${test_name} ${test_src})
         target_include_directories(${test_name} PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
         target_link_libraries(${test_name} PRIVATE sapling)
-        target_compile_definitions(${test_name} PRIVATE SAPLING_HAMT_TESTING SAPLING_THREADED)
+        target_compile_definitions(${test_name} PRIVATE SAPLING_HAMT_TESTING)
         if(test_name STREQUAL "test_wit_thatch_codegen")
             add_dependencies(${test_name} test_wit_schema_gen)
             target_include_directories(${test_name} PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)

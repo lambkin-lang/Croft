@@ -155,7 +155,9 @@ Typical targets include:
 
 - `croft_foundation`, `croft_host_log`, `croft_host_time`, `croft_host_thread`
 - `croft_msg_frame`, `croft_host_queue`, `croft_messaging`, `croft_fs`
-- `sapling_core`, `sapling_runner_core`, `sapling_runner_host`, `sapling_wasi_runtime`, `sapling_wasi_host`, `sapling`
+- `sapling_core`, `sapling_core_threaded`
+- `sapling_runner_core`, `sapling_runner_core_threaded`, `sapling_runner_host`
+- `sapling_wasi_runtime`, `sapling_wasi_runtime_threaded`, `sapling_wasi_host`, `sapling`
 - `croft_wit_common_core`, `croft_wit_text_runtime`, `croft_wit_store_runtime`, `croft_wit_mailbox_runtime`
 - `croft_wit_text_program`
 - `croft_wit_host_fs`, `croft_wit_host_fs_runtime`

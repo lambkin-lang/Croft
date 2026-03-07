@@ -174,11 +174,15 @@ Current status:
 - `croft_host_log`, `croft_host_time`, `croft_host_thread`, `croft_msg_frame`,
   and `croft_host_queue` now exist as separate host/service artifacts.
 - `sapling_core` now exists as the single-thread profile, and
-  `example_sapling_text` now exercises the linear arena backing through that
-  target.
-- `sapling_runner_core`, `sapling_runner_host`, `sapling_wasi_runtime`, and
-  `sapling_wasi_host` now keep runner/WASI host shell concerns out of
-  `sapling_core` while preserving the compatibility aggregate.
+  `sapling_core_threaded` now exists as the pthread-backed variant used by the
+  compatibility aggregate and host runner/WASI path.
+- `example_sapling_text` now exercises the linear arena backing through the
+  single-thread `sapling_core` target.
+- `sapling_runner_core`, `sapling_runner_core_threaded`,
+  `sapling_wasi_runtime`, `sapling_wasi_runtime_threaded`,
+  `sapling_runner_host`, and `sapling_wasi_host` now keep runner/WASI host
+  shell concerns out of `sapling_core` while making the threaded profile an
+  explicit build-graph choice instead of a downstream compile flag.
 - `croft_editor_document_core` now carries document state/history and
   `croft_editor_document_fs` now handles file-backed open/save.
 - The first common-side WIT package now exists in `schemas/wit/common-core.wit`
