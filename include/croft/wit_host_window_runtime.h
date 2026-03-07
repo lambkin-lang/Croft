@@ -21,8 +21,8 @@ void croft_wit_host_window_runtime_destroy(croft_wit_host_window_runtime* runtim
  * the pressure point we want to model for Lambkin’s later weaving logic.
  */
 int32_t croft_wit_host_window_runtime_dispatch(croft_wit_host_window_runtime* runtime,
-                                               const SapWitHostWindowWindowCommand* command,
-                                               SapWitHostWindowWindowReply* reply_out);
+                                               const SapWitHostWindowCommand* command,
+                                               SapWitHostWindowReply* reply_out);
 
 #ifdef __cplusplus
 }

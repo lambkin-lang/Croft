@@ -21,8 +21,8 @@ void croft_wit_host_clock_runtime_destroy(croft_wit_host_clock_runtime* runtime)
  * resource/lifetime model when there is no owned state to track.
  */
 int32_t croft_wit_host_clock_runtime_dispatch(croft_wit_host_clock_runtime* runtime,
-                                              const SapWitHostClockClockCommand* command,
-                                              SapWitHostClockClockReply* reply_out);
+                                              const SapWitHostClockCommand* command,
+                                              SapWitHostClockReply* reply_out);
 
 #ifdef __cplusplus
 }

@@ -172,6 +172,9 @@ set(HOST_CLOCK_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_c
 set(HOST_WINDOW_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_window.h")
 set(HOST_WINDOW_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_window.c")
 
+set(HOST_GPU2D_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_gpu2d.h")
+set(HOST_GPU2D_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_gpu2d.c")
+
 set(TEST_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/test_result_types.h")
 set(TEST_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/test_result_types.c")
 
@@ -234,6 +237,17 @@ add_custom_command(
     COMMENT "Generating Host-Window WIT C Layouts..."
 )
 add_custom_target(host_window_wit_schema_gen DEPENDS ${HOST_WINDOW_WIT_GENERATED_H} ${HOST_WINDOW_WIT_GENERATED_C})
+
+# Host-gpu2d schema
+add_custom_command(
+    OUTPUT ${HOST_GPU2D_WIT_GENERATED_H} ${HOST_GPU2D_WIT_GENERATED_C}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
+    COMMAND wit_codegen --wit "${CMAKE_CURRENT_SOURCE_DIR}/schemas/wit/host-gpu2d.wit"
+                        --header "${HOST_GPU2D_WIT_GENERATED_H}" --source "${HOST_GPU2D_WIT_GENERATED_C}"
+    DEPENDS wit_codegen "${CMAKE_CURRENT_SOURCE_DIR}/schemas/wit/host-gpu2d.wit"
+    COMMENT "Generating Host-GPU2D WIT C Layouts..."
+)
+add_custom_target(host_gpu2d_wit_schema_gen DEPENDS ${HOST_GPU2D_WIT_GENERATED_H} ${HOST_GPU2D_WIT_GENERATED_C})
 
 # Test fixture schema
 add_custom_command(
@@ -516,6 +530,15 @@ croft_register_artifact(croft_wit_host_window wit
     DEPENDS croft_thatch_core
 )
 
+add_library(croft_wit_host_gpu2d STATIC ${HOST_GPU2D_WIT_GENERATED_C})
+add_dependencies(croft_wit_host_gpu2d host_gpu2d_wit_schema_gen)
+croft_apply_public_includes(croft_wit_host_gpu2d)
+target_link_libraries(croft_wit_host_gpu2d PUBLIC croft_thatch_core)
+croft_register_artifact(croft_wit_host_gpu2d wit
+    TAGS wit host-gpu2d resource-handles service xpi
+    DEPENDS croft_thatch_core
+)
+
 add_library(croft_wire_runtime STATIC
     src/runner/wire_v0.c
     ${WIT_GENERATED_C}
@@ -707,6 +730,15 @@ target_link_libraries(croft_wit_text_runtime PUBLIC sapling_core croft_wit_commo
 croft_register_artifact(croft_wit_text_runtime wit
     TAGS tier8 wit text resource-handles common-core machine-generated-model
     DEPENDS sapling_core croft_wit_common_core
+)
+
+add_library(croft_wit_text_program STATIC src/runtime/wit_text_program.c)
+add_dependencies(croft_wit_text_program common_wit_schema_gen)
+croft_apply_public_includes(croft_wit_text_program)
+target_link_libraries(croft_wit_text_program PUBLIC croft_wit_common_core)
+croft_register_artifact(croft_wit_text_program wit
+    TAGS tier8 wit text common-side shared-logic machine-generated-model
+    DEPENDS croft_wit_common_core
 )
 
 add_library(croft_wit_store_runtime STATIC src/runtime/wit_store_runtime.c)
@@ -925,6 +957,18 @@ if(APPLE AND TARGET croft_ui_glfw_metal)
         DEPENDS croft_ui_glfw_metal
     )
 
+    add_library(croft_wit_host_gpu2d_runtime STATIC src/runtime/wit_host_gpu2d_runtime.c)
+    add_dependencies(croft_wit_host_gpu2d_runtime host_gpu2d_wit_schema_gen)
+    croft_apply_public_includes(croft_wit_host_gpu2d_runtime)
+    target_link_libraries(croft_wit_host_gpu2d_runtime PUBLIC
+        croft_render_metal_native
+        croft_wit_host_gpu2d
+    )
+    croft_register_artifact(croft_wit_host_gpu2d_runtime wit
+        TAGS tier8 wit host-gpu2d surface render metal native-direct host-mix-in machine-generated-model
+        DEPENDS croft_render_metal_native croft_wit_host_gpu2d
+    )
+
     add_library(croft_scene_core_metal_native STATIC
         src/scene/scene_node.c
         src/scene/node_viewport.c
@@ -1074,6 +1118,7 @@ endif()
 
 if(TARGET croft_wasm_wasm3 AND CROFT_WAT2WASM_TOOL)
     set(WASM_GUEST_BIN "${CMAKE_CURRENT_BINARY_DIR}/examples/dummy_guest.wasm")
+    set(WASM_TEXT_BRIDGE_BIN "${CMAKE_CURRENT_BINARY_DIR}/examples/text_bridge_guest.wasm")
     add_custom_command(
         OUTPUT ${WASM_GUEST_BIN}
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/examples"
@@ -1083,6 +1128,16 @@ if(TARGET croft_wasm_wasm3 AND CROFT_WAT2WASM_TOOL)
         COMMENT "Compiling dummy_guest.wat to Wasm..."
     )
     add_custom_target(wasm_guest_gen DEPENDS ${WASM_GUEST_BIN})
+
+    add_custom_command(
+        OUTPUT ${WASM_TEXT_BRIDGE_BIN}
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/examples"
+        COMMAND ${CROFT_WAT2WASM_TOOL} "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/text_bridge_guest.wat"
+                                     -o ${WASM_TEXT_BRIDGE_BIN}
+        DEPENDS ${CROFT_WAT2WASM_DEP} "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/text_bridge_guest.wat"
+        COMMENT "Compiling text_bridge_guest.wat to Wasm..."
+    )
+    add_custom_target(wasm_text_bridge_guest_gen DEPENDS ${WASM_TEXT_BRIDGE_BIN})
 endif()
 
 # ── Examples ─────────────────────────────────────────────────────────
@@ -1122,6 +1177,15 @@ target_compile_definitions(example_wit_fs_read PRIVATE
     CROFT_WIT_FS_SAMPLE_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/wit_host_fs_sample.txt"
 )
 
+croft_add_example(example_wit_text_cli
+    SOURCES examples/wit_text_cli.c
+    LINKS croft_wit_host_fs_runtime croft_wit_text_program croft_wit_text_runtime
+    REQUIRES croft_wit_host_fs_runtime croft_wit_text_program croft_wit_text_runtime
+    TAGS wit xpi common-core host-fs shared-logic cli
+    FOCUS "Shared WIT text logic reused in a CLI-shaped host with optional file input."
+)
+add_dependencies(example_wit_text_cli common_wit_schema_gen host_fs_wit_schema_gen)
+
 croft_add_example(example_wit_clock_now
     SOURCES examples/wit_clock_now.c
     LINKS croft_wit_host_clock_runtime
@@ -1140,6 +1204,36 @@ if(TARGET croft_wit_host_window_runtime)
         FOCUS "Window lifecycle and polled UI events driven through generated WIT commands."
     )
     add_dependencies(example_wit_window_events host_window_wit_schema_gen host_clock_wit_schema_gen)
+endif()
+
+if(TARGET croft_wit_host_window_runtime AND TARGET croft_wit_host_gpu2d_runtime)
+    croft_add_example(example_wit_gpu_canvas
+        SOURCES examples/wit_gpu_canvas.c
+        LINKS croft_wit_host_window_runtime croft_wit_host_gpu2d_runtime croft_wit_host_clock_runtime
+        REQUIRES croft_wit_host_window_runtime croft_wit_host_gpu2d_runtime croft_wit_host_clock_runtime
+        TAGS wit xpi host-window host-gpu2d host-clock render metal native-direct
+        FOCUS "Direct-Metal host GPU surface access driven through generated WIT window, clock, and GPU mix-ins."
+    )
+    add_dependencies(example_wit_gpu_canvas host_window_wit_schema_gen host_gpu2d_wit_schema_gen host_clock_wit_schema_gen)
+endif()
+
+if(TARGET croft_wit_host_window_runtime AND TARGET croft_wit_host_gpu2d_runtime AND TARGET croft_wit_text_runtime)
+    croft_add_example(example_wit_text_window
+        SOURCES examples/wit_text_window.c
+        LINKS croft_wit_host_window_runtime
+              croft_wit_host_gpu2d_runtime
+              croft_wit_host_clock_runtime
+              croft_wit_text_program
+              croft_wit_text_runtime
+        REQUIRES croft_wit_host_window_runtime
+                 croft_wit_host_gpu2d_runtime
+                 croft_wit_host_clock_runtime
+                 croft_wit_text_program
+                 croft_wit_text_runtime
+        TAGS wit xpi common-core host-window host-gpu2d host-clock shared-logic native-window
+        FOCUS "The same common-side WIT text logic rendered through native window and GPU mix-ins."
+    )
+    add_dependencies(example_wit_text_window common_wit_schema_gen host_window_wit_schema_gen host_gpu2d_wit_schema_gen host_clock_wit_schema_gen)
 endif()
 
 croft_add_example(example_sapling_text
@@ -1187,6 +1281,18 @@ if(TARGET wasm_guest_gen)
         FOCUS "Embedded Wasm guest calling back into Croft host APIs."
     )
     add_dependencies(example_wasm_guest wasm_guest_gen)
+endif()
+
+if(TARGET wasm_text_bridge_guest_gen)
+    croft_add_example(example_wit_text_wasm_host
+        SOURCES examples/wit_text_wasm_host.c
+        LINKS croft_wasm_wasm3 croft_wit_text_program croft_wit_text_runtime
+        REQUIRES croft_wasm_wasm3 croft_wit_text_program croft_wit_text_runtime
+        TAGS wasm wasm3 wit common-core shared-logic host-bridge linear-memory
+        COMPILE_DEFINITIONS TEXT_BRIDGE_GUEST_WASM_PATH="${WASM_TEXT_BRIDGE_BIN}"
+        FOCUS "The same common-side WIT text logic reused in a Wasm-hosted world over Croft's current wasm3 host."
+    )
+    add_dependencies(example_wit_text_wasm_host wasm_text_bridge_guest_gen common_wit_schema_gen)
 endif()
 
 if(TARGET croft_ui_glfw_opengl)
@@ -1349,7 +1455,7 @@ endif()
 if(CROFT_BUILD_TESTS)
     enable_testing()
 
-    add_executable(test_croft tests/test_main.c tests/test_queue.c tests/host_tests/test_fs.c tests/test_editor_text_model.c tests/test_editor_document.c tests/test_editor_commands.c tests/test_wit_resource_codegen.c tests/test_wit_text_runtime.c tests/test_wit_store_runtime.c tests/test_wit_mailbox_runtime.c tests/test_wit_host_fs_runtime.c tests/test_wit_host_clock_runtime.c)
+    add_executable(test_croft tests/test_main.c tests/test_queue.c tests/host_tests/test_fs.c tests/test_editor_text_model.c tests/test_editor_document.c tests/test_editor_commands.c tests/test_wit_resource_codegen.c tests/test_wit_text_runtime.c tests/test_wit_text_program.c tests/test_wit_store_runtime.c tests/test_wit_mailbox_runtime.c tests/test_wit_host_fs_runtime.c tests/test_wit_host_clock_runtime.c)
     target_include_directories(test_croft PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
     target_link_libraries(test_croft
         PRIVATE
@@ -1357,6 +1463,7 @@ if(CROFT_BUILD_TESTS)
             croft_editor_document_fs
             croft_editor_commands
             croft_wit_text_runtime
+            croft_wit_text_program
             croft_wit_store_runtime
             croft_wit_mailbox_runtime
             croft_wit_host_fs_runtime

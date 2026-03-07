@@ -1,0 +1,132 @@
+package lambkin:host-gpu2d@0.1.0;
+
+interface types {
+  type utf8 = list<u8>;
+
+  resource surface;
+
+  enum error {
+    invalid-handle,
+    unavailable,
+    busy,
+    internal,
+  }
+
+  flags capabilities {
+    text,
+    transform,
+    clip,
+    present,
+  }
+
+  record capabilities-query {}
+
+  record open {}
+
+  record surface-op {
+    surface: surface,
+  }
+
+  record begin-frame {
+    surface: surface,
+    width: u32,
+    height: u32,
+  }
+
+  record clear {
+    surface: surface,
+    color-rgba: u32,
+  }
+
+  record draw-rect {
+    surface: surface,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    color-rgba: u32,
+  }
+
+  record draw-text {
+    surface: surface,
+    x: f32,
+    y: f32,
+    utf8: utf8,
+    font-size: f32,
+    color-rgba: u32,
+  }
+
+  record measure-text {
+    surface: surface,
+    utf8: utf8,
+    font-size: f32,
+  }
+
+  record translate {
+    surface: surface,
+    dx: f32,
+    dy: f32,
+  }
+
+  record scale {
+    surface: surface,
+    sx: f32,
+    sy: f32,
+  }
+
+  record clip-rect {
+    surface: surface,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+  }
+
+  variant surface-result {
+    ok(surface),
+    err(error),
+  }
+
+  variant status {
+    ok,
+    err(error),
+  }
+
+  variant capabilities-result {
+    ok(capabilities),
+    err(error),
+  }
+
+  variant measure-result {
+    ok(f32),
+    err(error),
+  }
+
+  variant command {
+    capabilities(capabilities-query),
+    open(open),
+    drop(surface-op),
+    begin-frame(begin-frame),
+    clear(clear),
+    draw-rect(draw-rect),
+    draw-text(draw-text),
+    measure-text(measure-text),
+    save(surface-op),
+    restore(surface-op),
+    translate(translate),
+    scale(scale),
+    clip-rect(clip-rect),
+    end-frame(surface-op),
+  }
+
+  variant reply {
+    capabilities(capabilities-result),
+    surface(surface-result),
+    status(status),
+    measure(measure-result),
+  }
+}
+
+world host-gpu2d {
+  export types;
+}

@@ -68,6 +68,18 @@ case names also need C-keyword awareness. A case named `char` generated illegal
 C until it was renamed to `char-event`. That is another reminder that the WIT
 surface and the generated-C surface are not independent concerns.
 
+That pressure point is now mostly resolved in code:
+
+- package-tail normalization now collapses the duplicated-stem cases we
+  actually hit (`HostFsFsCommand` -> `HostFsCommand`,
+  `HostClockClockReply` -> `HostClockReply`,
+  `HostWindowWindowCommand` -> `HostWindowCommand`,
+  `ResultTestTestResultCarrier` -> `ResultTestResultCarrier`)
+- the remaining question is narrower and more interesting:
+  when an item name exactly matches the package tail, should generated helper
+  macros keep the repeated stem for traceability (`HOST_WINDOW_WINDOW_RESOURCE`)
+  or should Lambkin/codegen normalize those too?
+
 ### 2. Resource Handles Are the First Honest XPI Boundary
 
 `common-core.wit` currently defines:
@@ -132,6 +144,34 @@ common layer:
 
 This is deliberate. Blocking, sleeping, or worker wakeups belong in higher
 worlds and likely in host mix-in interfaces such as clock/scheduler services.
+
+### 2c. Shared Common Logic Can Stay Stable Across Host Worlds
+
+The new `croft_wit_text_program` helper is deliberately small, but it proves an
+important point: the same handle-oriented text logic can now run in at least
+two host worlds without changing its internal sequencing at all.
+
+- `example_wit_text_cli` uses it with `text` plus `host-fs`
+- `example_wit_text_wasm_host` uses it with `text` plus the current `wasm3`
+  host executor boundary
+- `example_wit_text_window` uses it with `text` plus `host-window`,
+  `host-gpu2d`, and `host-clock`
+
+That is not the end-state API. It is a model of what machine-generated Lambkin
+code can look like once the solver has already decided which mix-ins are
+present. The useful observation is that the host family can vary while the
+common-side command choreography stays fixed.
+
+The current optimized datapoints for that shared-logic family are also useful:
+
+- `example_wit_text_cli`: `53,416`
+- `example_wit_text_wasm_host`: `123,288`
+- `example_wit_gpu_canvas`: `90,456`
+- `example_wit_text_window`: `109,208`
+
+So the host-Wasm shape is already informative: the common-side logic remains
+stable, but the interpreter/guest bridge is currently more expensive than the
+direct-Metal window/GPU mix-ins for this specific tiny workload.
 
 ### 3. The Common/Data Layer and the Host Layer Diverge Earlier Than Usual
 
@@ -207,6 +247,31 @@ That bridge is itself a crosscutting concern:
 This looks exactly like the kind of place where Lambkin advice or XPIs will
 need to choose among several legitimate strategies rather than inheriting one
 hard-coded runtime shape.
+
+### 7. GPU Boundaries Split Capability Queries from Resource Ownership
+
+The first `host-gpu2d` package confirmed an earlier suspicion: GPU mix-ins are
+not cleanly "all resource" or "all service".
+
+The current shape now has both:
+
+- stateless capability queries (`capabilities`)
+- a stateful `surface` resource with explicit `open`, `begin-frame`, and `drop`
+
+That split is already useful, but it also exposed a deeper join-point:
+
+- the current native direct-Metal host does not really own an independent
+  surface object
+- it owns one render target implicitly attached to the current window
+- yet the WIT boundary models `window` and `surface` as distinct resources
+
+That mismatch is worth keeping visible. It is exactly the kind of open
+implementation seam Lambkin will need to advise over differently in other
+families:
+
+- web/worker worlds may synthesize surfaces differently
+- AppKit-like worlds may collapse window and drawing surface together
+- more portable GPU worlds may need a stricter swapchain/present model
 
 ## Likely Join-Points / XPIs
 
@@ -353,9 +418,9 @@ solves them.
    command advice, or a separate scheduler resource family?
 9. Which transaction policies should be explicit in WIT worlds versus woven by
    Lambkin as advice around command sequences?
-10. Now that WIT package names do participate directly in generated C symbol
-    names, how much additional normalization should Lambkin/codegen perform to
-    avoid duplicated stems without hiding the source package provenance?
+10. Now that duplicated leading stems are mostly normalized, how much further
+    should Lambkin/codegen go for exact-tail items and helper macros without
+    hiding the source package provenance?
 11. Which host capabilities are stable enough to present as reusable mix-ins
     (`fs`, `clock`) versus which should stay family-specific (`window`, `gpu`)?
 12. Which future host interfaces should deliberately *avoid* `resource` and
@@ -368,11 +433,13 @@ solves them.
 
 The next high-value steps look like this:
 
-- reuse the current `text`/`db`/`txn`/`mailbox` WIT barrier in a CLI-style
-  sample and a host-Wasm-facing sample
 - define the next host mix-in WIT package after `host-fs` and `host-clock`,
   likely GPU-facing facets and richer menu/accessibility/window follow-ons
+- move more of the direct-Metal/editor host interaction onto WIT-facing
+  boundaries instead of direct host calls
 - isolate direct-Metal editor concerns into explicit layout/input/accessibility
   seams instead of letting them accumulate inside one renderer-centric module
+- decide whether codegen should emit a rename manifest or additional comments
+  for exact-tail normalization cases
 - start naming candidate Lambkin aspect libraries from the join-points above,
   even if their final surface is still tentative

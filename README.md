@@ -150,9 +150,11 @@ Typical targets include:
 - `croft_msg_frame`, `croft_host_queue`, `croft_messaging`, `croft_fs`
 - `sapling_core`, `sapling_runner_core`, `sapling_runner_host`, `sapling_wasi_runtime`, `sapling_wasi_host`, `sapling`
 - `croft_wit_common_core`, `croft_wit_text_runtime`, `croft_wit_store_runtime`, `croft_wit_mailbox_runtime`
+- `croft_wit_text_program`
 - `croft_wit_host_fs`, `croft_wit_host_fs_runtime`
 - `croft_wit_host_clock`, `croft_wit_host_clock_runtime`
 - `croft_wit_host_window`, `croft_wit_host_window_runtime`
+- `croft_wit_host_gpu2d`, `croft_wit_host_gpu2d_runtime` (macOS)
 - `croft_wasm_wasm3`
 - `croft_ui_glfw_opengl`, `croft_ui_glfw_metal` (macOS)
 - `croft_render_tgfx_opengl`, `croft_render_tgfx_metal` (macOS)
@@ -184,10 +186,14 @@ Representative examples include:
 - `example_messaging_roundtrip`
 - `example_fs_inspect`
 - `example_wit_fs_read`
+- `example_wit_text_cli`
+- `example_wit_text_wasm_host`
 - `example_wit_clock_now`
 - `example_wit_window_events`
+- `example_wit_gpu_canvas`
 - `example_sapling_text`
 - `example_wit_text_handles`
+- `example_wit_text_window`
 - `example_wit_db_kv`
 - `example_wit_mailbox_ping`
 - `example_wasm_guest`
@@ -227,6 +233,22 @@ For the first host mix-in WIT experiment, compare:
 - `example_wit_fs_read` as the first WIT/resource wrapper over native `host_fs`
 - `example_wit_clock_now` as the first stateless host service mix-in over `host_time`
 - `example_wit_window_events` as the first WIT window/resource facade over callback-driven `host_ui`
+- `example_wit_gpu_canvas` as the first WIT GPU surface/capability facade over the native direct-Metal host
+
+For shared common-side WIT logic across multiple worlds, compare:
+
+- `example_wit_text_cli` as the CLI/file-oriented host shape
+- `example_wit_text_wasm_host` as the current Wasm-hosted world shape over `wasm3`
+- `example_wit_text_window` as the native window/GPU host shape
+
+Current optimized size datapoints for that trio plus the GPU-only host mix-in
+sample are:
+
+- `example_wit_text_cli`: `53,416`
+- `example_wit_text_wasm_host`: `123,288`
+- `example_wit_gpu_canvas`: `90,456`
+- `example_wit_text_window`: `109,208`
+- `example_wit_text_handles` as the smaller common-core-only baseline
 
 For editor-family experiments on macOS, Croft currently compares:
 

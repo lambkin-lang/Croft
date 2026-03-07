@@ -195,14 +195,23 @@ Current status:
   `schemas/wit/host-window.wit`, exercised by `example_wit_window_events`.
   It adapts the current singleton/callback GLFW host into a `window` resource
   plus a polled event stream.
+- The next host mix-in WIT package now exists in `schemas/wit/host-gpu2d.wit`,
+  exercised by `example_wit_gpu_canvas` as a direct-Metal surface boundary that
+  keeps capability queries separate from resource lifetime.
+- `croft_wit_text_program` now proves that the same common-side WIT text logic
+  can survive `example_wit_text_cli`, `example_wit_text_wasm_host`, and
+  `example_wit_text_window`, instead of being trapped in one sample shape.
 - `tools/wit_codegen.c` now owns package-qualified C naming,
   reserved-word sanitization, and generated traceability comments instead of
   relying on per-schema manual prefixes to keep independently evolved packages
   linkable together.
-- The remaining cleanup is to move the same common-core logic across more than
-  one world shape and to start defining the first host mix-in WIT packages.
-  The next mix-in candidates are now GPU-facing facets and richer window/menu
-  or accessibility surfaces.
+- `tools/wit_codegen.c` now also collapses duplicated leading stems based on
+  the WIT package tail (`HostFsFsCommand` -> `HostFsCommand`,
+  `ResultTestTestResultCarrier` -> `ResultTestResultCarrier`) while preserving
+  package provenance in the generated names and comments.
+- The remaining naming cleanup question is narrower now: how aggressively
+  should exact-tail items such as the `window` resource invalid-handle macro be
+  normalized before traceability starts to suffer.
 
 ## World Plan
 
@@ -251,6 +260,13 @@ These prove the add-on nature of host services:
 - file-driven batch processor
 - command-line editor or transformer
 
+Current status:
+
+- `example_wit_text_cli` now reuses the same common-side WIT text logic as the
+  native windowed sample.
+- `example_wit_text_wasm_host` now reuses that same common-side WIT text logic
+  inside a Wasm-hosted world over Croft's current `wasm3` host.
+
 ### Family C: Native Desktop Variants
 
 These prove optional host and render paths:
@@ -258,6 +274,13 @@ These prove optional host and render paths:
 - direct Metal native sample
 - Mac-collapsed AppKit sample
 - larger tgfx-backed comparison sample
+
+Current status:
+
+- `example_wit_gpu_canvas` now covers the first WIT GPU/window/clock mix-in
+  boundary over the direct-Metal path.
+- `example_wit_text_window` now reuses the same common-side WIT text logic from
+  the CLI world and renders it through native window/GPU mix-ins.
 
 ### Family D: Wasm Host Execution Samples
 
@@ -304,12 +327,14 @@ These should remain clearly on the host side:
 
 The next concrete implementation work should happen in this order:
 
-1. Reuse the new common-core WIT handles across more than one world shape,
-   starting with CLI-style and host-Wasm-facing samples.
-2. Define the next host mix-in WIT packages, likely GPU-facing facets and then
-   richer window/menu or accessibility surfaces, without letting them bleed
-   back into `common-core`.
-3. Read `docs/LAMBKIN_XPI_JOURNAL.md` before expanding host/editor surface area
+1. Define richer host mix-in WIT packages for menu/accessibility/editor input
+   without letting them bleed back into `common-core`.
+2. Move more of the direct-Metal/editor host interaction onto WIT-facing
+   boundaries so the current editor families stop depending on ad hoc host
+   calls where a future Lambkin world would expect mix-ins.
+3. Refine `tools/wit_codegen.c` further around exact-tail resources, emitted
+   rename manifests, and other remaining traceability-vs-normalization choices.
+4. Read `docs/LAMBKIN_XPI_JOURNAL.md` before expanding host/editor surface area
    so the current join-point questions remain explicit.
 
 ## Resume Checklist For Future Sessions

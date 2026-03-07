@@ -224,6 +224,7 @@ typedef struct {
     char      package_namespace[MAX_NAME];
     char      package_name[MAX_NAME];
     char      package_version[MAX_NAME];
+    char      package_tail_raw[MAX_NAME];
     char      package_snake[MAX_NAME];
     char      package_upper[MAX_NAME];
     char      package_camel[MAX_NAME];
@@ -690,6 +691,7 @@ static int parse_package_decl(Scanner *s, WitRegistry *reg)
 static void finalize_package_info(WitRegistry *reg, const char *wit_path)
 {
     const char *base = wit_path;
+    const char *tail = NULL;
     char fallback[MAX_NAME];
     const char *dot;
 
@@ -710,6 +712,13 @@ static void finalize_package_info(WitRegistry *reg, const char *wit_path)
         }
         snprintf(reg->package_name, sizeof(reg->package_name), "%s", fallback);
         snprintf(reg->package_full, sizeof(reg->package_full), "%s", reg->package_name);
+    }
+
+    tail = strrchr(reg->package_name, '-');
+    if (tail && tail[1] != '\0') {
+        snprintf(reg->package_tail_raw, sizeof(reg->package_tail_raw), "%s", tail + 1);
+    } else {
+        snprintf(reg->package_tail_raw, sizeof(reg->package_tail_raw), "%s", reg->package_name);
     }
 
     wit_name_to_snake_ident(reg->package_name, reg->package_snake,
@@ -919,13 +928,55 @@ static int is_list_u8(const WitRegistry *reg, const WitTypeExpr *t)
 /* Name conversion helpers                                            */
 /* ------------------------------------------------------------------ */
 
+static void wit_trim_leading_package_tail(const WitRegistry *reg,
+                                          const char *wit_name,
+                                          char *out,
+                                          int n)
+{
+    size_t tail_len;
+    const char *suffix;
+
+    if (!out || n <= 0) return;
+    out[0] = '\0';
+    if (!wit_name) return;
+    if (!reg || reg->package_tail_raw[0] == '\0') {
+        snprintf(out, n, "%s", wit_name);
+        return;
+    }
+
+    tail_len = strlen(reg->package_tail_raw);
+    if (strncmp(wit_name, reg->package_tail_raw, tail_len) != 0) {
+        snprintf(out, n, "%s", wit_name);
+        return;
+    }
+
+    suffix = wit_name + tail_len;
+    if (*suffix == '\0') {
+        return;
+    }
+    if (*suffix == '-' || *suffix == '_') {
+        snprintf(out, n, "%s", suffix + 1);
+        return;
+    }
+
+    snprintf(out, n, "%s", wit_name);
+}
+
 static void wit_type_c_typename(const WitRegistry *reg, const char *wit_name, char *out, int n)
 {
+    char normalized[MAX_NAME];
     char camel[MAX_NAME];
 
-    wit_name_to_camel_ident(wit_name, camel, (int)sizeof(camel));
-    if (reg->package_camel[0] != '\0')
+    wit_trim_leading_package_tail(reg, wit_name, normalized, (int)sizeof(normalized));
+    if (normalized[0] != '\0') {
+        wit_name_to_camel_ident(normalized, camel, (int)sizeof(camel));
+    } else {
+        camel[0] = '\0';
+    }
+    if (reg->package_camel[0] != '\0' && camel[0] != '\0')
         snprintf(out, n, "SapWit%s%s", reg->package_camel, camel);
+    else if (reg->package_camel[0] != '\0')
+        snprintf(out, n, "SapWit%s", reg->package_camel);
     else
         snprintf(out, n, "SapWit%s", camel);
 }
@@ -941,22 +992,38 @@ static void wit_resource_c_typename(const WitRegistry *reg, const char *resource
 
 static void wit_macro_name(const WitRegistry *reg, const char *wit_name, char *out, int n)
 {
+    char normalized[MAX_NAME];
     char upper[MAX_NAME];
 
-    wit_name_to_upper_ident(wit_name, upper, (int)sizeof(upper));
-    if (reg->package_upper[0] != '\0')
+    wit_trim_leading_package_tail(reg, wit_name, normalized, (int)sizeof(normalized));
+    if (normalized[0] != '\0') {
+        wit_name_to_upper_ident(normalized, upper, (int)sizeof(upper));
+    } else {
+        upper[0] = '\0';
+    }
+    if (reg->package_upper[0] != '\0' && upper[0] != '\0')
         snprintf(out, n, "SAP_WIT_%s_%s", reg->package_upper, upper);
+    else if (reg->package_upper[0] != '\0')
+        snprintf(out, n, "SAP_WIT_%s", reg->package_upper);
     else
         snprintf(out, n, "SAP_WIT_%s", upper);
 }
 
 static void wit_function_suffix(const WitRegistry *reg, const char *wit_name, char *out, int n)
 {
+    char normalized[MAX_NAME];
     char snake[MAX_NAME];
 
-    wit_name_to_snake_ident(wit_name, snake, (int)sizeof(snake));
-    if (reg->package_snake[0] != '\0')
+    wit_trim_leading_package_tail(reg, wit_name, normalized, (int)sizeof(normalized));
+    if (normalized[0] != '\0') {
+        wit_name_to_snake_ident(normalized, snake, (int)sizeof(snake));
+    } else {
+        snake[0] = '\0';
+    }
+    if (reg->package_snake[0] != '\0' && snake[0] != '\0')
         snprintf(out, n, "%s_%s", reg->package_snake, snake);
+    else if (reg->package_snake[0] != '\0')
+        snprintf(out, n, "%s", reg->package_snake);
     else
         snprintf(out, n, "%s", snake);
 }

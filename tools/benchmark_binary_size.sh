@@ -398,23 +398,43 @@ if [[ "$(uname -s)" == "Darwin" ]]; then
     OPT_LDFLAGS="${OPT_LDFLAGS} -Wl,-dead_strip_dylibs"
 fi
 
-if build_and_measure_profile \
-    "optimized" \
-    "$OPT_BUILD_DIR" \
-    "MinSizeRel" \
-    "$OPT_LEVEL" \
-    "on" \
-    "on" \
-    -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
-    -DCMAKE_C_FLAGS_MINSIZEREL="$OPT_FLAGS" \
-    -DCMAKE_CXX_FLAGS_MINSIZEREL="$OPT_FLAGS" \
-    -DCMAKE_OBJC_FLAGS_MINSIZEREL="$OPT_FLAGS" \
-    -DCMAKE_OBJCXX_FLAGS_MINSIZEREL="$OPT_FLAGS" \
-    -DCMAKE_EXE_LINKER_FLAGS_MINSIZEREL="$OPT_LDFLAGS" \
-    "${EXTRA_CMAKE_ARGS[@]}"; then
-    :
+if (( ${#EXTRA_CMAKE_ARGS[@]} > 0 )); then
+    if build_and_measure_profile \
+        "optimized" \
+        "$OPT_BUILD_DIR" \
+        "MinSizeRel" \
+        "$OPT_LEVEL" \
+        "on" \
+        "on" \
+        -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
+        -DCMAKE_C_FLAGS_MINSIZEREL="$OPT_FLAGS" \
+        -DCMAKE_CXX_FLAGS_MINSIZEREL="$OPT_FLAGS" \
+        -DCMAKE_OBJC_FLAGS_MINSIZEREL="$OPT_FLAGS" \
+        -DCMAKE_OBJCXX_FLAGS_MINSIZEREL="$OPT_FLAGS" \
+        -DCMAKE_EXE_LINKER_FLAGS_MINSIZEREL="$OPT_LDFLAGS" \
+        "${EXTRA_CMAKE_ARGS[@]}"; then
+        :
+    else
+        status=$?
+    fi
 else
-    status=$?
+    if build_and_measure_profile \
+        "optimized" \
+        "$OPT_BUILD_DIR" \
+        "MinSizeRel" \
+        "$OPT_LEVEL" \
+        "on" \
+        "on" \
+        -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
+        -DCMAKE_C_FLAGS_MINSIZEREL="$OPT_FLAGS" \
+        -DCMAKE_CXX_FLAGS_MINSIZEREL="$OPT_FLAGS" \
+        -DCMAKE_OBJC_FLAGS_MINSIZEREL="$OPT_FLAGS" \
+        -DCMAKE_OBJCXX_FLAGS_MINSIZEREL="$OPT_FLAGS" \
+        -DCMAKE_EXE_LINKER_FLAGS_MINSIZEREL="$OPT_LDFLAGS"; then
+        :
+    else
+        status=$?
+    fi
 fi
 
 if (( status == 0 && COMPARE_DEBUG == 1 )); then

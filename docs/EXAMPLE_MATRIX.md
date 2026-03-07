@@ -23,10 +23,14 @@ cmake --build build --target croft_examples
 | `example_messaging_roundtrip` | Validated message envelope round-trip over the host queue | `croft_msg_frame`, `croft_host_queue` |
 | `example_fs_inspect` | Host filesystem access and resource-path discovery | `croft_fs` |
 | `example_wit_fs_read` | Host filesystem open/read/close through generated WIT file resource handles | `croft_wit_host_fs_runtime` |
+| `example_wit_text_cli` | Shared common-side WIT text logic reused in a CLI-shaped host | `croft_wit_text_program`, `croft_wit_text_runtime`, `croft_wit_host_fs_runtime` |
+| `example_wit_text_wasm_host` | The same common-side WIT text logic reused in a Wasm-hosted world through Croft's current `wasm3` bridge | `croft_wasm_wasm3`, `croft_wit_text_program`, `croft_wit_text_runtime` |
 | `example_wit_clock_now` | Host monotonic clock query through generated WIT service commands | `croft_wit_host_clock_runtime` |
 | `example_wit_window_events` | Window lifecycle and polled UI events through generated WIT window commands | `croft_wit_host_window_runtime`, `croft_wit_host_clock_runtime` |
+| `example_wit_gpu_canvas` | Direct-Metal surface access through generated WIT window, GPU, and clock mix-ins | `croft_wit_host_window_runtime`, `croft_wit_host_gpu2d_runtime`, `croft_wit_host_clock_runtime` |
 | `example_sapling_text` | Sapling text clone-on-write editing over the single-thread linear arena profile | `sapling_core` |
 | `example_wit_text_handles` | Sapling text editing through generated WIT commands and opaque resource handles | `croft_wit_text_runtime` |
+| `example_wit_text_window` | The same common-side WIT text logic rendered through native window and GPU mix-ins | `croft_wit_text_program`, `croft_wit_text_runtime`, `croft_wit_host_window_runtime`, `croft_wit_host_gpu2d_runtime`, `croft_wit_host_clock_runtime` |
 | `example_wit_db_kv` | Sapling key-value round-trip through generated WIT `db` and `txn` resource handles | `croft_wit_store_runtime` |
 | `example_wit_mailbox_ping` | Common-core mailbox round-trip through generated WIT mailbox resource handles | `croft_wit_mailbox_runtime` |
 | `example_wasm_guest` | Embedded Wasm guest bridged into Croft host imports | `croft_wasm_wasm3` |
@@ -63,6 +67,12 @@ Notes:
 - `example_wit_fs_read` is the first host mix-in WIT sample. It wraps the
   native `host_fs` pointer-shaped API in opaque file handles so generated model
   programs do not observe raw host file descriptors.
+- `example_wit_text_cli` is the first shared common-side WIT logic sample that
+  runs in a CLI/file-oriented world shape instead of only as a direct
+  common-core micro-example.
+- `example_wit_text_wasm_host` proves that the same common-side WIT text logic
+  can also survive a host-Wasm world shape. The common command choreography is
+  unchanged; only the final transport across the boundary changes.
 - `example_wit_clock_now` is the first stateless host mix-in WIT sample. It is
   intentionally service-shaped rather than resource-shaped, which keeps the
   boundary honest: not every host capability owns lifetime-managed state.
@@ -70,6 +80,18 @@ Notes:
   deliberately adapts Croft’s current singleton/callback UI host into a
   `window` resource plus polled event queue, which makes the mismatch explicit
   instead of hiding it behind direct callbacks.
+- `example_wit_gpu_canvas` is the first GPU-facing mix-in sample. It models
+  `surface` ownership separately from `window` even though the current
+  direct-Metal host still hides a singleton render target behind the scenes.
+- `example_wit_text_window` is the first proof that the same common-side WIT
+  text logic can survive both a CLI-shaped host and a native window/GPU host
+  without re-exposing raw Sapling pointers or host objects.
+- Current optimized size datapoints on this machine for the shared-logic WIT
+  family are: `example_wit_text_cli` `53,416`,
+  `example_wit_text_wasm_host` `123,288`,
+  `example_wit_gpu_canvas` `90,456`, and
+  `example_wit_text_window` `109,208`. For this small sample, the current
+  `wasm3` host adds more payload than the direct-Metal window/GPU mix-ins.
 - The editor document layer is now split: `croft_editor_document_core` carries
   Sapling state, history, and edit semantics, while
   `croft_editor_document_fs` is the host-fs adapter for open/save.

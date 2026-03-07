@@ -1255,7 +1255,7 @@ static void test_result_round_trip_ok(void) {
     setup(&a, &e, &t, &r);
 
     const uint8_t msg_id[] = "ack-ok";
-    SapWitResultTestTestResultCarrier in = {
+    SapWitResultTestResultCarrier in = {
         .is_result_ok = 1,
         .result_val.ok.v = {
             .message_id_data = msg_id, .message_id_len = 6,
@@ -1263,12 +1263,12 @@ static void test_result_round_trip_ok(void) {
             .accepted = 1,
         },
     };
-    CHECK(sap_wit_write_result_test_test_result_carrier(r, &in) == ERR_OK);
+    CHECK(sap_wit_write_result_test_result_carrier(r, &in) == ERR_OK);
     uint32_t N = thatch_region_used(r);
 
     ThatchCursor read_cur = 0;
-    SapWitResultTestTestResultCarrier out = {0};
-    CHECK(sap_wit_read_result_test_test_result_carrier(r, &read_cur, &out) == ERR_OK);
+    SapWitResultTestResultCarrier out = {0};
+    CHECK(sap_wit_read_result_test_result_carrier(r, &read_cur, &out) == ERR_OK);
     CHECK(read_cur == N);
     CHECK(out.is_result_ok == 1);
     CHECK(out.result_val.ok.v.message_id_len == 6);
@@ -1288,21 +1288,21 @@ static void test_result_round_trip_err(void) {
     SapMemArena *a; SapEnv *e; SapTxnCtx *t; ThatchRegion *r;
     setup(&a, &e, &t, &r);
 
-    SapWitResultTestTestResultCarrier in = {
+    SapWitResultTestResultCarrier in = {
         .is_result_ok = 0,
         .result_val.err.v = {
-            .case_tag = SAP_WIT_RESULT_TEST_TEST_ERROR_BUSY,
+            .case_tag = SAP_WIT_RESULT_TEST_ERROR_BUSY,
         },
     };
-    CHECK(sap_wit_write_result_test_test_result_carrier(r, &in) == ERR_OK);
+    CHECK(sap_wit_write_result_test_result_carrier(r, &in) == ERR_OK);
     uint32_t N = thatch_region_used(r);
 
     ThatchCursor read_cur = 0;
-    SapWitResultTestTestResultCarrier out = {0};
-    CHECK(sap_wit_read_result_test_test_result_carrier(r, &read_cur, &out) == ERR_OK);
+    SapWitResultTestResultCarrier out = {0};
+    CHECK(sap_wit_read_result_test_result_carrier(r, &read_cur, &out) == ERR_OK);
     CHECK(read_cur == N);
     CHECK(out.is_result_ok == 0);
-    CHECK(out.result_val.err.v.case_tag == SAP_WIT_RESULT_TEST_TEST_ERROR_BUSY);
+    CHECK(out.result_val.err.v.case_tag == SAP_WIT_RESULT_TEST_ERROR_BUSY);
 
     ThatchCursor skip_cur = 0;
     CHECK(sap_wit_skip_value(r, &skip_cur) == ERR_OK);
@@ -1327,25 +1327,25 @@ static void test_result_list_round_trip(void) {
 
     const uint8_t note_a[] = "alpha";
     const uint8_t note_b[] = "beta";
-    SapWitResultTestTestListRow row_a = {
+    SapWitResultTestListRow row_a = {
         .id = 1,
         .note_data = note_a,
         .note_len = 5,
     };
-    SapWitResultTestTestListRow row_b = {
+    SapWitResultTestListRow row_b = {
         .id = 2,
         .note_data = note_b,
         .note_len = 4,
     };
-    CHECK(sap_wit_write_result_test_test_list_row(rows_region, &row_a) == ERR_OK);
-    CHECK(sap_wit_write_result_test_test_list_row(rows_region, &row_b) == ERR_OK);
+    CHECK(sap_wit_write_result_test_list_row(rows_region, &row_a) == ERR_OK);
+    CHECK(sap_wit_write_result_test_list_row(rows_region, &row_b) == ERR_OK);
 
     uint32_t rows_blob_len = thatch_region_used(rows_region);
     ThatchCursor rows_raw_cur = 0;
     const void *rows_blob = NULL;
     CHECK(thatch_read_ptr(rows_region, &rows_raw_cur, rows_blob_len, &rows_blob) == ERR_OK);
 
-    SapWitResultTestTestListCarrier in = {
+    SapWitResultTestListCarrier in = {
         .ints_data = ints_blob,
         .ints_len = 3,
         .ints_byte_len = ints_blob_len,
@@ -1353,12 +1353,12 @@ static void test_result_list_round_trip(void) {
         .rows_len = 2,
         .rows_byte_len = rows_blob_len,
     };
-    CHECK(sap_wit_write_result_test_test_list_carrier(r, &in) == ERR_OK);
+    CHECK(sap_wit_write_result_test_list_carrier(r, &in) == ERR_OK);
     uint32_t total = thatch_region_used(r);
 
     ThatchCursor read_cur = 0;
-    SapWitResultTestTestListCarrier out = {0};
-    CHECK(sap_wit_read_result_test_test_list_carrier(r, &read_cur, &out) == ERR_OK);
+    SapWitResultTestListCarrier out = {0};
+    CHECK(sap_wit_read_result_test_list_carrier(r, &read_cur, &out) == ERR_OK);
     CHECK(read_cur == total);
 
     CHECK(out.ints_len == 3);
@@ -1372,12 +1372,12 @@ static void test_result_list_round_trip(void) {
     ThatchRegion row_view;
     CHECK(thatch_region_init_readonly(&row_view, out.rows_data, out.rows_byte_len) == ERR_OK);
     ThatchCursor row_cur = 0;
-    SapWitResultTestTestListRow row_out = {0};
-    CHECK(sap_wit_read_result_test_test_list_row(&row_view, &row_cur, &row_out) == ERR_OK);
+    SapWitResultTestListRow row_out = {0};
+    CHECK(sap_wit_read_result_test_list_row(&row_view, &row_cur, &row_out) == ERR_OK);
     CHECK(row_out.id == 1);
     CHECK(row_out.note_len == 5);
     CHECK(memcmp(row_out.note_data, "alpha", 5) == 0);
-    CHECK(sap_wit_read_result_test_test_list_row(&row_view, &row_cur, &row_out) == ERR_OK);
+    CHECK(sap_wit_read_result_test_list_row(&row_view, &row_cur, &row_out) == ERR_OK);
     CHECK(row_out.id == 2);
     CHECK(row_out.note_len == 4);
     CHECK(memcmp(row_out.note_data, "beta", 4) == 0);
@@ -1396,7 +1396,7 @@ static void test_result_list_count_mismatch_rejected(void) {
     CHECK(append_tagged_s32(ints_blob, sizeof(ints_blob), &ints_blob_len, 10) == ERR_OK);
     CHECK(append_tagged_s32(ints_blob, sizeof(ints_blob), &ints_blob_len, 11) == ERR_OK);
 
-    SapWitResultTestTestListCarrier in = {
+    SapWitResultTestListCarrier in = {
         .ints_data = ints_blob,
         .ints_len = 3, /* claims one extra element */
         .ints_byte_len = ints_blob_len,
@@ -1404,7 +1404,7 @@ static void test_result_list_count_mismatch_rejected(void) {
         .rows_len = 0,
         .rows_byte_len = 0,
     };
-    CHECK(sap_wit_write_result_test_test_list_carrier(r, &in) != ERR_OK);
+    CHECK(sap_wit_write_result_test_list_carrier(r, &in) != ERR_OK);
 
     teardown(a, e, t);
 }
@@ -1415,24 +1415,24 @@ static void test_result_skip(void) {
     setup(&a, &e, &t, &r);
 
     const uint8_t msg_id[] = "r-skip";
-    SapWitResultTestTestResultCarrier ok_carrier = {
+    SapWitResultTestResultCarrier ok_carrier = {
         .is_result_ok = 1,
         .result_val.ok.v = {
             .message_id_data = msg_id, .message_id_len = 6,
             .committed_at = 1, .accepted = 1,
         },
     };
-    CHECK(sap_wit_write_result_test_test_result_carrier(r, &ok_carrier) == ERR_OK);
+    CHECK(sap_wit_write_result_test_result_carrier(r, &ok_carrier) == ERR_OK);
 
     const uint8_t detail[] = "oops";
-    SapWitResultTestTestResultCarrier err_carrier = {
+    SapWitResultTestResultCarrier err_carrier = {
         .is_result_ok = 0,
         .result_val.err.v = {
-            .case_tag = SAP_WIT_RESULT_TEST_TEST_ERROR_INTERNAL,
+            .case_tag = SAP_WIT_RESULT_TEST_ERROR_INTERNAL,
             .val.internal = { .data = detail, .len = 4 },
         },
     };
-    CHECK(sap_wit_write_result_test_test_result_carrier(r, &err_carrier) == ERR_OK);
+    CHECK(sap_wit_write_result_test_result_carrier(r, &err_carrier) == ERR_OK);
     uint32_t total = thatch_region_used(r);
 
     ThatchCursor cur = 0;

@@ -231,6 +231,7 @@ extern int test_wit_resource_open_command_roundtrip(void);
 extern int test_wit_resource_handle_roundtrip(void);
 extern int test_wit_text_runtime_roundtrip(void);
 extern int test_wit_text_runtime_invalid_handle(void);
+extern int test_wit_text_program_prepend(void);
 extern int test_wit_store_runtime_roundtrip(void);
 extern int test_wit_store_runtime_readonly_put_rejected(void);
 extern int test_wit_mailbox_runtime_roundtrip(void);
@@ -312,6 +313,7 @@ int main(void)
     RUN_TEST(test_wit_resource_handle_roundtrip);
     RUN_TEST(test_wit_text_runtime_roundtrip);
     RUN_TEST(test_wit_text_runtime_invalid_handle);
+    RUN_TEST(test_wit_text_program_prepend);
     RUN_TEST(test_wit_store_runtime_roundtrip);
     RUN_TEST(test_wit_store_runtime_readonly_put_rejected);
     RUN_TEST(test_wit_mailbox_runtime_roundtrip);

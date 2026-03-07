@@ -20,10 +20,10 @@ void croft_wit_host_fs_runtime_destroy(croft_wit_host_fs_runtime* runtime);
  * WIT-visible resource IDs so model programs never observe raw native pointers.
  */
 int32_t croft_wit_host_fs_runtime_dispatch(croft_wit_host_fs_runtime* runtime,
-                                           const SapWitHostFsFsCommand* command,
-                                           SapWitHostFsFsReply* reply_out);
+                                           const SapWitHostFsCommand* command,
+                                           SapWitHostFsReply* reply_out);
 
-void croft_wit_host_fs_reply_dispose(SapWitHostFsFsReply* reply);
+void croft_wit_host_fs_reply_dispose(SapWitHostFsReply* reply);
 
 #ifdef __cplusplus
 }
