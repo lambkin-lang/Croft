@@ -70,3 +70,4 @@ local_logs/
 
 # Local dependency bootstrap output
 local_deps/
+.claude/settings.local.json
