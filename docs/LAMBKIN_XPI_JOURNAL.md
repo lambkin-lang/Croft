@@ -109,6 +109,53 @@ That increase is useful evidence, not a failure:
    should Lambkin model that as reusable generated code, reusable runtime
    advice, or family-specific XPI libraries?
 
+## March 7, 2026: Reusing Editor-Facing Mix-Ins Outside The Scene Editor
+
+This pass took the first step that the previous notes said was needed:
+`host-menu`, `host-clipboard`, and `host-editor-input` are no longer only
+proving themselves inside the direct-Metal scene editor.
+
+### What Was Added
+
+- `example_wit_textpad_window` now reuses the common `text` resource plus
+  `host-window`, `host-gpu2d`, `host-clock`, `host-menu`,
+  `host-clipboard`, and `host-editor-input`.
+- `tools/benchmark_runtime_perf.sh` now exists alongside the size benchmark and
+  records repeated runtime measurements plus any emitted `frames=` telemetry
+  for the non-GUI examples.
+- The direct-Metal scene editor now emits simple frame telemetry too, but on
+  this macOS host the GUI family still has to be exercised as direct top-level
+  terminal commands rather than through a wrapped shell harness.
+
+### What This Clarified
+
+- The newer editor-facing mix-ins are reusable enough to support a smaller,
+  non-scene family member. That is good evidence that they are not purely
+  scene-editor scaffolding.
+- The painful part moved: the remaining issue is not interface shape, it is
+  launch context. The GUI samples close cleanly when run directly, but the
+  shell harness itself perturbs those macOS binaries enough that it now has to
+  print direct commands instead of wrapping them.
+- That harness problem is useful architectural data. It suggests another host
+  seam around application lifecycle, activation policy, and automated runtime
+  control for native GUI worlds.
+
+### New Risk Signal
+
+`tools/benchmark_runtime_perf.sh` no longer hangs on the windowed GUI samples:
+it now refuses the wrapped launch and prints the exact direct command to run.
+That is a cleaner failure mode, but it still means Croft lacks a clean
+automated runtime-control story for those worlds.
+
+### Updated Questions
+
+1. Should GUI runtime control and auto-close be modeled as another host mix-in
+   or as harness-only advice around native worlds?
+2. Is AppKit activation/menu lifecycle a reusable host service, or is it one of
+   the places where Lambkin should prefer collapsed native advice?
+3. How should performance benchmarking distinguish between "sample logic is
+   slow" and "host lifecycle automation is incomplete"?
+
 ## March 6, 2026: First Honest Common-Core Split
 
 This pass made two boundary claims true in code instead of only in prose:
@@ -550,6 +597,8 @@ The next high-value steps look like this:
 - reuse the newer `host-menu`, `host-clipboard`, `host-editor-input`, and
   `host-a11y` mix-ins in more than one family so they stop being editor-only
   experiments
+- stabilize runtime automation for windowed GUI families so the new runtime
+  benchmark helper can report more than timeout signals
 - move more of the direct-Metal/editor host interaction onto WIT-facing
   boundaries where that clarifies family differences, but keep rendering itself
   deliberately direct for now

@@ -113,6 +113,7 @@ int main(void)
     uint32_t caps = 0u;
     uint32_t auto_close_ms = 350u;
     uint64_t start_ms = 0u;
+    uint64_t end_ms = 0u;
     float text_width = 0.0f;
     uint32_t frame_count = 0u;
     int rc = 1;
@@ -291,7 +292,16 @@ int main(void)
         frame_count++;
     }
 
-    printf("window-text=\"%.*s\" frames=%u\n", (int)label.len, (const char*)label.data, frame_count);
+    end_ms = start_ms;
+    if (croft_wit_host_clock_runtime_dispatch(clock_runtime, &clock_cmd, &clock_reply) == 0
+            && expect_clock_now(&clock_reply, &end_ms)) {
+    }
+
+    printf("window-text=\"%.*s\" frames=%u wall_ms=%llu\n",
+           (int)label.len,
+           (const char*)label.data,
+           frame_count,
+           (unsigned long long)(end_ms - start_ms));
     rc = 0;
 
 cleanup:

@@ -436,6 +436,8 @@ int main(int argc, char** argv)
     SapWitHostClockReply clock_reply = {0};
     uint32_t auto_close_ms = 0u;
     uint64_t start_ms = 0u;
+    uint64_t end_ms = 0u;
+    uint32_t frame_count = 0u;
     int rc = 1;
 
     if (auto_close_env && auto_close_env[0] != '\0') {
@@ -707,9 +709,19 @@ int main(int argc, char** argv)
             rcx.time = (double)now_ms / 1000.0;
             scene_node_draw_tree(&g_root_vp.base, &rcx);
             host_render_end_frame();
+            frame_count++;
         }
     }
 
+    end_ms = start_ms;
+    if (croft_wit_host_clock_runtime_dispatch(clock_runtime, &clock_command, &clock_reply) == 0
+            && clock_expect_now(&clock_reply, &end_ms)) {
+    }
+
+    printf("editor-scene-wit frames=%u wall_ms=%llu\n",
+           frame_count,
+           (unsigned long long)(end_ms - start_ms));
+    fflush(stdout);
     rc = 0;
 
 cleanup:

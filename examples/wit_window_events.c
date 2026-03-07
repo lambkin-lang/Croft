@@ -143,8 +143,11 @@ int main(void)
     width = window_reply.val.size.val.ok.width;
     height = window_reply.val.size.val.ok.height;
 
-    printf("window=%ux%u events=%" PRIu32 "\n", width, height, event_count);
-
+    printf("window=%ux%u events=%" PRIu32 " wall_ms=%llu\n",
+           width,
+           height,
+           event_count,
+           (unsigned long long)(now_ms - start_ms));
     window_cmd.case_tag = SAP_WIT_HOST_WINDOW_COMMAND_CLOSE;
     window_cmd.val.close.window = window;
     if (croft_wit_host_window_runtime_dispatch(window_runtime, &window_cmd, &window_reply) != 0

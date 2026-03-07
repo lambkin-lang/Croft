@@ -1397,6 +1397,43 @@ if(TARGET croft_wit_host_window_runtime AND TARGET croft_wit_host_gpu2d_runtime 
     add_dependencies(example_wit_text_window common_wit_schema_gen host_window_wit_schema_gen host_gpu2d_wit_schema_gen host_clock_wit_schema_gen)
 endif()
 
+if(TARGET croft_wit_host_window_runtime
+        AND TARGET croft_wit_host_gpu2d_runtime
+        AND TARGET croft_wit_text_runtime
+        AND TARGET croft_wit_host_menu_runtime
+        AND TARGET croft_wit_host_clipboard_runtime
+        AND TARGET croft_wit_host_editor_input_runtime)
+    croft_add_example(example_wit_textpad_window
+        SOURCES examples/wit_textpad_window.c
+        LINKS croft_wit_host_window_runtime
+              croft_wit_host_gpu2d_runtime
+              croft_wit_host_clock_runtime
+              croft_wit_host_menu_runtime
+              croft_wit_host_clipboard_runtime
+              croft_wit_host_editor_input_runtime
+              croft_wit_text_program
+              croft_wit_text_runtime
+        REQUIRES croft_wit_host_window_runtime
+                 croft_wit_host_gpu2d_runtime
+                 croft_wit_host_clock_runtime
+                 croft_wit_host_menu_runtime
+                 croft_wit_host_clipboard_runtime
+                 croft_wit_host_editor_input_runtime
+                 croft_wit_text_program
+                 croft_wit_text_runtime
+        TAGS wit xpi common-core host-window host-gpu2d host-clock host-menu host-clipboard host-editor-input textpad native-window
+        FOCUS "A small non-scene textpad that reuses WIT window, menu, clipboard, and editor-input mix-ins over the common text resource."
+    )
+    add_dependencies(example_wit_textpad_window
+        common_wit_schema_gen
+        host_window_wit_schema_gen
+        host_gpu2d_wit_schema_gen
+        host_clock_wit_schema_gen
+        host_menu_wit_schema_gen
+        host_clipboard_wit_schema_gen
+        host_editor_input_wit_schema_gen)
+endif()
+
 croft_add_example(example_sapling_text
     SOURCES examples/sapling_text.c
     LINKS sapling_core

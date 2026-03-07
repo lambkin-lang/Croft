@@ -205,6 +205,10 @@ Current status:
   `example_editor_text_metal_native`, which keeps rendering direct while moving
   window, clock, menu, clipboard, input, and accessibility toward the same
   WIT-facing boundary model as the smaller samples.
+- `example_wit_textpad_window` now reuses `host-menu`, `host-clipboard`, and
+  `host-editor-input` outside the scene-editor family, which makes those
+  mix-ins less editor-specific and gives Croft a smaller second comparison
+  point.
 - `croft_wit_text_program` now proves that the same common-side WIT text logic
   can survive `example_wit_text_cli`, `example_wit_text_wasm_host`, and
   `example_wit_text_window`, instead of being trapped in one sample shape.
@@ -219,6 +223,10 @@ Current status:
 - `tools/wit_codegen.c` now also emits rename/trace manifests for every schema
   generation target and normalizes exact-tail helper macros such as
   `SAP_WIT_HOST_WINDOW_RESOURCE_INVALID`.
+- `tools/benchmark_runtime_perf.sh` now exists alongside the size benchmark so
+  runtime behavior can be compared, not just final binary size. The automated
+  shell path currently applies to non-GUI examples; the macOS GUI family still
+  needs direct top-level launch commands on this host.
 - The remaining naming cleanup question is narrower now: how much further
   should exact-tail helper names be normalized before traceability starts to
   suffer?
@@ -362,8 +370,9 @@ implementation shape, and coupling.
 The next implementation passes should stay focused on the host-boundary and
 editor-boundary pressure points instead of broadening the system indiscriminately.
 
-1. Push the newer menu/accessibility/clipboard/editor-input mix-ins through
-   more than one family so they stop being editor-only experiments.
+1. Finish stabilizing automated runtime exercise for windowed GUI families; the
+   benchmark harness currently times out on those samples, and the menu-bearing
+   paths are the clearest pressure point.
 2. Move more of the direct-Metal/editor path onto WIT-facing boundaries while
    keeping rendering itself intentionally direct for now.
 3. Extend the "same logic, different world" proof style with more paired
@@ -403,16 +412,16 @@ implementation tasks:
 
 The next concrete implementation work should happen in this order:
 
-1. Reuse the new menu/accessibility/clipboard/editor-input mix-ins in more
-   than the direct-Metal editor so the world-family comparison stays honest.
+1. Fix the current command-line runtime harness so windowed GUI families can be
+   benchmarked without timing out.
 2. Decide which remaining editor host seams should stay collapsed for the
    direct-Metal family versus which should be forced through WIT now.
 3. Keep `tgfx` Metal as a comparison control while pushing the native
    direct-Metal/editor path forward as the likely small-binary reference path.
 4. Refine `tools/wit_codegen.c` further around remaining exact-tail helpers
    and how rename/trace manifests should feed Lambkin.
-5. Add runtime-performance comparisons next to the current size comparisons
-   for the main family samples.
+5. Extend the reused host-mix-in path beyond text/window samples into other
+   families where it clarifies product-line choices.
 6. Read `docs/LAMBKIN_XPI_JOURNAL.md` before expanding host/editor surface area
    so the current join-point questions remain explicit.
 

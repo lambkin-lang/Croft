@@ -20,6 +20,11 @@ void host_menu_apply_intent(const SapWitMenuSchemaMenuIntent* intent);
  */
 void host_menu_set_callback(host_menu_callback_t cb);
 
+/**
+ * Tear down the currently installed native menu tree, if any.
+ */
+void host_menu_reset(void);
+
 #ifdef __cplusplus
 }
 #endif

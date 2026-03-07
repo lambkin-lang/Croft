@@ -103,6 +103,9 @@ bash ./tools/benchmark_tgfx_backends.sh
 # Compare the current editor families on macOS
 bash ./tools/benchmark_editor_families.sh
 
+# Compare runtime/auto-close behavior across example families
+bash ./tools/benchmark_runtime_perf.sh
+
 # Compare optimized sizes against Debug
 tools/benchmark_binary_size.sh --compare-debug
 
@@ -202,6 +205,7 @@ Representative examples include:
 - `example_sapling_text`
 - `example_wit_text_handles`
 - `example_wit_text_window`
+- `example_wit_textpad_window`
 - `example_wit_db_kv`
 - `example_wit_mailbox_ping`
 - `example_wasm_guest`
@@ -249,6 +253,9 @@ For shared common-side WIT logic across multiple worlds, compare:
 - `example_wit_text_cli` as the CLI/file-oriented host shape
 - `example_wit_text_wasm_host` as the current Wasm-hosted world shape over `wasm3`
 - `example_wit_text_window` as the native window/GPU host shape
+- `example_wit_textpad_window` as a smaller non-scene textpad that reuses
+  WIT window/menu/clipboard/editor-input mix-ins without pulling in the scene
+  editor
 
 Current optimized size datapoints for that trio plus the GPU-only host mix-in
 sample are:
@@ -274,6 +281,12 @@ For editor-family experiments on macOS, Croft currently compares:
 The `tools/benchmark_editor_families.sh` helper automates that comparison.
 The direct-Metal family now routes window/menu/clipboard/input/accessibility
 through WIT-facing runtimes while leaving rendering direct for now.
+The new `tools/benchmark_runtime_perf.sh` helper complements the size benchmark
+by timing repeated non-GUI example runs and recording any emitted `frames=`
+telemetry. On this macOS host the windowed GUI samples are now treated
+explicitly as direct terminal probes: the harness prints the exact top-level
+command to run instead of attempting a wrapped shell launch that perturbs the
+AppKit/GLFW lifecycle.
 
 Build specific artifacts directly when needed:
 

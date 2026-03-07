@@ -31,6 +31,7 @@ cmake --build build --target croft_examples
 | `example_sapling_text` | Sapling text clone-on-write editing over the single-thread linear arena profile | `sapling_core` |
 | `example_wit_text_handles` | Sapling text editing through generated WIT commands and opaque resource handles | `croft_wit_text_runtime` |
 | `example_wit_text_window` | The same common-side WIT text logic rendered through native window and GPU mix-ins | `croft_wit_text_program`, `croft_wit_text_runtime`, `croft_wit_host_window_runtime`, `croft_wit_host_gpu2d_runtime`, `croft_wit_host_clock_runtime` |
+| `example_wit_textpad_window` | Small non-scene textpad over WIT text/window/menu/clipboard/editor-input mix-ins | `croft_wit_text_program`, `croft_wit_text_runtime`, `croft_wit_host_window_runtime`, `croft_wit_host_gpu2d_runtime`, `croft_wit_host_clock_runtime`, `croft_wit_host_menu_runtime`, `croft_wit_host_clipboard_runtime`, `croft_wit_host_editor_input_runtime` |
 | `example_wit_db_kv` | Sapling key-value round-trip through generated WIT `db` and `txn` resource handles | `croft_wit_store_runtime` |
 | `example_wit_mailbox_ping` | Common-core mailbox round-trip through generated WIT mailbox resource handles | `croft_wit_mailbox_runtime` |
 | `example_wasm_guest` | Embedded Wasm guest bridged into Croft host imports | `croft_wasm_wasm3` |
@@ -86,6 +87,9 @@ Notes:
 - `example_wit_text_window` is the first proof that the same common-side WIT
   text logic can survive both a CLI-shaped host and a native window/GPU host
   without re-exposing raw Sapling pointers or host objects.
+- `example_wit_textpad_window` pushes the newer host mix-ins through a second
+  family: it is smaller and simpler than the scene editor, but still routes
+  menu, clipboard, and editor-input through WIT instead of direct host calls.
 - `example_editor_text_metal_native` now pushes the direct-Metal editor further
   along the same path: rendering remains direct, but windowing, clock/menu
   policy, clipboard exchange, editor command normalization, and accessibility
@@ -114,6 +118,11 @@ Notes:
   shell is `148,944`. That is larger than the earlier ad hoc direct-Metal
   editor shell, which is useful evidence: explicit host seams have measurable
   cost, but they are still far cheaper than the tgfx/Metal editor family.
+- Runtime benchmarking is now separate from size benchmarking through
+  `tools/benchmark_runtime_perf.sh`. The automated path currently covers the
+  non-GUI examples. On this macOS host, wrapped shell launches perturb the
+  windowed GUI samples enough that the harness now fails fast and prints the
+  exact direct command to run instead of hanging.
 - The render backend comparison is currently done with separate build
   directories. Croft's current in-tree tgfx integration supports one GPU
   backend variant per configure, selected by `TGFX_USE_OPENGL` or

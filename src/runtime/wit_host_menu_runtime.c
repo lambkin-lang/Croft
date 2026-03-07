@@ -135,6 +135,7 @@ void croft_wit_host_menu_runtime_destroy(croft_wit_host_menu_runtime* runtime)
     }
     if (g_menu_runtime == runtime) {
         host_menu_set_callback(NULL);
+        host_menu_reset();
         g_menu_runtime = NULL;
     }
     free(runtime);

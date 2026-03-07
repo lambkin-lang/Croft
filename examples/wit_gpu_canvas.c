@@ -100,6 +100,7 @@ int main(void)
     uint32_t auto_close_ms = 300u;
     float text_width = 0.0f;
     uint64_t start_ms = 0u;
+    uint64_t end_ms = 0u;
     uint32_t frame_count = 0u;
 
     window_runtime = croft_wit_host_window_runtime_create();
@@ -308,8 +309,16 @@ int main(void)
         croft_wit_host_window_runtime_dispatch(window_runtime, &window_cmd, &window_reply);
     }
 
-    printf("gpu_caps=0x%X text_width=%.2f frames=%u\n", caps, text_width, frame_count);
+    end_ms = start_ms;
+    if (croft_wit_host_clock_runtime_dispatch(clock_runtime, &clock_cmd, &clock_reply) == 0
+            && expect_clock_now(&clock_reply, &end_ms)) {
+    }
 
+    printf("gpu_caps=0x%X text_width=%.2f frames=%u wall_ms=%llu\n",
+           caps,
+           text_width,
+           frame_count,
+           (unsigned long long)(end_ms - start_ms));
     croft_wit_host_clock_runtime_destroy(clock_runtime);
     croft_wit_host_gpu2d_runtime_destroy(gpu_runtime);
     croft_wit_host_window_runtime_destroy(window_runtime);

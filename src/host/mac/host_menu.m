@@ -23,14 +23,21 @@ void host_menu_set_callback(host_menu_callback_t cb) {
     g_callback = cb;
 }
 
+void host_menu_reset(void) {
+    if (g_item_map) {
+        [g_item_map removeAllObjects];
+        g_item_map = nil;
+    }
+    g_root_menu = nil;
+    if (NSApp) {
+        [NSApp setMainMenu:nil];
+    }
+}
+
 void host_menu_apply_intent(const SapWitMenuSchemaMenuIntent* intent) {
     if (intent->case_tag == SAP_WIT_MENU_SCHEMA_MENU_INTENT_BEGIN_UPDATE) {
-        // Reset everything
-        if (!g_item_map) {
-            g_item_map = [[NSMutableDictionary alloc] init];
-        } else {
-            [g_item_map removeAllObjects];
-        }
+        host_menu_reset();
+        g_item_map = [[NSMutableDictionary alloc] init];
         g_root_menu = [[NSMenu alloc] initWithTitle:@"Main Menu"];
     } 
     else if (intent->case_tag == SAP_WIT_MENU_SCHEMA_MENU_INTENT_ADD_ITEM) {
@@ -87,6 +94,10 @@ void host_menu_apply_intent(const SapWitMenuSchemaMenuIntent* intent) {
     }
     else if (intent->case_tag == SAP_WIT_MENU_SCHEMA_MENU_INTENT_COMMIT_UPDATE) {
         // Force the OS Global Application Menu to adopt our WIT-formulated tree
-        [NSApp setMainMenu:g_root_menu];
+        if (NSApp) {
+            [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
+            [NSApp setMainMenu:g_root_menu];
+            [NSApp activateIgnoringOtherApps:YES];
+        }
     }
 }
