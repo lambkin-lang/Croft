@@ -219,6 +219,7 @@ extern int test_editor_text_model_word_ranges(void);
 extern int test_editor_document_undo_redo_coalesced_insert(void);
 extern int test_editor_document_coalescing_barrier(void);
 extern int test_editor_document_delete_coalescing_and_redo_invalidation(void);
+extern int test_editor_document_replace_range_with_utf8(void);
 extern int test_editor_document_fs_open_save_roundtrip(void);
 extern int test_editor_commands_word_moves(void);
 extern int test_editor_commands_word_deletes(void);
@@ -238,6 +239,8 @@ extern int test_wit_mailbox_runtime_roundtrip(void);
 extern int test_wit_mailbox_runtime_drop_busy(void);
 extern int test_wit_host_fs_runtime_read_fixture(void);
 extern int test_wit_host_clock_runtime_monotonic(void);
+extern int test_wit_host_editor_input_runtime_shortcuts(void);
+extern int test_wit_host_editor_input_runtime_motion_modes(void);
 
 extern void run_test_fs(int argc, char **argv);
 
@@ -297,6 +300,7 @@ int main(void)
     RUN_TEST(test_editor_document_undo_redo_coalesced_insert);
     RUN_TEST(test_editor_document_coalescing_barrier);
     RUN_TEST(test_editor_document_delete_coalescing_and_redo_invalidation);
+    RUN_TEST(test_editor_document_replace_range_with_utf8);
     RUN_TEST(test_editor_document_fs_open_save_roundtrip);
 
     printf("\n[editor_commands]\n");
@@ -320,6 +324,8 @@ int main(void)
     RUN_TEST(test_wit_mailbox_runtime_drop_busy);
     RUN_TEST(test_wit_host_fs_runtime_read_fixture);
     RUN_TEST(test_wit_host_clock_runtime_monotonic);
+    RUN_TEST(test_wit_host_editor_input_runtime_shortcuts);
+    RUN_TEST(test_wit_host_editor_input_runtime_motion_modes);
 
     printf("\n[host_fs]\n");
     RUN_TEST(run_tier2_fs_tests);

@@ -1,0 +1,58 @@
+package lambkin:host-menu@0.1.0;
+
+interface types {
+  flags modifiers {
+    shift,
+    ctrl,
+    alt,
+    cmd,
+  }
+
+  enum error {
+    unavailable,
+    busy,
+    internal,
+  }
+
+  record begin-update {}
+
+  record commit-update {}
+
+  record next-action {}
+
+  record menu-item {
+    action-id: s32,
+    parent-action-id: s32,
+    label: list<u8>,
+    has-shortcut: bool,
+    shortcut: list<u8>,
+    mods: modifiers,
+  }
+
+  variant status {
+    ok,
+    err(error),
+  }
+
+  variant action-result {
+    ok(s32),
+    empty,
+    err(error),
+  }
+
+  variant command {
+    begin-update(begin-update),
+    add-item(menu-item),
+    commit-update(commit-update),
+    next-action(next-action),
+  }
+
+  variant reply {
+    status(status),
+    action(action-result),
+  }
+}
+
+world host-menu {
+  export types;
+}

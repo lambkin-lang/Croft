@@ -1,0 +1,90 @@
+package lambkin:host-editor-input@0.1.0;
+
+interface types {
+  flags motion-flags {
+    selecting,
+    word,
+    word-part,
+  }
+
+  flags delete-flags {
+    word,
+    word-part,
+  }
+
+  enum error {
+    unsupported,
+    internal,
+  }
+
+  record key-event {
+    key: s32,
+    action: s32,
+    modifiers: u32,
+  }
+
+  record char-event {
+    codepoint: u32,
+  }
+
+  record menu-action {
+    action-id: s32,
+  }
+
+  record next-action {}
+
+  record motion {
+    flags: motion-flags,
+  }
+
+  record deletion {
+    flags: delete-flags,
+  }
+
+  variant editor-action {
+    move-left(motion),
+    move-right(motion),
+    move-up(motion),
+    move-down(motion),
+    move-home(motion),
+    move-end(motion),
+    delete-left(deletion),
+    delete-right(deletion),
+    insert-codepoint(u32),
+    undo,
+    redo,
+    select-all,
+    copy,
+    cut,
+    paste,
+    save,
+    quit,
+  }
+
+  variant status {
+    ok,
+    err(error),
+  }
+
+  variant action-result {
+    ok(editor-action),
+    empty,
+    err(error),
+  }
+
+  variant command {
+    window-key(key-event),
+    window-char(char-event),
+    menu-action(menu-action),
+    next-action(next-action),
+  }
+
+  variant reply {
+    status(status),
+    action(action-result),
+  }
+}
+
+world host-editor-input {
+  export types;
+}

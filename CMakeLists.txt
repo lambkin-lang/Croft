@@ -159,117 +159,185 @@ find_package(Threads REQUIRED)
 # ── WIT Schema Codegen ──────────────────────────────────────────────────
 set(WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_schema_dbis.h")
 set(WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_schema_dbis.c")
+set(WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_schema_dbis.manifest")
 
 set(COMMON_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_common_core.h")
 set(COMMON_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_common_core.c")
+set(COMMON_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_common_core.manifest")
 
 set(HOST_FS_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_fs.h")
 set(HOST_FS_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_fs.c")
+set(HOST_FS_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_fs.manifest")
 
 set(HOST_CLOCK_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_clock.h")
 set(HOST_CLOCK_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_clock.c")
+set(HOST_CLOCK_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_clock.manifest")
 
 set(HOST_WINDOW_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_window.h")
 set(HOST_WINDOW_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_window.c")
+set(HOST_WINDOW_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_window.manifest")
 
 set(HOST_GPU2D_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_gpu2d.h")
 set(HOST_GPU2D_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_gpu2d.c")
+set(HOST_GPU2D_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_gpu2d.manifest")
+
+set(HOST_MENU_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_menu.h")
+set(HOST_MENU_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_menu.c")
+set(HOST_MENU_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_menu.manifest")
+
+set(HOST_CLIPBOARD_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_clipboard.h")
+set(HOST_CLIPBOARD_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_clipboard.c")
+set(HOST_CLIPBOARD_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_clipboard.manifest")
+
+set(HOST_EDITOR_INPUT_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_editor_input.h")
+set(HOST_EDITOR_INPUT_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_editor_input.c")
+set(HOST_EDITOR_INPUT_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_editor_input.manifest")
+
+set(HOST_A11Y_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_a11y.h")
+set(HOST_A11Y_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_a11y.c")
+set(HOST_A11Y_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_a11y.manifest")
 
 set(TEST_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/test_result_types.h")
 set(TEST_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/test_result_types.c")
+set(TEST_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/test_result_types.manifest")
 
 set(MENU_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_menu_schema.h")
 set(MENU_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_menu_schema.c")
+set(MENU_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_menu_schema.manifest")
 
 add_executable(wit_codegen tools/wit_codegen.c)
 
 # Main runtime schema
 add_custom_command(
-    OUTPUT ${WIT_GENERATED_H} ${WIT_GENERATED_C}
+    OUTPUT ${WIT_GENERATED_H} ${WIT_GENERATED_C} ${WIT_GENERATED_MANIFEST}
     COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
     COMMAND wit_codegen --wit "${CMAKE_CURRENT_SOURCE_DIR}/schemas/wit/runtime-schema.wit"
-                        --header "${WIT_GENERATED_H}" --source "${WIT_GENERATED_C}"
+                        --header "${WIT_GENERATED_H}" --source "${WIT_GENERATED_C}" --manifest "${WIT_GENERATED_MANIFEST}"
     DEPENDS wit_codegen "${CMAKE_CURRENT_SOURCE_DIR}/schemas/wit/runtime-schema.wit"
     COMMENT "Generating Schema C Layouts from WIT..."
 )
-add_custom_target(wit_schema_gen DEPENDS ${WIT_GENERATED_H} ${WIT_GENERATED_C})
+add_custom_target(wit_schema_gen DEPENDS ${WIT_GENERATED_H} ${WIT_GENERATED_C} ${WIT_GENERATED_MANIFEST})
 
 # Common-core schema
 add_custom_command(
-    OUTPUT ${COMMON_WIT_GENERATED_H} ${COMMON_WIT_GENERATED_C}
+    OUTPUT ${COMMON_WIT_GENERATED_H} ${COMMON_WIT_GENERATED_C} ${COMMON_WIT_GENERATED_MANIFEST}
     COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
     COMMAND wit_codegen --wit "${CMAKE_CURRENT_SOURCE_DIR}/schemas/wit/common-core.wit"
-                        --header "${COMMON_WIT_GENERATED_H}" --source "${COMMON_WIT_GENERATED_C}"
+                        --header "${COMMON_WIT_GENERATED_H}" --source "${COMMON_WIT_GENERATED_C}" --manifest "${COMMON_WIT_GENERATED_MANIFEST}"
     DEPENDS wit_codegen "${CMAKE_CURRENT_SOURCE_DIR}/schemas/wit/common-core.wit"
     COMMENT "Generating Common-Core WIT C Layouts..."
 )
-add_custom_target(common_wit_schema_gen DEPENDS ${COMMON_WIT_GENERATED_H} ${COMMON_WIT_GENERATED_C})
+add_custom_target(common_wit_schema_gen DEPENDS ${COMMON_WIT_GENERATED_H} ${COMMON_WIT_GENERATED_C} ${COMMON_WIT_GENERATED_MANIFEST})
 
 # Host-fs schema
 add_custom_command(
-    OUTPUT ${HOST_FS_WIT_GENERATED_H} ${HOST_FS_WIT_GENERATED_C}
+    OUTPUT ${HOST_FS_WIT_GENERATED_H} ${HOST_FS_WIT_GENERATED_C} ${HOST_FS_WIT_GENERATED_MANIFEST}
     COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
     COMMAND wit_codegen --wit "${CMAKE_CURRENT_SOURCE_DIR}/schemas/wit/host-fs.wit"
-                        --header "${HOST_FS_WIT_GENERATED_H}" --source "${HOST_FS_WIT_GENERATED_C}"
+                        --header "${HOST_FS_WIT_GENERATED_H}" --source "${HOST_FS_WIT_GENERATED_C}" --manifest "${HOST_FS_WIT_GENERATED_MANIFEST}"
     DEPENDS wit_codegen "${CMAKE_CURRENT_SOURCE_DIR}/schemas/wit/host-fs.wit"
     COMMENT "Generating Host-FS WIT C Layouts..."
 )
-add_custom_target(host_fs_wit_schema_gen DEPENDS ${HOST_FS_WIT_GENERATED_H} ${HOST_FS_WIT_GENERATED_C})
+add_custom_target(host_fs_wit_schema_gen DEPENDS ${HOST_FS_WIT_GENERATED_H} ${HOST_FS_WIT_GENERATED_C} ${HOST_FS_WIT_GENERATED_MANIFEST})
 
 # Host-clock schema
 add_custom_command(
-    OUTPUT ${HOST_CLOCK_WIT_GENERATED_H} ${HOST_CLOCK_WIT_GENERATED_C}
+    OUTPUT ${HOST_CLOCK_WIT_GENERATED_H} ${HOST_CLOCK_WIT_GENERATED_C} ${HOST_CLOCK_WIT_GENERATED_MANIFEST}
     COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
     COMMAND wit_codegen --wit "${CMAKE_CURRENT_SOURCE_DIR}/schemas/wit/host-clock.wit"
-                        --header "${HOST_CLOCK_WIT_GENERATED_H}" --source "${HOST_CLOCK_WIT_GENERATED_C}"
+                        --header "${HOST_CLOCK_WIT_GENERATED_H}" --source "${HOST_CLOCK_WIT_GENERATED_C}" --manifest "${HOST_CLOCK_WIT_GENERATED_MANIFEST}"
     DEPENDS wit_codegen "${CMAKE_CURRENT_SOURCE_DIR}/schemas/wit/host-clock.wit"
     COMMENT "Generating Host-Clock WIT C Layouts..."
 )
-add_custom_target(host_clock_wit_schema_gen DEPENDS ${HOST_CLOCK_WIT_GENERATED_H} ${HOST_CLOCK_WIT_GENERATED_C})
+add_custom_target(host_clock_wit_schema_gen DEPENDS ${HOST_CLOCK_WIT_GENERATED_H} ${HOST_CLOCK_WIT_GENERATED_C} ${HOST_CLOCK_WIT_GENERATED_MANIFEST})
 
 # Host-window schema
 add_custom_command(
-    OUTPUT ${HOST_WINDOW_WIT_GENERATED_H} ${HOST_WINDOW_WIT_GENERATED_C}
+    OUTPUT ${HOST_WINDOW_WIT_GENERATED_H} ${HOST_WINDOW_WIT_GENERATED_C} ${HOST_WINDOW_WIT_GENERATED_MANIFEST}
     COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
     COMMAND wit_codegen --wit "${CMAKE_CURRENT_SOURCE_DIR}/schemas/wit/host-window.wit"
-                        --header "${HOST_WINDOW_WIT_GENERATED_H}" --source "${HOST_WINDOW_WIT_GENERATED_C}"
+                        --header "${HOST_WINDOW_WIT_GENERATED_H}" --source "${HOST_WINDOW_WIT_GENERATED_C}" --manifest "${HOST_WINDOW_WIT_GENERATED_MANIFEST}"
     DEPENDS wit_codegen "${CMAKE_CURRENT_SOURCE_DIR}/schemas/wit/host-window.wit"
     COMMENT "Generating Host-Window WIT C Layouts..."
 )
-add_custom_target(host_window_wit_schema_gen DEPENDS ${HOST_WINDOW_WIT_GENERATED_H} ${HOST_WINDOW_WIT_GENERATED_C})
+add_custom_target(host_window_wit_schema_gen DEPENDS ${HOST_WINDOW_WIT_GENERATED_H} ${HOST_WINDOW_WIT_GENERATED_C} ${HOST_WINDOW_WIT_GENERATED_MANIFEST})
 
 # Host-gpu2d schema
 add_custom_command(
-    OUTPUT ${HOST_GPU2D_WIT_GENERATED_H} ${HOST_GPU2D_WIT_GENERATED_C}
+    OUTPUT ${HOST_GPU2D_WIT_GENERATED_H} ${HOST_GPU2D_WIT_GENERATED_C} ${HOST_GPU2D_WIT_GENERATED_MANIFEST}
     COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
     COMMAND wit_codegen --wit "${CMAKE_CURRENT_SOURCE_DIR}/schemas/wit/host-gpu2d.wit"
-                        --header "${HOST_GPU2D_WIT_GENERATED_H}" --source "${HOST_GPU2D_WIT_GENERATED_C}"
+                        --header "${HOST_GPU2D_WIT_GENERATED_H}" --source "${HOST_GPU2D_WIT_GENERATED_C}" --manifest "${HOST_GPU2D_WIT_GENERATED_MANIFEST}"
     DEPENDS wit_codegen "${CMAKE_CURRENT_SOURCE_DIR}/schemas/wit/host-gpu2d.wit"
     COMMENT "Generating Host-GPU2D WIT C Layouts..."
 )
-add_custom_target(host_gpu2d_wit_schema_gen DEPENDS ${HOST_GPU2D_WIT_GENERATED_H} ${HOST_GPU2D_WIT_GENERATED_C})
+add_custom_target(host_gpu2d_wit_schema_gen DEPENDS ${HOST_GPU2D_WIT_GENERATED_H} ${HOST_GPU2D_WIT_GENERATED_C} ${HOST_GPU2D_WIT_GENERATED_MANIFEST})
+
+# Host-menu schema
+add_custom_command(
+    OUTPUT ${HOST_MENU_WIT_GENERATED_H} ${HOST_MENU_WIT_GENERATED_C} ${HOST_MENU_WIT_GENERATED_MANIFEST}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
+    COMMAND wit_codegen --wit "${CMAKE_CURRENT_SOURCE_DIR}/schemas/wit/host-menu.wit"
+                        --header "${HOST_MENU_WIT_GENERATED_H}" --source "${HOST_MENU_WIT_GENERATED_C}" --manifest "${HOST_MENU_WIT_GENERATED_MANIFEST}"
+    DEPENDS wit_codegen "${CMAKE_CURRENT_SOURCE_DIR}/schemas/wit/host-menu.wit"
+    COMMENT "Generating Host-Menu WIT C Layouts..."
+)
+add_custom_target(host_menu_wit_schema_gen DEPENDS ${HOST_MENU_WIT_GENERATED_H} ${HOST_MENU_WIT_GENERATED_C} ${HOST_MENU_WIT_GENERATED_MANIFEST})
+
+# Host-clipboard schema
+add_custom_command(
+    OUTPUT ${HOST_CLIPBOARD_WIT_GENERATED_H} ${HOST_CLIPBOARD_WIT_GENERATED_C} ${HOST_CLIPBOARD_WIT_GENERATED_MANIFEST}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
+    COMMAND wit_codegen --wit "${CMAKE_CURRENT_SOURCE_DIR}/schemas/wit/host-clipboard.wit"
+                        --header "${HOST_CLIPBOARD_WIT_GENERATED_H}" --source "${HOST_CLIPBOARD_WIT_GENERATED_C}" --manifest "${HOST_CLIPBOARD_WIT_GENERATED_MANIFEST}"
+    DEPENDS wit_codegen "${CMAKE_CURRENT_SOURCE_DIR}/schemas/wit/host-clipboard.wit"
+    COMMENT "Generating Host-Clipboard WIT C Layouts..."
+)
+add_custom_target(host_clipboard_wit_schema_gen DEPENDS ${HOST_CLIPBOARD_WIT_GENERATED_H} ${HOST_CLIPBOARD_WIT_GENERATED_C} ${HOST_CLIPBOARD_WIT_GENERATED_MANIFEST})
+
+# Host-editor-input schema
+add_custom_command(
+    OUTPUT ${HOST_EDITOR_INPUT_WIT_GENERATED_H} ${HOST_EDITOR_INPUT_WIT_GENERATED_C} ${HOST_EDITOR_INPUT_WIT_GENERATED_MANIFEST}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
+    COMMAND wit_codegen --wit "${CMAKE_CURRENT_SOURCE_DIR}/schemas/wit/host-editor-input.wit"
+                        --header "${HOST_EDITOR_INPUT_WIT_GENERATED_H}" --source "${HOST_EDITOR_INPUT_WIT_GENERATED_C}" --manifest "${HOST_EDITOR_INPUT_WIT_GENERATED_MANIFEST}"
+    DEPENDS wit_codegen "${CMAKE_CURRENT_SOURCE_DIR}/schemas/wit/host-editor-input.wit"
+    COMMENT "Generating Host-Editor-Input WIT C Layouts..."
+)
+add_custom_target(host_editor_input_wit_schema_gen DEPENDS ${HOST_EDITOR_INPUT_WIT_GENERATED_H} ${HOST_EDITOR_INPUT_WIT_GENERATED_C} ${HOST_EDITOR_INPUT_WIT_GENERATED_MANIFEST})
+
+# Host-a11y schema
+add_custom_command(
+    OUTPUT ${HOST_A11Y_WIT_GENERATED_H} ${HOST_A11Y_WIT_GENERATED_C} ${HOST_A11Y_WIT_GENERATED_MANIFEST}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
+    COMMAND wit_codegen --wit "${CMAKE_CURRENT_SOURCE_DIR}/schemas/wit/host-a11y.wit"
+                        --header "${HOST_A11Y_WIT_GENERATED_H}" --source "${HOST_A11Y_WIT_GENERATED_C}" --manifest "${HOST_A11Y_WIT_GENERATED_MANIFEST}"
+    DEPENDS wit_codegen "${CMAKE_CURRENT_SOURCE_DIR}/schemas/wit/host-a11y.wit"
+    COMMENT "Generating Host-A11Y WIT C Layouts..."
+)
+add_custom_target(host_a11y_wit_schema_gen DEPENDS ${HOST_A11Y_WIT_GENERATED_H} ${HOST_A11Y_WIT_GENERATED_C} ${HOST_A11Y_WIT_GENERATED_MANIFEST})
 
 # Test fixture schema
 add_custom_command(
-    OUTPUT ${TEST_WIT_GENERATED_H} ${TEST_WIT_GENERATED_C}
+    OUTPUT ${TEST_WIT_GENERATED_H} ${TEST_WIT_GENERATED_C} ${TEST_WIT_GENERATED_MANIFEST}
     COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/tests/generated"
     COMMAND wit_codegen --wit "${CMAKE_CURRENT_SOURCE_DIR}/tests/sapling_tests/fixtures/result-test.wit"
-                        --header "${TEST_WIT_GENERATED_H}" --source "${TEST_WIT_GENERATED_C}"
+                        --header "${TEST_WIT_GENERATED_H}" --source "${TEST_WIT_GENERATED_C}" --manifest "${TEST_WIT_GENERATED_MANIFEST}"
     DEPENDS wit_codegen "${CMAKE_CURRENT_SOURCE_DIR}/tests/sapling_tests/fixtures/result-test.wit"
     COMMENT "Generating Test Schema C Layouts from WIT..."
 )
-add_custom_target(test_wit_schema_gen DEPENDS ${TEST_WIT_GENERATED_H} ${TEST_WIT_GENERATED_C})
+add_custom_target(test_wit_schema_gen DEPENDS ${TEST_WIT_GENERATED_H} ${TEST_WIT_GENERATED_C} ${TEST_WIT_GENERATED_MANIFEST})
 
 # Menu Schema
 add_custom_command(
-    OUTPUT ${MENU_WIT_GENERATED_H} ${MENU_WIT_GENERATED_C}
+    OUTPUT ${MENU_WIT_GENERATED_H} ${MENU_WIT_GENERATED_C} ${MENU_WIT_GENERATED_MANIFEST}
     COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
     COMMAND wit_codegen --wit "${CMAKE_CURRENT_SOURCE_DIR}/schemas/wit/menu-schema.wit"
-                        --header "${MENU_WIT_GENERATED_H}" --source "${MENU_WIT_GENERATED_C}"
+                        --header "${MENU_WIT_GENERATED_H}" --source "${MENU_WIT_GENERATED_C}" --manifest "${MENU_WIT_GENERATED_MANIFEST}"
     DEPENDS wit_codegen "${CMAKE_CURRENT_SOURCE_DIR}/schemas/wit/menu-schema.wit"
     COMMENT "Generating Menu Schema C Layouts from WIT..."
 )
-add_custom_target(menu_wit_schema_gen DEPENDS ${MENU_WIT_GENERATED_H} ${MENU_WIT_GENERATED_C})
+add_custom_target(menu_wit_schema_gen DEPENDS ${MENU_WIT_GENERATED_H} ${MENU_WIT_GENERATED_C} ${MENU_WIT_GENERATED_MANIFEST})
 
 # ── Optional dependency resolution ─────────────────────────────────────
 set(CROFT_GLFW_TARGET "")
@@ -539,6 +607,42 @@ croft_register_artifact(croft_wit_host_gpu2d wit
     DEPENDS croft_thatch_core
 )
 
+add_library(croft_wit_host_menu STATIC ${HOST_MENU_WIT_GENERATED_C})
+add_dependencies(croft_wit_host_menu host_menu_wit_schema_gen)
+croft_apply_public_includes(croft_wit_host_menu)
+target_link_libraries(croft_wit_host_menu PUBLIC croft_thatch_core)
+croft_register_artifact(croft_wit_host_menu wit
+    TAGS wit host-menu service xpi
+    DEPENDS croft_thatch_core
+)
+
+add_library(croft_wit_host_clipboard STATIC ${HOST_CLIPBOARD_WIT_GENERATED_C})
+add_dependencies(croft_wit_host_clipboard host_clipboard_wit_schema_gen)
+croft_apply_public_includes(croft_wit_host_clipboard)
+target_link_libraries(croft_wit_host_clipboard PUBLIC croft_thatch_core)
+croft_register_artifact(croft_wit_host_clipboard wit
+    TAGS wit host-clipboard service xpi
+    DEPENDS croft_thatch_core
+)
+
+add_library(croft_wit_host_editor_input STATIC ${HOST_EDITOR_INPUT_WIT_GENERATED_C})
+add_dependencies(croft_wit_host_editor_input host_editor_input_wit_schema_gen)
+croft_apply_public_includes(croft_wit_host_editor_input)
+target_link_libraries(croft_wit_host_editor_input PUBLIC croft_thatch_core)
+croft_register_artifact(croft_wit_host_editor_input wit
+    TAGS wit host-editor-input service xpi editor
+    DEPENDS croft_thatch_core
+)
+
+add_library(croft_wit_host_a11y STATIC ${HOST_A11Y_WIT_GENERATED_C})
+add_dependencies(croft_wit_host_a11y host_a11y_wit_schema_gen)
+croft_apply_public_includes(croft_wit_host_a11y)
+target_link_libraries(croft_wit_host_a11y PUBLIC croft_thatch_core)
+croft_register_artifact(croft_wit_host_a11y wit
+    TAGS wit host-a11y resource-handles service xpi accessibility
+    DEPENDS croft_thatch_core
+)
+
 add_library(croft_wire_runtime STATIC
     src/runner/wire_v0.c
     ${WIT_GENERATED_C}
@@ -777,6 +881,15 @@ croft_register_artifact(croft_wit_host_clock_runtime wit
     DEPENDS croft_host_time croft_wit_host_clock
 )
 
+add_library(croft_wit_host_editor_input_runtime STATIC src/runtime/wit_host_editor_input_runtime.c)
+add_dependencies(croft_wit_host_editor_input_runtime host_editor_input_wit_schema_gen)
+croft_apply_public_includes(croft_wit_host_editor_input_runtime)
+target_link_libraries(croft_wit_host_editor_input_runtime PUBLIC croft_wit_host_editor_input)
+croft_register_artifact(croft_wit_host_editor_input_runtime wit
+    TAGS tier8 wit host-editor-input host-mix-in service editor machine-generated-model
+    DEPENDS croft_wit_host_editor_input
+)
+
 # ── Optional Croft artifacts ───────────────────────────────────────────
 if(CROFT_WASM3_TARGET)
     add_library(croft_wasm_wasm3 STATIC src/host/host_wasm.c)
@@ -855,6 +968,18 @@ if(CROFT_WIT_HOST_WINDOW_UI_TARGET)
         TAGS tier8 wit host-window resource-handles host-mix-in event-queue machine-generated-model
         DEPENDS ${CROFT_WIT_HOST_WINDOW_UI_TARGET} croft_wit_host_window
     )
+
+    add_library(croft_wit_host_clipboard_runtime STATIC src/runtime/wit_host_clipboard_runtime.c)
+    add_dependencies(croft_wit_host_clipboard_runtime host_clipboard_wit_schema_gen)
+    croft_apply_public_includes(croft_wit_host_clipboard_runtime)
+    target_link_libraries(croft_wit_host_clipboard_runtime PUBLIC
+        ${CROFT_WIT_HOST_WINDOW_UI_TARGET}
+        croft_wit_host_clipboard
+    )
+    croft_register_artifact(croft_wit_host_clipboard_runtime wit
+        TAGS tier8 wit host-clipboard host-mix-in service machine-generated-model
+        DEPENDS ${CROFT_WIT_HOST_WINDOW_UI_TARGET} croft_wit_host_clipboard
+    )
 endif()
 
 if(CROFT_GLFW_TARGET AND CROFT_TGFX_TARGET AND CROFT_TGFX_REQUEST_OPENGL)
@@ -871,6 +996,7 @@ if(CROFT_GLFW_TARGET AND CROFT_TGFX_TARGET AND CROFT_TGFX_REQUEST_OPENGL)
 
     add_library(croft_scene_core_tgfx_opengl STATIC
         src/scene/scene_node.c
+        src/scene/scene_a11y_bridge.c
         src/scene/node_viewport.c
         src/scene/node_code_block.c
     )
@@ -916,6 +1042,7 @@ if(APPLE AND CROFT_GLFW_TARGET AND CROFT_TGFX_TARGET AND CROFT_TGFX_REQUEST_META
 
     add_library(croft_scene_core_tgfx_metal STATIC
         src/scene/scene_node.c
+        src/scene/scene_a11y_bridge.c
         src/scene/node_viewport.c
         src/scene/node_code_block.c
     )
@@ -971,6 +1098,7 @@ if(APPLE AND TARGET croft_ui_glfw_metal)
 
     add_library(croft_scene_core_metal_native STATIC
         src/scene/scene_node.c
+        src/scene/scene_a11y_bridge.c
         src/scene/node_viewport.c
         src/scene/node_code_block.c
     )
@@ -1019,6 +1147,21 @@ if(APPLE)
         TAGS tier9 a11y macos native
     )
 
+    if(CROFT_WIT_HOST_WINDOW_UI_TARGET)
+        add_library(croft_wit_host_a11y_runtime STATIC src/runtime/wit_host_a11y_runtime.c)
+        add_dependencies(croft_wit_host_a11y_runtime host_a11y_wit_schema_gen)
+        croft_apply_public_includes(croft_wit_host_a11y_runtime)
+        target_link_libraries(croft_wit_host_a11y_runtime PUBLIC
+            ${CROFT_WIT_HOST_WINDOW_UI_TARGET}
+            croft_a11y_macos
+            croft_wit_host_a11y
+        )
+        croft_register_artifact(croft_wit_host_a11y_runtime wit
+            TAGS tier8 wit host-a11y host-mix-in resource-handles accessibility machine-generated-model
+            DEPENDS ${CROFT_WIT_HOST_WINDOW_UI_TARGET} croft_a11y_macos croft_wit_host_a11y
+        )
+    endif()
+
     add_library(croft_menu_macos STATIC
         ${MENU_WIT_GENERATED_C}
         src/host/mac/host_menu.m
@@ -1029,6 +1172,18 @@ if(APPLE)
     target_link_libraries(croft_menu_macos PUBLIC "-framework AppKit")
     croft_register_artifact(croft_menu_macos menu
         TAGS menu macos native
+    )
+
+    add_library(croft_wit_host_menu_runtime STATIC src/runtime/wit_host_menu_runtime.c)
+    add_dependencies(croft_wit_host_menu_runtime host_menu_wit_schema_gen menu_wit_schema_gen)
+    croft_apply_public_includes(croft_wit_host_menu_runtime)
+    target_link_libraries(croft_wit_host_menu_runtime PUBLIC
+        croft_menu_macos
+        croft_wit_host_menu
+    )
+    croft_register_artifact(croft_wit_host_menu_runtime wit
+        TAGS tier8 wit host-menu host-mix-in service machine-generated-model
+        DEPENDS croft_menu_macos croft_wit_host_menu
     )
 
     if(TARGET croft_ui_glfw_opengl)
@@ -1051,6 +1206,12 @@ if(APPLE)
             TAGS ui gesture macos native metal
             DEPENDS croft_ui_glfw_metal
         )
+    endif()
+
+    if(TARGET croft_wit_host_window_runtime AND TARGET croft_gesture_macos_metal AND CROFT_WIT_HOST_WINDOW_UI_TARGET STREQUAL "croft_ui_glfw_metal")
+        target_link_libraries(croft_wit_host_window_runtime PUBLIC croft_gesture_macos_metal)
+    elseif(TARGET croft_wit_host_window_runtime AND TARGET croft_gesture_macos)
+        target_link_libraries(croft_wit_host_window_runtime PUBLIC croft_gesture_macos)
     endif()
 endif()
 
@@ -1391,13 +1552,34 @@ if(CROFT_EXAMPLE_EDITOR_TARGET)
     endif()
 endif()
 
-if(TARGET croft_scene_text_editor_metal_native AND CROFT_EXAMPLE_GESTURE_TARGET)
+if(TARGET croft_scene_text_editor_metal_native
+        AND TARGET croft_wit_host_window_runtime
+        AND TARGET croft_wit_host_clock_runtime
+        AND TARGET croft_wit_host_menu_runtime
+        AND TARGET croft_wit_host_clipboard_runtime
+        AND TARGET croft_wit_host_editor_input_runtime
+        AND TARGET croft_wit_host_a11y_runtime)
     croft_add_example(example_editor_text_metal_native
-        SOURCES examples/editor_scene_shell.c
-        LINKS croft_scene_text_editor_metal_native croft_a11y_stub croft_editor_document_fs ${CROFT_EXAMPLE_GESTURE_TARGET}
-        REQUIRES croft_scene_text_editor_metal_native croft_a11y_stub croft_editor_document_core croft_editor_document_fs ${CROFT_EXAMPLE_GESTURE_TARGET}
-        TAGS editor text sapling metal native-direct macos
-        FOCUS "Text-editor shell built on the direct-Metal renderer and shared Sapling document layer."
+        SOURCES examples/editor_scene_shell_wit.c
+        LINKS croft_scene_text_editor_metal_native
+              croft_editor_document_fs
+              croft_wit_host_window_runtime
+              croft_wit_host_clock_runtime
+              croft_wit_host_menu_runtime
+              croft_wit_host_clipboard_runtime
+              croft_wit_host_editor_input_runtime
+              croft_wit_host_a11y_runtime
+        REQUIRES croft_scene_text_editor_metal_native
+                 croft_editor_document_core
+                 croft_editor_document_fs
+                 croft_wit_host_window_runtime
+                 croft_wit_host_clock_runtime
+                 croft_wit_host_menu_runtime
+                 croft_wit_host_clipboard_runtime
+                 croft_wit_host_editor_input_runtime
+                 croft_wit_host_a11y_runtime
+        TAGS editor text sapling metal native-direct macos wit xpi host-window host-menu host-clipboard host-editor-input host-a11y
+        FOCUS "Text-editor shell built on the direct-Metal renderer while routing window, menu, clipboard, input, and accessibility through WIT host mix-ins."
     )
 endif()
 
@@ -1455,7 +1637,7 @@ endif()
 if(CROFT_BUILD_TESTS)
     enable_testing()
 
-    add_executable(test_croft tests/test_main.c tests/test_queue.c tests/host_tests/test_fs.c tests/test_editor_text_model.c tests/test_editor_document.c tests/test_editor_commands.c tests/test_wit_resource_codegen.c tests/test_wit_text_runtime.c tests/test_wit_text_program.c tests/test_wit_store_runtime.c tests/test_wit_mailbox_runtime.c tests/test_wit_host_fs_runtime.c tests/test_wit_host_clock_runtime.c)
+    add_executable(test_croft tests/test_main.c tests/test_queue.c tests/host_tests/test_fs.c tests/test_editor_text_model.c tests/test_editor_document.c tests/test_editor_commands.c tests/test_wit_resource_codegen.c tests/test_wit_text_runtime.c tests/test_wit_text_program.c tests/test_wit_store_runtime.c tests/test_wit_mailbox_runtime.c tests/test_wit_host_fs_runtime.c tests/test_wit_host_clock_runtime.c tests/test_wit_host_editor_input_runtime.c)
     target_include_directories(test_croft PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
     target_link_libraries(test_croft
         PRIVATE
@@ -1468,8 +1650,9 @@ if(CROFT_BUILD_TESTS)
             croft_wit_mailbox_runtime
             croft_wit_host_fs_runtime
             croft_wit_host_clock_runtime
+            croft_wit_host_editor_input_runtime
     )
-    add_dependencies(test_croft common_wit_schema_gen host_fs_wit_schema_gen host_clock_wit_schema_gen)
+    add_dependencies(test_croft common_wit_schema_gen host_fs_wit_schema_gen host_clock_wit_schema_gen host_editor_input_wit_schema_gen)
     target_compile_definitions(test_croft PRIVATE
         CROFT_WIT_FS_SAMPLE_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/wit_host_fs_sample.txt"
     )

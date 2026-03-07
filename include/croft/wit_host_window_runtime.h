@@ -16,6 +16,14 @@ croft_wit_host_window_runtime* croft_wit_host_window_runtime_create(void);
 void croft_wit_host_window_runtime_destroy(croft_wit_host_window_runtime* runtime);
 
 /*
+ * Some host adapters need the current native window handle in order to attach
+ * adjacent OS facilities such as accessibility trees. That bridge stays on the
+ * host side; model programs still only observe the WIT window resource.
+ */
+void* croft_wit_host_window_runtime_native_window(croft_wit_host_window_runtime* runtime,
+                                                  SapWitHostWindowResource window);
+
+/*
  * This runtime makes the current singleton/callback GLFW host look like an
  * explicit window resource plus polled event stream. That mismatch is exactly
  * the pressure point we want to model for Lambkin’s later weaving logic.

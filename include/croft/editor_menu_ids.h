@@ -1,0 +1,26 @@
+#ifndef CROFT_EDITOR_MENU_IDS_H
+#define CROFT_EDITOR_MENU_IDS_H
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef enum croft_editor_menu_action_id {
+    CROFT_EDITOR_MENU_APP_ROOT = 1,
+    CROFT_EDITOR_MENU_FILE_ROOT = 10,
+    CROFT_EDITOR_MENU_EDIT_ROOT = 20,
+    CROFT_EDITOR_MENU_SAVE = 101,
+    CROFT_EDITOR_MENU_QUIT = 199,
+    CROFT_EDITOR_MENU_UNDO = 201,
+    CROFT_EDITOR_MENU_REDO = 202,
+    CROFT_EDITOR_MENU_SELECT_ALL = 203,
+    CROFT_EDITOR_MENU_COPY = 204,
+    CROFT_EDITOR_MENU_CUT = 205,
+    CROFT_EDITOR_MENU_PASTE = 206
+} croft_editor_menu_action_id;
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* CROFT_EDITOR_MENU_IDS_H */

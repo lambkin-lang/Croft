@@ -1,6 +1,5 @@
 #include "croft/scene.h"
 #include "croft/host_render.h"
-#include "croft/host_a11y.h"
 #include <stddef.h>
 
 //
@@ -53,10 +52,9 @@ void viewport_node_init(viewport_node *n, float x, float y, float sx, float sy) 
     n->scale = 1.0f;
     
     // Group role doesn't have a specific text label, but acts as a container
-    host_a11y_node_config cfg = {
+    croft_scene_a11y_node_config cfg = {
         .x = x, .y = y, .width = sx, .height = sy,
-        .label = "Viewport Group",
-        .os_specific_mixin = NULL
+        .label = "Viewport Group"
     };
-    n->base.a11y_handle = host_a11y_create_node(ROLE_GROUP, &cfg);
+    n->base.a11y_handle = croft_scene_a11y_create_node(CROFT_SCENE_A11Y_ROLE_GROUP, &cfg);
 }

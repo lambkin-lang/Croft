@@ -128,6 +128,28 @@ int test_editor_document_delete_coalescing_and_redo_invalidation(void) {
     return 0;
 }
 
+int test_editor_document_replace_range_with_utf8(void) {
+    croft_editor_document* document = croft_editor_document_create((const uint8_t*)"abcXYZ", 6u);
+
+    ASSERT_DOCUMENT(document != NULL);
+    ASSERT_DOCUMENT(croft_editor_document_replace_range_with_utf8(
+                        document,
+                        3u,
+                        6u,
+                        (const uint8_t*)" world",
+                        strlen(" world"),
+                        CROFT_EDITOR_EDIT_INSERT) == 0);
+    ASSERT_DOCUMENT(export_matches(document, "abc world"));
+
+    ASSERT_DOCUMENT(croft_editor_document_undo(document) == 0);
+    ASSERT_DOCUMENT(export_matches(document, "abcXYZ"));
+    ASSERT_DOCUMENT(croft_editor_document_redo(document) == 0);
+    ASSERT_DOCUMENT(export_matches(document, "abc world"));
+
+    croft_editor_document_destroy(document);
+    return 0;
+}
+
 int test_editor_document_fs_open_save_roundtrip(void) {
     const char* path = "test_editor_document_fs.txt";
     const char* seed = "seed";

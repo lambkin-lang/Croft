@@ -1,5 +1,6 @@
 #include "croft/host_ui.h"
 #include "croft/host_log.h"
+#include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 
@@ -201,6 +202,51 @@ int32_t host_ui_get_mouse_button(int32_t button) {
 
 uint32_t host_ui_get_modifiers(void) {
     return g_modifier_mask;
+}
+
+int32_t host_ui_set_clipboard_text(const char *utf8, size_t len) {
+    char *copy;
+
+    if (!g_window || !utf8) {
+        return -1;
+    }
+
+    copy = (char*)malloc(len + 1u);
+    if (!copy) {
+        return -1;
+    }
+    memcpy(copy, utf8, len);
+    copy[len] = '\0';
+    glfwSetClipboardString(g_window, copy);
+    free(copy);
+    return 0;
+}
+
+int32_t host_ui_get_clipboard_text(char **out_utf8, size_t *out_len) {
+    const char *value;
+    size_t len;
+    char *copy;
+
+    if (!g_window || !out_utf8 || !out_len) {
+        return -1;
+    }
+
+    value = glfwGetClipboardString(g_window);
+    if (!value) {
+        *out_utf8 = NULL;
+        *out_len = 0u;
+        return 0;
+    }
+
+    len = strlen(value);
+    copy = (char*)malloc(len + 1u);
+    if (!copy) {
+        return -1;
+    }
+    memcpy(copy, value, len + 1u);
+    *out_utf8 = copy;
+    *out_len = len;
+    return 0;
 }
 
 void host_ui_set_user_data(void *data) {

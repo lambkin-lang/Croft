@@ -39,6 +39,10 @@ Croft now emits a set of static libraries and records them in
 available mix-ins for constraint solving and final link selection.
 Croft also records the current example targets in `build/croft-examples.json`
 and `build/croft-example-targets.txt`.
+Generated WIT bindings now also emit rename/trace manifests under
+`build/generated/*.manifest` (and `build/tests/generated/*.manifest` for test
+fixtures) so package-qualified C names can be traced back to the source WIT
+schema.
 
 ### Logged Local Runs
 
@@ -155,6 +159,10 @@ Typical targets include:
 - `croft_wit_host_clock`, `croft_wit_host_clock_runtime`
 - `croft_wit_host_window`, `croft_wit_host_window_runtime`
 - `croft_wit_host_gpu2d`, `croft_wit_host_gpu2d_runtime` (macOS)
+- `croft_wit_host_menu`, `croft_wit_host_menu_runtime` (macOS)
+- `croft_wit_host_clipboard`, `croft_wit_host_clipboard_runtime` (macOS)
+- `croft_wit_host_editor_input`, `croft_wit_host_editor_input_runtime`
+- `croft_wit_host_a11y`, `croft_wit_host_a11y_runtime` (macOS)
 - `croft_wasm_wasm3`
 - `croft_ui_glfw_opengl`, `croft_ui_glfw_metal` (macOS)
 - `croft_render_tgfx_opengl`, `croft_render_tgfx_metal` (macOS)
@@ -234,6 +242,7 @@ For the first host mix-in WIT experiment, compare:
 - `example_wit_clock_now` as the first stateless host service mix-in over `host_time`
 - `example_wit_window_events` as the first WIT window/resource facade over callback-driven `host_ui`
 - `example_wit_gpu_canvas` as the first WIT GPU surface/capability facade over the native direct-Metal host
+- `example_editor_text_metal_native` as the first direct-Metal editor whose host control path runs through WIT mix-ins for window, clock, menu, clipboard, editor input, and accessibility
 
 For shared common-side WIT logic across multiple worlds, compare:
 
@@ -250,6 +259,12 @@ sample are:
 - `example_wit_text_window`: `109,208`
 - `example_wit_text_handles` as the smaller common-core-only baseline
 
+After routing the direct-Metal editor control plane through WIT host mix-ins,
+the current optimized size datapoint for `example_editor_text_metal_native` is
+`148,944`. That is still small enough to support the product-family thesis, but
+it also makes the cost of those explicit host seams measurable instead of
+hidden inside one ad hoc shell.
+
 For editor-family experiments on macOS, Croft currently compares:
 
 - the tgfx/Metal scene editor (`example_editor_text`)
@@ -257,6 +272,8 @@ For editor-family experiments on macOS, Croft currently compares:
 - the direct-Metal scene editor (`example_editor_text_metal_native`)
 
 The `tools/benchmark_editor_families.sh` helper automates that comparison.
+The direct-Metal family now routes window/menu/clipboard/input/accessibility
+through WIT-facing runtimes while leaving rendering direct for now.
 
 Build specific artifacts directly when needed:
 

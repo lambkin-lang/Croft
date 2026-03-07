@@ -1,0 +1,81 @@
+package lambkin:host-a11y@0.1.0;
+
+interface types {
+  resource node;
+
+  enum error {
+    invalid-handle,
+    unavailable,
+    busy,
+    internal,
+  }
+
+  enum role {
+    unknown,
+    window,
+    group,
+    text,
+    button,
+  }
+
+  record open {}
+
+  record close {}
+
+  record bounds {
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+  }
+
+  record create-node {
+    role: role,
+    bounds: bounds,
+    has-label: bool,
+    label: list<u8>,
+  }
+
+  record add-child {
+    has-parent: bool,
+    parent: node,
+    child: node,
+  }
+
+  record update-frame {
+    node: node,
+    bounds: bounds,
+  }
+
+  record destroy-node {
+    node: node,
+  }
+
+  variant node-result {
+    ok(node),
+    err(error),
+  }
+
+  variant status {
+    ok,
+    err(error),
+  }
+
+  variant command {
+    open(open),
+    close(close),
+    create-node(create-node),
+    add-child(add-child),
+    update-frame(update-frame),
+    destroy-node(destroy-node),
+  }
+
+  variant reply {
+    node(node-result),
+    status(status),
+  }
+}
+
+world host-a11y {
+  export types;
+}

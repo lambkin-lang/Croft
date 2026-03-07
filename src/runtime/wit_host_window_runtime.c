@@ -1,6 +1,9 @@
 #include "croft/wit_host_window_runtime.h"
 
 #include "croft/host_ui.h"
+#if defined(__APPLE__)
+#include "croft/host_gesture.h"
+#endif
 
 #include <stdlib.h>
 #include <string.h>
@@ -163,6 +166,11 @@ static void croft_wit_host_window_event_cb(int32_t event_type, int32_t arg0, int
             event.val.char_event.codepoint = (uint32_t)arg0;
             croft_wit_host_window_enqueue(&event);
             break;
+        case CROFT_UI_EVENT_ZOOM_GESTURE:
+            event.case_tag = SAP_WIT_HOST_WINDOW_EVENT_ZOOM;
+            event.val.zoom.delta_micros = arg0;
+            croft_wit_host_window_enqueue(&event);
+            break;
         default:
             break;
     }
@@ -194,6 +202,16 @@ void croft_wit_host_window_runtime_destroy(croft_wit_host_window_runtime* runtim
     }
 
     free(runtime);
+}
+
+void* croft_wit_host_window_runtime_native_window(croft_wit_host_window_runtime* runtime,
+                                                  SapWitHostWindowResource window)
+{
+    if (!croft_wit_host_window_valid(runtime, window)) {
+        return NULL;
+    }
+
+    return host_ui_get_native_window();
 }
 
 static int32_t croft_wit_host_window_dispatch_open(croft_wit_host_window_runtime* runtime,
@@ -233,6 +251,9 @@ static int32_t croft_wit_host_window_dispatch_open(croft_wit_host_window_runtime
     runtime->event_count = 0u;
     g_window_runtime = runtime;
     host_ui_set_event_callback(croft_wit_host_window_event_cb);
+#if defined(__APPLE__)
+    host_gesture_mac_init(host_ui_get_native_window(), (void*)croft_wit_host_window_event_cb);
+#endif
     croft_wit_host_window_reply_window_ok(reply_out, (SapWitHostWindowResource)1u);
     return 0;
 }

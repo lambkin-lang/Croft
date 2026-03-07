@@ -71,6 +71,8 @@ double host_ui_get_time(void);
 void host_ui_get_mouse_pos(double *x, double *y);
 int32_t host_ui_get_mouse_button(int32_t button);
 uint32_t host_ui_get_modifiers(void);
+int32_t host_ui_set_clipboard_text(const char *utf8, size_t len);
+int32_t host_ui_get_clipboard_text(char **out_utf8, size_t *out_len);
 void host_ui_set_user_data(void *data);
 void *host_ui_get_user_data(void);
 
@@ -88,6 +90,12 @@ void host_ui_swap_buffers(void);
  * Registers a global callback for UI events.
  */
 void host_ui_set_event_callback(host_ui_event_cb_t cb);
+
+/**
+ * Gets the underlying GLFW window object when the caller is operating inside a
+ * host adapter layer. Model programs should never see this.
+ */
+void* host_ui_get_window(void);
 
 /**
  * Gets the OS-specific native window handle (e.g., NSWindow* on macOS).

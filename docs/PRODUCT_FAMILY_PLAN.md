@@ -198,6 +198,13 @@ Current status:
 - The next host mix-in WIT package now exists in `schemas/wit/host-gpu2d.wit`,
   exercised by `example_wit_gpu_canvas` as a direct-Metal surface boundary that
   keeps capability queries separate from resource lifetime.
+- Richer host mix-in WIT packages now exist in `schemas/wit/host-menu.wit`,
+  `schemas/wit/host-clipboard.wit`, `schemas/wit/host-editor-input.wit`, and
+  `schemas/wit/host-a11y.wit`.
+- The direct-Metal editor host control path now uses those runtimes through
+  `example_editor_text_metal_native`, which keeps rendering direct while moving
+  window, clock, menu, clipboard, input, and accessibility toward the same
+  WIT-facing boundary model as the smaller samples.
 - `croft_wit_text_program` now proves that the same common-side WIT text logic
   can survive `example_wit_text_cli`, `example_wit_text_wasm_host`, and
   `example_wit_text_window`, instead of being trapped in one sample shape.
@@ -209,9 +216,12 @@ Current status:
   the WIT package tail (`HostFsFsCommand` -> `HostFsCommand`,
   `ResultTestTestResultCarrier` -> `ResultTestResultCarrier`) while preserving
   package provenance in the generated names and comments.
-- The remaining naming cleanup question is narrower now: how aggressively
-  should exact-tail items such as the `window` resource invalid-handle macro be
-  normalized before traceability starts to suffer.
+- `tools/wit_codegen.c` now also emits rename/trace manifests for every schema
+  generation target and normalizes exact-tail helper macros such as
+  `SAP_WIT_HOST_WINDOW_RESOURCE_INVALID`.
+- The remaining naming cleanup question is narrower now: how much further
+  should exact-tail helper names be normalized before traceability starts to
+  suffer?
 
 ## World Plan
 
@@ -323,18 +333,87 @@ These should remain clearly on the host side:
 - reject changes that pull host/platform dependencies into common-core targets
   without an explicit boundary split
 
+## Current Assessment
+
+The main architectural thesis is now supported by the repository rather than
+only described by it.
+
+- The common-side versus host-side split is materially present in the build
+  graph (`sapling_core`, host service artifacts, runner/WASI splits, and the
+  editor document split).
+- The WIT barrier is no longer hypothetical. There are now common-side
+  resource worlds plus host mix-ins for `fs`, `clock`, `window`, `gpu2d`,
+  `menu`, `clipboard`, `editor-input`, and `a11y`.
+- The same common-side text logic now survives three distinct world shapes:
+  CLI, host-Wasm, and native window/GPU.
+- The macOS rendering experiments now support a clear conclusion: large Metal
+  binaries came from the current `tgfx` Metal architecture, not from native
+  Metal itself.
+- The direct-Metal editor now makes the control-plane boundary explicit by
+  routing window/menu/clipboard/input/accessibility through WIT-facing
+  runtimes while leaving rendering direct.
+
+That is the right kind of evidence for Lambkin. The repository is now proving
+that common logic can stay stable while host families diverge sharply in size,
+implementation shape, and coupling.
+
+## Near-Term Priorities
+
+The next implementation passes should stay focused on the host-boundary and
+editor-boundary pressure points instead of broadening the system indiscriminately.
+
+1. Push the newer menu/accessibility/clipboard/editor-input mix-ins through
+   more than one family so they stop being editor-only experiments.
+2. Move more of the direct-Metal/editor path onto WIT-facing boundaries while
+   keeping rendering itself intentionally direct for now.
+3. Extend the "same logic, different world" proof style with more paired
+   samples rather than isolated demos.
+4. Refine `tools/wit_codegen.c` around remaining exact-tail helper naming and
+   how much rename metadata Lambkin should consume directly.
+
+## Long-Term Direction
+
+Croft should continue moving toward a smaller, sharper role:
+
+- Croft is a graph of runtime artifacts plus generated WIT-facing shims.
+- Lambkin owns the higher-order selection, weaving, and crosscutting policy
+  problem.
+- XPIs/aspect libraries should form around recurring seams such as resource
+  lifetime, transaction policy, mailbox/scheduler behavior, callback-to-poll
+  bridging, presentation mapping, editor interaction, and platform-collapse
+  policies.
+
+The main long-term risk is not under-capability. It is drifting back toward
+convenience abstractions that flatten meaningful family differences too early.
+
+## Horizon Planning
+
+The following items need explicit planning even if they are not immediate
+implementation tasks:
+
+- a more explicit world catalog with durable naming and scope
+- a serious WIT-facing editor family for menu/input/accessibility/clipboard
+- a decision about which host capabilities should remain reusable mix-ins
+  versus which should stay family-specific or collapsed
+- a separate web-side Croft-shaped runtime effort for worker/browser hosts
+- performance benchmarking alongside size benchmarking for the main family
+  comparisons
+
 ## Immediate Next Tasks
 
 The next concrete implementation work should happen in this order:
 
-1. Define richer host mix-in WIT packages for menu/accessibility/editor input
-   without letting them bleed back into `common-core`.
-2. Move more of the direct-Metal/editor host interaction onto WIT-facing
-   boundaries so the current editor families stop depending on ad hoc host
-   calls where a future Lambkin world would expect mix-ins.
-3. Refine `tools/wit_codegen.c` further around exact-tail resources, emitted
-   rename manifests, and other remaining traceability-vs-normalization choices.
-4. Read `docs/LAMBKIN_XPI_JOURNAL.md` before expanding host/editor surface area
+1. Reuse the new menu/accessibility/clipboard/editor-input mix-ins in more
+   than the direct-Metal editor so the world-family comparison stays honest.
+2. Decide which remaining editor host seams should stay collapsed for the
+   direct-Metal family versus which should be forced through WIT now.
+3. Keep `tgfx` Metal as a comparison control while pushing the native
+   direct-Metal/editor path forward as the likely small-binary reference path.
+4. Refine `tools/wit_codegen.c` further around remaining exact-tail helpers
+   and how rename/trace manifests should feed Lambkin.
+5. Add runtime-performance comparisons next to the current size comparisons
+   for the main family samples.
+6. Read `docs/LAMBKIN_XPI_JOURNAL.md` before expanding host/editor surface area
    so the current join-point questions remain explicit.
 
 ## Resume Checklist For Future Sessions

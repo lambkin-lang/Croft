@@ -3,7 +3,6 @@
 #include "croft/editor_document.h"
 #include "croft/host_ui.h"
 #include "croft/host_render.h"
-#include "croft/host_a11y.h"
 #include <sapling/txn.h>
 #include <sapling/text.h>
 #include <stdlib.h>
@@ -166,6 +165,33 @@ static void text_editor_break_coalescing(text_editor_node* te) {
     if (te && te->document) {
         croft_editor_document_break_coalescing(te->document);
     }
+}
+
+static int text_editor_utf8_codepoint_count(const uint8_t* utf8,
+                                            size_t utf8_len,
+                                            uint32_t* count_out) {
+    size_t off = 0u;
+    uint32_t count = 0u;
+
+    if (!count_out) {
+        return -1;
+    }
+
+    while (utf8 && off < utf8_len) {
+        unsigned char ch = utf8[off];
+        if ((ch & 0x80u) == 0u) off += 1u;
+        else if ((ch & 0xE0u) == 0xC0u) off += 2u;
+        else if ((ch & 0xF0u) == 0xE0u) off += 3u;
+        else if ((ch & 0xF8u) == 0xF0u) off += 4u;
+        else return -1;
+        if (off > utf8_len) {
+            return -1;
+        }
+        count++;
+    }
+
+    *count_out = count;
+    return 0;
 }
 
 static void text_editor_draw(scene_node *n, render_ctx *rc) {
@@ -353,7 +379,6 @@ static void text_editor_char_event(scene_node *n, uint32_t codepoint) {
 
 static void text_editor_key_event(scene_node *n, int key, int action) {
     text_editor_node *te = (text_editor_node *)n;
-    uint32_t modifiers;
     int command_mode;
     int selecting;
     int word_part_mode;
@@ -363,13 +388,12 @@ static void text_editor_key_event(scene_node *n, int key, int action) {
         return;
     }
 
-    modifiers = host_ui_get_modifiers();
-    command_mode = (modifiers & (CROFT_UI_MOD_SUPER | CROFT_UI_MOD_CONTROL)) != 0u;
-    selecting = (modifiers & CROFT_UI_MOD_SHIFT) != 0u;
-    word_part_mode = (modifiers & CROFT_UI_MOD_ALT) != 0u
-        && (modifiers & CROFT_UI_MOD_CONTROL) != 0u;
+    command_mode = (te->modifiers & (CROFT_UI_MOD_SUPER | CROFT_UI_MOD_CONTROL)) != 0u;
+    selecting = (te->modifiers & CROFT_UI_MOD_SHIFT) != 0u;
+    word_part_mode = (te->modifiers & CROFT_UI_MOD_ALT) != 0u
+        && (te->modifiers & CROFT_UI_MOD_CONTROL) != 0u;
     word_mode = !word_part_mode
-        && (modifiers & (CROFT_UI_MOD_ALT | CROFT_UI_MOD_CONTROL)) != 0u;
+        && (te->modifiers & (CROFT_UI_MOD_ALT | CROFT_UI_MOD_CONTROL)) != 0u;
 
     if (te->document && command_mode) {
         if (key == CROFT_KEY_Z) {
@@ -561,6 +585,7 @@ void text_editor_node_init(text_editor_node *n, struct SapEnv *env, float x, flo
     n->sel_start = 0;
     n->sel_end = 0;
     n->preferred_column = 0;
+    n->modifiers = 0u;
     n->is_selecting = 0;
     croft_editor_text_model_init(&n->text_model);
     n->selection = croft_editor_selection_create(
@@ -570,12 +595,11 @@ void text_editor_node_init(text_editor_node *n, struct SapEnv *env, float x, flo
     
     text_editor_sync_cache(n);
     
-    host_a11y_node_config cfg = {
+    croft_scene_a11y_node_config cfg = {
         .x = x, .y = y, .width = sx, .height = sy,
-        .label = "Code Editor",
-        .os_specific_mixin = NULL
+        .label = "Code Editor"
     };
-    n->base.a11y_handle = host_a11y_create_node(ROLE_TEXT, &cfg); // Standard text for now until ROLE_TEXT_AREA map
+    n->base.a11y_handle = croft_scene_a11y_create_node(CROFT_SCENE_A11Y_ROLE_TEXT, &cfg);
 }
 
 void text_editor_node_bind_document(text_editor_node *n, struct croft_editor_document *document) {
@@ -594,9 +618,146 @@ void text_editor_node_set_text(text_editor_node *n, struct Text *text_tree) {
     text_editor_sync_cache(n);
 }
 
+void text_editor_node_set_modifiers(text_editor_node *n, uint32_t modifiers) {
+    if (!n) {
+        return;
+    }
+    n->modifiers = modifiers;
+}
+
+void text_editor_node_select_all(text_editor_node *n) {
+    if (!n) {
+        return;
+    }
+    text_editor_set_selection(n,
+                              0u,
+                              croft_editor_text_model_codepoint_length(&n->text_model),
+                              1);
+}
+
+int32_t text_editor_node_copy_selection_utf8(text_editor_node *n, char **out_utf8, size_t *out_len) {
+    uint32_t selection_min = 0;
+    uint32_t selection_max = 0;
+    uint32_t start_byte;
+    uint32_t end_byte;
+    size_t len;
+    char *copy;
+
+    if (!n || !out_utf8 || !out_len) {
+        return -1;
+    }
+
+    text_editor_selection_bounds(n, &selection_min, &selection_max);
+    start_byte = croft_editor_text_model_byte_offset_at(&n->text_model, selection_min);
+    end_byte = croft_editor_text_model_byte_offset_at(&n->text_model, selection_max);
+    len = (size_t)(end_byte - start_byte);
+    copy = (char*)malloc(len + 1u);
+    if (!copy) {
+        return -1;
+    }
+    if (len > 0u) {
+        memcpy(copy, n->text_model.utf8 + start_byte, len);
+    }
+    copy[len] = '\0';
+    *out_utf8 = copy;
+    *out_len = len;
+    return 0;
+}
+
+int32_t text_editor_node_replace_selection_utf8(text_editor_node *n,
+                                                const uint8_t *utf8,
+                                                size_t utf8_len) {
+    uint32_t selection_min = 0;
+    uint32_t selection_max = 0;
+    uint32_t inserted_count = 0u;
+
+    if (!n || !n->document) {
+        return -1;
+    }
+
+    text_editor_selection_bounds(n, &selection_min, &selection_max);
+    if (croft_editor_document_replace_range_with_utf8(n->document,
+                                                      selection_min,
+                                                      selection_max,
+                                                      utf8,
+                                                      utf8_len,
+                                                      CROFT_EDITOR_EDIT_INSERT) != 0) {
+        return -1;
+    }
+    if (text_editor_utf8_codepoint_count(utf8, utf8_len, &inserted_count) != 0) {
+        return -1;
+    }
+
+    text_editor_collapse_selection(n, selection_min + (uint32_t)inserted_count, 0);
+    text_editor_sync_cache(n);
+    return 0;
+}
+
+int32_t text_editor_node_delete_selection(text_editor_node *n, int backward) {
+    uint32_t selection_min = 0;
+    uint32_t selection_max = 0;
+
+    if (!n) {
+        return -1;
+    }
+
+    text_editor_selection_bounds(n, &selection_min, &selection_max);
+    if (selection_min == selection_max) {
+        return 0;
+    }
+
+    if (n->document) {
+        if (croft_editor_document_delete_range(n->document,
+                                               selection_min,
+                                               selection_max,
+                                               backward
+                                                   ? CROFT_EDITOR_EDIT_DELETE_BACKWARD
+                                                   : CROFT_EDITOR_EDIT_DELETE_FORWARD) != 0) {
+            return -1;
+        }
+    } else {
+        SapTxnCtx *txn = sap_txn_begin(n->env, NULL, 0);
+        if (!txn) {
+            return -1;
+        }
+        text_editor_delete_range(txn, n, selection_min, selection_max);
+        sap_txn_commit(txn);
+    }
+
+    text_editor_collapse_selection(n, selection_min, 0);
+    text_editor_sync_cache(n);
+    return 0;
+}
+
+int32_t text_editor_node_undo(text_editor_node *n) {
+    if (!n || !n->document) {
+        return -1;
+    }
+    if (croft_editor_document_undo(n->document) != 0) {
+        return -1;
+    }
+    text_editor_sync_cache(n);
+    return 0;
+}
+
+int32_t text_editor_node_redo(text_editor_node *n) {
+    if (!n || !n->document) {
+        return -1;
+    }
+    if (croft_editor_document_redo(n->document) != 0) {
+        return -1;
+    }
+    text_editor_sync_cache(n);
+    return 0;
+}
+
 void text_editor_node_dispose(text_editor_node *n) {
     if (!n) {
         return;
+    }
+    if (n->base.a11y_handle) {
+        croft_scene_a11y_destroy_node(n->base.a11y_handle);
+        n->base.a11y_handle = (croft_scene_a11y_handle)0u;
     }
     croft_editor_text_model_dispose(&n->text_model);
     n->utf8_cache = NULL;
@@ -604,4 +765,5 @@ void text_editor_node_dispose(text_editor_node *n) {
     n->sel_start = 0;
     n->sel_end = 0;
     n->preferred_column = 0;
+    n->modifiers = 0u;
 }

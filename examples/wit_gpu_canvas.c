@@ -88,7 +88,7 @@ int main(void)
     croft_wit_host_window_runtime* window_runtime = NULL;
     croft_wit_host_gpu2d_runtime* gpu_runtime = NULL;
     croft_wit_host_clock_runtime* clock_runtime = NULL;
-    SapWitHostWindowResource window = SAP_WIT_HOST_WINDOW_WINDOW_RESOURCE_INVALID;
+    SapWitHostWindowResource window = SAP_WIT_HOST_WINDOW_RESOURCE_INVALID;
     SapWitHostGpu2dSurfaceResource surface = SAP_WIT_HOST_GPU2D_SURFACE_RESOURCE_INVALID;
     SapWitHostWindowCommand window_cmd = {0};
     SapWitHostWindowReply window_reply = {0};
@@ -304,7 +304,7 @@ int main(void)
 
     window_cmd.case_tag = SAP_WIT_HOST_WINDOW_COMMAND_CLOSE;
     window_cmd.val.close.window = window;
-    if (window != SAP_WIT_HOST_WINDOW_WINDOW_RESOURCE_INVALID) {
+    if (window != SAP_WIT_HOST_WINDOW_RESOURCE_INVALID) {
         croft_wit_host_window_runtime_dispatch(window_runtime, &window_cmd, &window_reply);
     }
 

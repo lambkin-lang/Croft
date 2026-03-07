@@ -45,7 +45,7 @@ cmake --build build --target croft_examples
 | `example_zoom_canvas` | Gesture-assisted infinite canvas demo | active `croft_scene_core_tgfx_*` variant, gesture backend |
 | `example_editor_text` | Text-editor shell over Sapling, scene, and host IO | active `croft_scene_text_editor_tgfx_*` variant, `croft_editor_document_core`, `croft_editor_document_fs`, gesture backend |
 | `example_editor_text_appkit` | Native AppKit/TextKit editor over the same Sapling-backed document layer | `croft_editor_appkit`, `croft_editor_document_core`, `croft_editor_document_fs` |
-| `example_editor_text_metal_native` | Scene-based text editor on the direct-Metal renderer with no tgfx dependency | `croft_scene_text_editor_metal_native`, `croft_editor_document_core`, `croft_editor_document_fs`, gesture backend |
+| `example_editor_text_metal_native` | Scene-based text editor on the direct-Metal renderer with no tgfx dependency and a WIT-routed host control path | `croft_scene_text_editor_metal_native`, `croft_editor_document_core`, `croft_editor_document_fs`, `croft_wit_host_window_runtime`, `croft_wit_host_clock_runtime`, `croft_wit_host_menu_runtime`, `croft_wit_host_clipboard_runtime`, `croft_wit_host_editor_input_runtime`, `croft_wit_host_a11y_runtime` |
 | `example_a11y_tree` | Native accessibility handles for scene nodes on macOS | scene target, `croft_a11y_macos` |
 | `example_audio_tone` | Host audio playback via miniaudio | `croft_audio_miniaudio` |
 
@@ -86,6 +86,10 @@ Notes:
 - `example_wit_text_window` is the first proof that the same common-side WIT
   text logic can survive both a CLI-shaped host and a native window/GPU host
   without re-exposing raw Sapling pointers or host objects.
+- `example_editor_text_metal_native` now pushes the direct-Metal editor further
+  along the same path: rendering remains direct, but windowing, clock/menu
+  policy, clipboard exchange, editor command normalization, and accessibility
+  now cross WIT-facing host runtimes instead of ad hoc host calls.
 - Current optimized size datapoints on this machine for the shared-logic WIT
   family are: `example_wit_text_cli` `53,416`,
   `example_wit_text_wasm_host` `123,288`,
@@ -103,8 +107,13 @@ Notes:
   Sapling and file IO, but delegates layout, selection, and text rendering to
   AppKit/TextKit instead of Croft scene nodes.
 - `example_editor_text_metal_native` is the third editor family. It keeps the
-  Croft scene/input model, but swaps out tgfx for the direct-Metal renderer and
-  its cached text-quads path.
+  Croft scene/input model, swaps out tgfx for the direct-Metal renderer and
+  its cached text-quads path, and now routes its control-plane host seams
+  through WIT mix-ins.
+- The current optimized size datapoint for that WIT-routed direct-Metal editor
+  shell is `148,944`. That is larger than the earlier ad hoc direct-Metal
+  editor shell, which is useful evidence: explicit host seams have measurable
+  cost, but they are still far cheaper than the tgfx/Metal editor family.
 - The render backend comparison is currently done with separate build
   directories. Croft's current in-tree tgfx integration supports one GPU
   backend variant per configure, selected by `TGFX_USE_OPENGL` or

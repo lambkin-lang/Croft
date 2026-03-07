@@ -51,6 +51,18 @@ renderer baseline than to the tgfx/Metal editor. That indicates the dominant
 size cost in the tgfx editor path is still the tgfx Metal renderer stack, not
 the editor/document logic.
 
+Follow-up after routing the direct-Metal editor control path through WIT-facing
+host mix-ins for window, clock, menu, clipboard, editor input, and
+accessibility:
+
+- `example_editor_text_metal_native`: `148,944` bytes
+
+That adds about `38 KB` over the earlier ad hoc direct-Metal shell. The cost is
+real, but it is still small enough to keep the direct-Metal family near the
+small-binary end of the spectrum. More importantly, the extra size now buys
+explicit host seams that Lambkin can reason about instead of one collapsed
+editor shell.
+
 ## What This Shows
 
 - Sapling text storage and file IO do not force a multi-megabyte editor.
@@ -64,6 +76,10 @@ the editor/document logic.
   making hidden host services explicit: AppKit currently gives IME,
   accessibility, and undo-manager behavior "for free", while the direct-Metal
   path keeps those as visible join-points we still need to model.
+- The direct-Metal editor is now a better research probe than before because
+  the control plane is no longer mostly ad hoc. The remaining collapsed portion
+  is rendering itself, which is exactly where the current family is supposed to
+  stay opinionated.
 
 ## Next Step
 

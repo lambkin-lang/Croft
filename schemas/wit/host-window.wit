@@ -67,12 +67,17 @@ interface types {
     codepoint: u32,
   }
 
+  record window-zoom-event {
+    delta-micros: s32,
+  }
+
   variant window-event {
     key(window-key-event),
     mouse(window-mouse-event),
     scroll(window-scroll-event),
     cursor(window-cursor-event),
     char-event(window-char-event),
+    zoom(window-zoom-event),
   }
 
   variant window-op-result {

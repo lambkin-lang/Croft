@@ -38,6 +38,13 @@ int32_t croft_editor_document_replace_range_with_codepoint(
     uint32_t codepoint,
     croft_editor_document_edit_kind edit_kind);
 
+int32_t croft_editor_document_replace_range_with_utf8(croft_editor_document* document,
+                                                      size_t start_offset,
+                                                      size_t end_offset,
+                                                      const uint8_t* utf8,
+                                                      size_t utf8_len,
+                                                      croft_editor_document_edit_kind edit_kind);
+
 int32_t croft_editor_document_delete_range(croft_editor_document* document,
                                            size_t start_offset,
                                            size_t end_offset,

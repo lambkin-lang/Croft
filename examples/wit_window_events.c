@@ -47,7 +47,7 @@ int main(void)
     SapWitHostWindowReply window_reply = {0};
     SapWitHostClockCommand clock_cmd = {0};
     SapWitHostClockReply clock_reply = {0};
-    SapWitHostWindowResource window = SAP_WIT_HOST_WINDOW_WINDOW_RESOURCE_INVALID;
+    SapWitHostWindowResource window = SAP_WIT_HOST_WINDOW_RESOURCE_INVALID;
     uint64_t start_ms = 0u;
     uint64_t now_ms = 0u;
     uint32_t width = 0u;

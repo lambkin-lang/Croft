@@ -1,6 +1,7 @@
 #include "croft/host_ui.h"
 #include "croft/host_a11y.h"
 #include "croft/scene.h"
+#include <stdint.h>
 #include <stdio.h>
 
 // A simple recursive printer to dump the logical a11y tree via standard API introspection (where possible).
@@ -14,7 +15,7 @@ static void print_a11y_topology(scene_node *node, int depth) {
     // Prove the handle exists
     if (node->a11y_handle) {
         printf("- Valid OS A11Y Handle [%p] (local frame: %.1f, %.1f: %.1fx%.1f)\n", 
-               node->a11y_handle, node->x, node->y, node->sx, node->sy);
+               (void*)(uintptr_t)node->a11y_handle, node->x, node->y, node->sx, node->sy);
     } else {
         printf("- NULL Handle\n");
     }
@@ -52,7 +53,7 @@ int main(void) {
     viewport_node_init(&root_vp, 0, 0, 800, 600);
     
     // Note: The top-level element hooks directly into the OS window
-    host_a11y_add_child(NULL, root_vp.base.a11y_handle);
+    host_a11y_add_child(NULL, (void*)(uintptr_t)root_vp.base.a11y_handle);
     
     viewport_node left_col;
     viewport_node_init(&left_col, 0, 0, 400, 600);

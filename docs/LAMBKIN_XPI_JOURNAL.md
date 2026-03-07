@@ -5,6 +5,110 @@ its aspect libraries are still co-evolving. These notes are not intended to
 freeze the design; they are meant to preserve the useful pressure points,
 surprises, and open questions that surfaced while forcing the ideas into code.
 
+## March 6, 2026: Current Assessment After The First Real World Family Pass
+
+The repository now supports several conclusions strongly enough that they
+should guide future work.
+
+### What Has Been Proven
+
+- The common-side versus host-side split is no longer aspirational. The build
+  graph now reflects it directly.
+- The WIT barrier is alive on both sides of the boundary: common resources and
+  host mix-ins are both being exercised by model programs.
+- The same common-side text logic now survives three world shapes:
+  CLI, host-Wasm, and native window/GPU.
+- The direct-Metal path demonstrated that small native GPU binaries are
+  possible on macOS without inheriting the full `tgfx` Metal payload.
+
+The most useful point here is not that the APIs are elegant. They are not meant
+to be. The point is that the repository now contains convincing generated-style
+evidence that Lambkin can hold common logic stable while swapping out host
+families and platform couplings.
+
+### What Was Learned
+
+- `tgfx` Metal should be treated as a comparison control, not the likely
+  destination for the small-binary path.
+- The direct-Metal editor is valuable precisely because it does *not* hide the
+  hard seams AppKit hides for free.
+- Host-Wasm is now informative as a family member in its own right. For the
+  current tiny sample, the `wasm3` interpreter bridge costs more than the
+  native direct-Metal window/GPU mix-ins.
+- The biggest current risk is premature convenience abstraction: it would be
+  easy to erase the differences that Lambkin needs to reason about.
+
+### What Should Happen Next
+
+- Push menu, accessibility, clipboard, and richer editor input through WIT
+  host mix-ins.
+- Move more of the direct-Metal/editor path off direct host calls and onto
+  mix-in boundaries.
+- Keep using "same logic, different world" samples as the main proof style.
+- Add runtime-performance benchmarking alongside size benchmarking for the main
+  family comparisons.
+
+## March 6, 2026: Richer Host Mix-Ins, WIT-Routed Direct-Metal Editor, And Codegen Manifests
+
+This pass pushed the host-side WIT work from small samples into the first
+serious editor-shaped family member.
+
+### What Was Added
+
+- New host mix-in packages now exist for `menu`, `clipboard`,
+  `editor-input`, and `a11y`.
+- `example_editor_text_metal_native` now routes its host control plane through
+  WIT-facing runtimes for window, clock, menu, clipboard, normalized editor
+  input, and accessibility.
+- `tools/wit_codegen.c` now emits rename/trace manifests per schema and
+  normalizes exact-tail helper macros such as the `window` invalid-resource
+  macro instead of preserving a visibly stuttered form.
+
+### What This Clarified
+
+- The direct-Metal editor no longer hides most of its host policy in one local
+  shell. Rendering is still direct, but the control path is now explicit
+  enough to study as a family boundary.
+- Callback-to-queue normalization is now obviously one of the main XPIs in the
+  system. `host-window` and `host-editor-input` are not just wrappers; they
+  are policy surfaces for event ordering, shortcut translation, and the split
+  between raw device signals and editor intent.
+- Accessibility is not just a host service and not just a resource family. It
+  also needs a bridge layer because scene nodes and host accessibility objects
+  do not share one ownership model.
+- The code generator is now responsible for enough architectural hygiene that
+  its output should be treated as part of the substrate, not as a disposable
+  convenience tool.
+
+### New Cost Signal
+
+The optimized direct-Metal editor datapoint moved from roughly `110 KB` to
+`148,944` bytes after routing the control plane through WIT-facing runtimes.
+
+That increase is useful evidence, not a failure:
+
+- explicit host seams are not free
+- they are still much cheaper than the tgfx/Metal editor family
+- Lambkin will eventually need this kind of tradeoff data to decide when a
+  reusable mix-in world is worth its extra machinery versus when a collapsed
+  native world is the better fit
+
+### Updated Questions
+
+1. Which editor-facing host seams should be standardized as reusable mix-ins
+   now: menu, clipboard, accessibility, command/input normalization, IME,
+   selection affinity, find/replace, drag-and-drop?
+2. Which of those should remain deliberately collapsed for the direct-Metal
+   family so the small-binary path does not inherit infrastructure too early?
+3. Should render commands themselves eventually cross WIT, or should the
+   direct-Metal family stay collapsed there while Lambkin reasons about higher
+   control-plane seams?
+4. How should the new rename/trace manifests feed Lambkin: debugging aid only,
+   or actual solver/codegen metadata?
+5. When an interface like editor input is really an intent-normalization layer,
+   should Lambkin model that as reusable generated code, reusable runtime
+   advice, or family-specific XPI libraries?
+
 ## March 6, 2026: First Honest Common-Core Split
 
 This pass made two boundary claims true in code instead of only in prose:
@@ -75,10 +179,13 @@ That pressure point is now mostly resolved in code:
   `HostClockClockReply` -> `HostClockReply`,
   `HostWindowWindowCommand` -> `HostWindowCommand`,
   `ResultTestTestResultCarrier` -> `ResultTestResultCarrier`)
+- exact-tail helper names are now normalized too
+  (`SAP_WIT_HOST_WINDOW_WINDOW_RESOURCE_INVALID` ->
+  `SAP_WIT_HOST_WINDOW_RESOURCE_INVALID`) and recorded in the generated
+  rename/trace manifests
 - the remaining question is narrower and more interesting:
-  when an item name exactly matches the package tail, should generated helper
-  macros keep the repeated stem for traceability (`HOST_WINDOW_WINDOW_RESOURCE`)
-  or should Lambkin/codegen normalize those too?
+  how much further should helper-name normalization go before it starts hiding
+  package provenance that Lambkin may want to observe directly?
 
 ### 2. Resource Handles Are the First Honest XPI Boundary
 
@@ -428,18 +535,31 @@ solves them.
 13. When a native host is callback-driven but the target world wants polling,
     should the bridge live in generated code, runtime advice, or a reusable XPI
     library?
+14. Which editor host concerns should be standardized as reusable mix-ins
+    (`clipboard`, `menu`, `accessibility`, `input-method`) versus kept as
+    family-specific collapsed integrations?
+15. At what point should Lambkin deliberately choose a collapsed native world
+    over a reusable mix-in world, even when that reduces portability?
+16. How should performance benchmarking and responsiveness join the existing
+    size-based decision process for world selection?
 
 ## Near-Term Follow-Through
 
 The next high-value steps look like this:
 
-- define the next host mix-in WIT package after `host-fs` and `host-clock`,
-  likely GPU-facing facets and richer menu/accessibility/window follow-ons
+- reuse the newer `host-menu`, `host-clipboard`, `host-editor-input`, and
+  `host-a11y` mix-ins in more than one family so they stop being editor-only
+  experiments
 - move more of the direct-Metal/editor host interaction onto WIT-facing
-  boundaries instead of direct host calls
+  boundaries where that clarifies family differences, but keep rendering itself
+  deliberately direct for now
+- keep `tgfx` Metal as a comparison control while treating the native
+  direct-Metal path as the current small-binary reference path
 - isolate direct-Metal editor concerns into explicit layout/input/accessibility
   seams instead of letting them accumulate inside one renderer-centric module
-- decide whether codegen should emit a rename manifest or additional comments
-  for exact-tail normalization cases
+- decide how much further exact-tail helper naming should be normalized now
+  that codegen already emits rename/trace manifests
+- add runtime-performance comparisons next to the size comparisons for the main
+  world-family samples
 - start naming candidate Lambkin aspect libraries from the join-points above,
   even if their final surface is still tentative

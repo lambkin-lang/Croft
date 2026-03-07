@@ -53,6 +53,13 @@ typedef struct {
 typedef struct {
     size_t start_offset;
     size_t end_offset;
+    const uint8_t* utf8;
+    size_t utf8_len;
+} croft_editor_document_replace_utf8_range_ctx;
+
+typedef struct {
+    size_t start_offset;
+    size_t end_offset;
     uint32_t codepoint;
 } croft_editor_document_replace_codepoint_ctx;
 
@@ -60,6 +67,60 @@ typedef struct {
     size_t start_offset;
     size_t end_offset;
 } croft_editor_document_delete_ctx;
+
+static int32_t croft_editor_document_decode_utf8_one(const uint8_t* utf8,
+                                                     size_t utf8_len,
+                                                     size_t* consumed_out,
+                                                     uint32_t* codepoint_out) {
+    uint8_t b0;
+
+    if (!utf8 || utf8_len == 0u || !consumed_out || !codepoint_out) {
+        return ERR_INVALID;
+    }
+
+    b0 = utf8[0];
+    if ((b0 & 0x80u) == 0u) {
+        *consumed_out = 1u;
+        *codepoint_out = (uint32_t)b0;
+        return ERR_OK;
+    }
+    if ((b0 & 0xE0u) == 0xC0u) {
+        if (utf8_len < 2u || (utf8[1] & 0xC0u) != 0x80u) {
+            return ERR_TYPE;
+        }
+        *consumed_out = 2u;
+        *codepoint_out = ((uint32_t)(b0 & 0x1Fu) << 6) | (uint32_t)(utf8[1] & 0x3Fu);
+        return ERR_OK;
+    }
+    if ((b0 & 0xF0u) == 0xE0u) {
+        if (utf8_len < 3u
+                || (utf8[1] & 0xC0u) != 0x80u
+                || (utf8[2] & 0xC0u) != 0x80u) {
+            return ERR_TYPE;
+        }
+        *consumed_out = 3u;
+        *codepoint_out = ((uint32_t)(b0 & 0x0Fu) << 12)
+            | ((uint32_t)(utf8[1] & 0x3Fu) << 6)
+            | (uint32_t)(utf8[2] & 0x3Fu);
+        return ERR_OK;
+    }
+    if ((b0 & 0xF8u) == 0xF0u) {
+        if (utf8_len < 4u
+                || (utf8[1] & 0xC0u) != 0x80u
+                || (utf8[2] & 0xC0u) != 0x80u
+                || (utf8[3] & 0xC0u) != 0x80u) {
+            return ERR_TYPE;
+        }
+        *consumed_out = 4u;
+        *codepoint_out = ((uint32_t)(b0 & 0x07u) << 18)
+            | ((uint32_t)(utf8[1] & 0x3Fu) << 12)
+            | ((uint32_t)(utf8[2] & 0x3Fu) << 6)
+            | (uint32_t)(utf8[3] & 0x3Fu);
+        return ERR_OK;
+    }
+
+    return ERR_TYPE;
+}
 
 static char* croft_strdup(const char* text) {
     size_t len;
@@ -353,6 +414,61 @@ static int32_t croft_editor_document_mutate_replace_range_with_codepoint(
                        replace_ctx->codepoint);
 }
 
+static int32_t croft_editor_document_mutate_replace_range_with_utf8(
+    SapTxnCtx* txn,
+    croft_editor_document* document,
+    const void* ctx) {
+    const croft_editor_document_replace_utf8_range_ctx* replace_ctx =
+        (const croft_editor_document_replace_utf8_range_ctx*)ctx;
+    size_t delete_count;
+    size_t i;
+    size_t inserted_count = 0u;
+    size_t off = 0u;
+    int32_t rc;
+
+    if (!txn || !document || !document->text || !replace_ctx) {
+        return ERR_INVALID;
+    }
+    if (replace_ctx->start_offset > replace_ctx->end_offset
+            || replace_ctx->end_offset > text_length(document->text)) {
+        return ERR_RANGE;
+    }
+
+    delete_count = replace_ctx->end_offset - replace_ctx->start_offset;
+    for (i = 0u; i < delete_count; i++) {
+        rc = text_delete(txn, document->text, replace_ctx->start_offset, NULL);
+        if (rc != ERR_OK) {
+            return rc;
+        }
+    }
+
+    while (replace_ctx->utf8 && off < replace_ctx->utf8_len) {
+        size_t consumed = 0u;
+        uint32_t codepoint = 0u;
+
+        rc = croft_editor_document_decode_utf8_one(replace_ctx->utf8 + off,
+                                                   replace_ctx->utf8_len - off,
+                                                   &consumed,
+                                                   &codepoint);
+        if (rc != ERR_OK) {
+            return rc;
+        }
+
+        rc = text_insert(txn,
+                         document->text,
+                         replace_ctx->start_offset + inserted_count,
+                         codepoint);
+        if (rc != ERR_OK) {
+            return rc;
+        }
+
+        off += consumed;
+        inserted_count++;
+    }
+
+    return ERR_OK;
+}
+
 static int32_t croft_editor_document_mutate_delete_range(SapTxnCtx* txn,
                                                          croft_editor_document* document,
                                                          const void* ctx) {
@@ -596,6 +712,46 @@ int32_t croft_editor_document_replace_range_with_codepoint(
                                             end_offset >= start_offset ? (end_offset - start_offset) : 0u,
                                             1u,
                                             croft_editor_document_mutate_replace_range_with_codepoint,
+                                            &ctx);
+}
+
+int32_t croft_editor_document_replace_range_with_utf8(croft_editor_document* document,
+                                                      size_t start_offset,
+                                                      size_t end_offset,
+                                                      const uint8_t* utf8,
+                                                      size_t utf8_len,
+                                                      croft_editor_document_edit_kind edit_kind) {
+    croft_editor_document_replace_utf8_range_ctx ctx = {
+        .start_offset = start_offset,
+        .end_offset = end_offset,
+        .utf8 = utf8,
+        .utf8_len = utf8_len
+    };
+    size_t inserted_count = 0u;
+    size_t off = 0u;
+    int32_t rc;
+
+    while (utf8 && off < utf8_len) {
+        size_t consumed = 0u;
+        uint32_t codepoint = 0u;
+
+        rc = croft_editor_document_decode_utf8_one(utf8 + off,
+                                                   utf8_len - off,
+                                                   &consumed,
+                                                   &codepoint);
+        if (rc != ERR_OK) {
+            return rc;
+        }
+        off += consumed;
+        inserted_count++;
+    }
+
+    return croft_editor_document_apply_edit(document,
+                                            edit_kind,
+                                            start_offset,
+                                            end_offset >= start_offset ? (end_offset - start_offset) : 0u,
+                                            inserted_count,
+                                            croft_editor_document_mutate_replace_range_with_utf8,
                                             &ctx);
 }
 

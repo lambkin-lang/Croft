@@ -1,6 +1,5 @@
 #include "croft/scene.h"
 #include "croft/host_render.h"
-#include "croft/host_a11y.h"
 #include <stddef.h>
 
 void scene_node_init(scene_node *n, scene_node_vtbl *vtbl, float x, float y, float sx, float sy) {
@@ -12,7 +11,7 @@ void scene_node_init(scene_node *n, scene_node_vtbl *vtbl, float x, float y, flo
     n->vtbl = vtbl;
     n->first_child = NULL;
     n->next_sibling = NULL;
-    n->a11y_handle = NULL;
+    n->a11y_handle = (croft_scene_a11y_handle)0u;
 }
 
 void scene_node_add_child(scene_node *parent, scene_node *child) {
@@ -28,7 +27,7 @@ void scene_node_add_child(scene_node *parent, scene_node *child) {
     
     // Wire OS accessibility tree
     if (child->a11y_handle) {
-        host_a11y_add_child(parent->a11y_handle, child->a11y_handle);
+        croft_scene_a11y_add_child(parent->a11y_handle, child->a11y_handle);
     }
 }
 
