@@ -17,6 +17,8 @@ cmake --build build --target croft_examples
 
 ## Current Ladder
 
+### Common-Core and WIT Ladder
+
 | Target | Focus | Required Croft artifacts |
 | --- | --- | --- |
 | `example_foundation_threads` | Foundation-only worker thread, timing, and logging | `croft_host_log`, `croft_host_time`, `croft_host_thread` |
@@ -31,10 +33,14 @@ cmake --build build --target croft_examples
 | `example_sapling_text` | Sapling text clone-on-write editing over the single-thread linear arena profile | `sapling_core` |
 | `example_wit_text_handles` | Sapling text editing through generated WIT commands and opaque resource handles | `croft_wit_text_runtime` |
 | `example_wit_text_window` | The same common-side WIT text logic rendered through native window and GPU mix-ins | `croft_wit_text_program`, `croft_wit_text_runtime`, `croft_wit_host_window_runtime`, `croft_wit_host_gpu2d_runtime`, `croft_wit_host_clock_runtime` |
-| `example_wit_textpad_window` | Small non-scene textpad over WIT text/window/menu/clipboard/editor-input mix-ins | `croft_wit_text_program`, `croft_wit_text_runtime`, `croft_wit_host_window_runtime`, `croft_wit_host_gpu2d_runtime`, `croft_wit_host_clock_runtime`, `croft_wit_host_menu_runtime`, `croft_wit_host_clipboard_runtime`, `croft_wit_host_editor_input_runtime` |
 | `example_wit_db_kv` | Sapling key-value round-trip through generated WIT `db` and `txn` resource handles | `croft_wit_store_runtime` |
 | `example_wit_mailbox_ping` | Common-core mailbox round-trip through generated WIT mailbox resource handles | `croft_wit_mailbox_runtime` |
 | `example_wasm_guest` | Embedded Wasm guest bridged into Croft host imports | `croft_wasm_wasm3` |
+
+### Window, Render, and Scene Substrate
+
+| Target | Focus | Required Croft artifacts |
+| --- | --- | --- |
 | `example_ui_window_opengl` | Window only; OpenGL-capable GLFW context and no renderer | `croft_ui_glfw_opengl` |
 | `example_ui_window_metal` | Window only; no-API GLFW window for the Metal path | `croft_ui_glfw_metal` |
 | `example_window_menu_opengl` | Native menu shell with no renderer on the OpenGL UI path | `croft_ui_glfw_opengl`, `croft_menu_macos` |
@@ -43,12 +49,23 @@ cmake --build build --target croft_examples
 | `example_render_canvas_metal` | GPU-backed 2D rendering on the tgfx Metal path | `croft_render_tgfx_metal` |
 | `example_render_canvas_metal_native` | GPU-backed 2D rectangles on a direct Metal path with no tgfx dependency | `croft_render_metal_native` |
 | `example_scene_graph` | Scene graph layout, hit-testing, and rendering | active `croft_scene_core_tgfx_*` variant |
-| `example_zoom_canvas` | Gesture-assisted infinite canvas demo | active `croft_scene_core_tgfx_*` variant, gesture backend |
-| `example_editor_text` | Text-editor shell over Sapling, scene, and host IO | active `croft_scene_text_editor_tgfx_*` variant, `croft_editor_document_core`, `croft_editor_document_fs`, gesture backend |
-| `example_editor_text_appkit` | Native AppKit/TextKit editor over the same Sapling-backed document layer | `croft_editor_appkit`, `croft_editor_document_core`, `croft_editor_document_fs` |
-| `example_editor_text_metal_native` | Scene-based text editor on the direct-Metal renderer with no tgfx dependency and a WIT-routed host control path | `croft_scene_text_editor_metal_native`, `croft_editor_document_core`, `croft_editor_document_fs`, `croft_wit_host_window_runtime`, `croft_wit_host_clock_runtime`, `croft_wit_host_menu_runtime`, `croft_wit_host_clipboard_runtime`, `croft_wit_host_editor_input_runtime`, `croft_wit_host_a11y_runtime` |
 | `example_a11y_tree` | Native accessibility handles for scene nodes on macOS | scene target, `croft_a11y_macos` |
 | `example_audio_tone` | Host audio playback via miniaudio | `croft_audio_miniaudio` |
+
+### Document-Centric Editor Families
+
+| Target | Focus | Required Croft artifacts |
+| --- | --- | --- |
+| `example_wit_textpad_window` | Smallest windowed editor shell over WIT text/window/menu/clipboard/editor-input mix-ins | `croft_wit_text_program`, `croft_wit_text_runtime`, `croft_wit_host_window_runtime`, `croft_wit_host_gpu2d_runtime`, `croft_wit_host_clock_runtime`, `croft_wit_host_menu_runtime`, `croft_wit_host_clipboard_runtime`, `croft_wit_host_editor_input_runtime` |
+| `example_editor_text` | tgfx-backed scene editor over Sapling and the split document layer; comparison control for the scene-editor family | active `croft_scene_text_editor_tgfx_*` variant, `croft_editor_document_core`, `croft_editor_document_fs`, gesture backend |
+| `example_editor_text_appkit` | Native AppKit/TextKit editor over the same Sapling-backed document layer | `croft_editor_appkit`, `croft_editor_document_core`, `croft_editor_document_fs` |
+| `example_editor_text_metal_native` | Direct-Metal custom-rendered editor with a WIT-routed host control path | `croft_scene_text_editor_metal_native`, `croft_editor_document_core`, `croft_editor_document_fs`, `croft_wit_host_window_runtime`, `croft_wit_host_clock_runtime`, `croft_wit_host_menu_runtime`, `croft_wit_host_clipboard_runtime`, `croft_wit_host_editor_input_runtime`, `croft_wit_host_a11y_runtime` |
+
+### Spatial and Zoomable Workspace Probes
+
+| Target | Focus | Required Croft artifacts |
+| --- | --- | --- |
+| `example_zoom_canvas` | Gesture-assisted infinite canvas demo and current spatial-workspace seed | active `croft_scene_core_tgfx_*` variant, gesture backend |
 
 Notes:
 
@@ -114,6 +131,9 @@ Notes:
   Croft scene/input model, swaps out tgfx for the direct-Metal renderer and
   its cached text-quads path, and now routes its control-plane host seams
   through WIT mix-ins.
+- `example_zoom_canvas` is the current home for pinch-to-zoom and camera-style
+  workspace experiments. That behavior may still exist in transitional editor
+  shells, but it no longer defines the editor product line.
 - The current optimized size datapoint for that WIT-routed direct-Metal editor
   shell is `148,944`. That is larger than the earlier ad hoc direct-Metal
   editor shell, which is useful evidence: explicit host seams have measurable
@@ -138,9 +158,10 @@ Notes:
 - Examples are `EXCLUDE_FROM_ALL`. They exist to model subsystem selections and
   to support smoke tests and size benchmarking without forcing every default
   build to link the demo binaries.
-- The text editor is intentionally near the top of the ladder. It is the current
-  convergence point for UI, rendering, gestures, filesystem access, and Sapling
-  text, but it should remain decomposable into the lower examples above.
+- The document-centric editor family is intentionally near the top of the
+  ladder. It is the current convergence point for UI, rendering, filesystem
+  access, host-control seams, and Sapling text, but zoom/camera behavior now
+  belongs to the separate spatial-workspace line.
 
 ## Design Rule
 
@@ -149,4 +170,5 @@ When adding a new example:
 1. Pick one clear capability boundary.
 2. Link only the artifacts needed for that capability.
 3. Prefer a smaller prerequisite example when the larger example is still under construction.
-4. Keep the text editor as the most demanding current example, not the starting point.
+4. Keep the document-centric editor family as the most demanding current
+   editor example, not the starting point.

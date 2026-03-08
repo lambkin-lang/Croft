@@ -247,6 +247,18 @@ Representative examples include:
 
 The intended ladder is documented in [docs/EXAMPLE_MATRIX.md](docs/EXAMPLE_MATRIX.md).
 
+Two current GUI product lines matter most in that ladder:
+
+- `example_editor_text`, `example_editor_text_appkit`, and
+  `example_editor_text_metal_native` are document-centric editor families
+- `example_zoom_canvas` is the separate spatial/zoomable workspace probe
+
+The current scene-editor shells may still carry transitional gesture plumbing,
+but pinch-to-zoom and camera behavior should now be treated as workspace-scope
+concerns rather than as editor requirements.
+The workspace-planning questions for that separate line live in
+[`docs/SPATIAL_WORKSPACE_QUESTIONS.md`](docs/SPATIAL_WORKSPACE_QUESTIONS.md).
+
 For backend comparison experiments, Croft currently builds one tgfx GPU backend
 variant per configure. Use separate build directories with `TGFX_USE_OPENGL=ON`
 or `TGFX_USE_METAL=ON` when comparing render costs; the

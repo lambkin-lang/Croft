@@ -3,6 +3,14 @@
 This note captures the first text-editor family comparison on macOS with
 Sapling held constant as the document model and the presentation path varied.
 
+Scope note:
+
+- this document is about the document-centric editor family
+- arbitrary zoom/pinch and camera-style workspace behavior now belong to the
+  separate spatial-workspace track
+- the scene editor's current shell-level gesture wiring should be treated as
+  transitional compatibility, not as the editor product direction
+
 ## Implemented Families
 
 - `example_editor_text`

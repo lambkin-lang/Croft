@@ -56,7 +56,9 @@ This architecture exploits exactly what Wasm excels at:
 As Croft aims to be a robust host environment for Portable C11 and Wasm applications, there is strong potential for hosting [WASIX](https://wasix.org/) applications. WASIX extends the WASI standard to provide full POSIX compatibility (including pthreads, sockets, fork/exec, etc.).
 
 However, Croft and Lambkin are fundamentally designed around **Open Implementation** ("Beyond the Black Box" by Gregor Kiczales) and **Synthesizing Objects** (Czarnecki and Eisenecker). This means Lambkin targets a highly modular layering system that allows for radical architectural tradeoffs depending on the deployment target:
-1. **Scale-Up (WASIX)**: Hosting full WASIX environments to run complex, server-like, or Node.js-style applications seamlessly within the text editor's spatial interface.
+1. **Scale-Up (WASIX)**: Hosting full WASIX environments to run complex,
+   server-like, or Node.js-style applications within richer Croft shells such
+   as document-centric editors or future spatial workspaces.
 2. **Scale-Down (IoT)**: Generating tiny, universal Wasm targets or minimal native binaries explicitly designed for resource-constrained IoT devices.
 
 This dual nature ensures the environment can scale from analyzing massive cloud backend codebases down to deploying tightly packed, deterministic logic to microcontrollers, relying heavily on the customizable data representations of Sapling and Lambkin.
@@ -75,7 +77,13 @@ small binaries**.
 
 1. **GPU-Accelerated 2D/3D Rendering**: Makepad utilizes raw native rendering APIs rather than traditional OS windowing widgets, mapping closely to Croft's use of `tgfx` (hardware-accelerated 2D drawing) and custom `scene_node` graph projections.
 2. **Scriptable UI DSL**: Makepad employs a live-editable UI DSL and runtime script integration. Croft conceptually aligns with this via the Lambkin Wasm engine, utilizing WIT (Wasm Interface Types) for dynamic, sandboxed UI scripting and logic updates without stalling the main render thread.
-3. **Data-Oriented Text Management**: Unlike Monaco's explicit separation of PieceTree text representation and DOM-based View Models, Makepad utilizes a highly dense, Rust-oriented `CodeDocument` struct natively backing functional selections and inline layovers. Croft's C11 `text_editor_node` draws on this by keeping spatial layout and rendering logically closer to the data substrate—rather than relying on heavy object-oriented abstractions.
+3. **Data-Oriented Text Management**: Unlike Monaco's explicit separation of
+   PieceTree text representation and DOM-based View Models, Makepad utilizes a
+   highly dense, Rust-oriented `CodeDocument` struct natively backing
+   functional selections and inline layovers. Croft's C11 `text_editor_node`
+   draws on this by keeping document layout and rendering logically closer to
+   the data substrate rather than relying on heavy object-oriented
+   abstractions.
 
 ---
 
