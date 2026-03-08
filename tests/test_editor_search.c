@@ -35,7 +35,14 @@ int test_editor_search_next_previous(void)
     ASSERT_SEARCH(match.start_offset == 0u);
     ASSERT_SEARCH(match.end_offset == 5u);
 
+    ASSERT_SEARCH(croft_editor_search_previous(&model, "alpha", 5u, 5u, &match)
+                  == CROFT_EDITOR_OK);
+    ASSERT_SEARCH(match.start_offset == 0u);
+    ASSERT_SEARCH(match.end_offset == 5u);
+
     ASSERT_SEARCH(croft_editor_search_previous(&model, "alpha", 5u, 1u, &match)
+                  == CROFT_EDITOR_ERR_INVALID);
+    ASSERT_SEARCH(croft_editor_search_previous(&model, "alpha", 5u, 4u, &match)
                   == CROFT_EDITOR_ERR_INVALID);
 
     croft_editor_text_model_dispose(&model);

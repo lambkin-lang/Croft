@@ -172,13 +172,16 @@ int32_t croft_editor_search_previous(const croft_editor_text_model* model,
     if (before_offset > model->codepoint_count) {
         before_offset = model->codepoint_count;
     }
-    if (before_offset > model->codepoint_count - needle_codepoint_count + 1u) {
-        before_offset = model->codepoint_count - needle_codepoint_count + 1u;
+    if (before_offset < needle_codepoint_count) {
+        return CROFT_EDITOR_ERR_INVALID;
     }
 
-    offset = before_offset;
-    while (offset > 0u) {
-        offset--;
+    offset = before_offset - needle_codepoint_count;
+    if (offset > model->codepoint_count - needle_codepoint_count) {
+        offset = model->codepoint_count - needle_codepoint_count;
+    }
+
+    for (;;) {
         if (croft_editor_search_match_at(model,
                                          needle_utf8,
                                          needle_utf8_len,
@@ -187,6 +190,10 @@ int32_t croft_editor_search_previous(const croft_editor_text_model* model,
                                          out_match)) {
             return CROFT_EDITOR_OK;
         }
+        if (offset == 0u) {
+            break;
+        }
+        offset--;
     }
 
     return CROFT_EDITOR_ERR_INVALID;
