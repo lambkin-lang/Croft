@@ -216,6 +216,9 @@ extern int test_editor_text_model_offsets(void);
 extern int test_editor_text_model_multibyte(void);
 extern int test_editor_text_model_selection(void);
 extern int test_editor_text_model_word_ranges(void);
+extern int test_editor_brackets_nested_pairs(void);
+extern int test_editor_brackets_near_cursor(void);
+extern int test_editor_brackets_unmatched_or_invalid(void);
 extern int test_editor_search_next_previous(void);
 extern int test_editor_search_multibyte(void);
 extern int test_editor_search_invalid_queries(void);
@@ -304,6 +307,11 @@ int main(void)
     RUN_TEST(test_editor_text_model_multibyte);
     RUN_TEST(test_editor_text_model_selection);
     RUN_TEST(test_editor_text_model_word_ranges);
+
+    printf("\n[editor_brackets]\n");
+    RUN_TEST(test_editor_brackets_nested_pairs);
+    RUN_TEST(test_editor_brackets_near_cursor);
+    RUN_TEST(test_editor_brackets_unmatched_or_invalid);
 
     printf("\n[editor_search]\n");
     RUN_TEST(test_editor_search_next_previous);
