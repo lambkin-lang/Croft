@@ -204,6 +204,32 @@ static uint32_t text_editor_current_line_number(const text_editor_node* te) {
     return te->selection.position_line_number;
 }
 
+static void text_editor_visible_line_window(const text_editor_node* te,
+                                            const text_editor_layout* layout,
+                                            uint32_t* out_first_visible_line,
+                                            uint32_t* out_last_visible_line) {
+    uint32_t first_visible_line = 1u;
+    uint32_t last_visible_line = 1u;
+    float doc_top;
+    uint32_t visible_lines_per_view;
+
+    if (te && layout && te->line_height > 0.0f) {
+        doc_top = -te->scroll_y - layout->text_inset_y;
+        if (doc_top > 0.0f) {
+            first_visible_line = (uint32_t)(doc_top / te->line_height) + 1u;
+        }
+        visible_lines_per_view = (uint32_t)(layout->content_height / te->line_height) + 3u;
+        last_visible_line = first_visible_line + visible_lines_per_view;
+    }
+
+    if (out_first_visible_line) {
+        *out_first_visible_line = first_visible_line;
+    }
+    if (out_last_visible_line) {
+        *out_last_visible_line = last_visible_line;
+    }
+}
+
 static croft_editor_status_snapshot text_editor_status_snapshot_from_node(const text_editor_node* te) {
     croft_editor_status_snapshot snapshot;
 
@@ -1571,8 +1597,11 @@ static void text_editor_draw(scene_node *n, render_ctx *rc) {
     uint32_t cursor_offset = te->sel_end;
     uint32_t current_line = text_editor_current_line_number(te);
     uint32_t line_number;
+    uint32_t first_visible_line = 1u;
+    uint32_t last_visible_line = 1u;
 
     text_editor_compute_layout(te, n->sx, n->sy, &layout);
+    text_editor_visible_line_window(te, &layout, &first_visible_line, &last_visible_line);
     status_snapshot = text_editor_status_snapshot_from_node(te);
     if (croft_editor_status_format(&status_snapshot, status_text, sizeof(status_text)) != 0) {
         status_text[0] = '\0';
@@ -1607,24 +1636,33 @@ static void text_editor_draw(scene_node *n, render_ctx *rc) {
             float current_y;
             uint32_t fold_index = 0u;
 
+            visible_line_number++;
+            if (visible_line_number < first_visible_line) {
+                if (text_editor_find_fold_header_index(te, line_number, &fold_index)) {
+                    line_number = te->folded_regions[fold_index].end_line_number + 1u;
+                } else {
+                    line_number++;
+                }
+                continue;
+            }
+            if (visible_line_number > last_visible_line) {
+                break;
+            }
+
             if (stats) {
                 stats->background_pass_lines++;
             }
-            visible_line_number++;
             current_y = te->font_size + ((float)(visible_line_number - 1u) * te->line_height);
 
-            if (current_y + te->scroll_y >= 0.0f
-                    && current_y - te->font_size + te->scroll_y <= layout.content_height) {
-                if (line_number == current_line) {
-                    host_render_draw_rect(-te->scroll_x,
-                                          current_y - te->font_size,
-                                          layout.content_width,
-                                          te->line_height,
-                                          0xE2ECF8FF);
-                }
-                host_render_draw_rect(-te->scroll_x, current_y, layout.content_width, 1.0f, 0x00000012);
-                text_editor_draw_indent_guides_for_line(te, &layout, line_number, current_y);
+            if (line_number == current_line) {
+                host_render_draw_rect(-te->scroll_x,
+                                      current_y - te->font_size,
+                                      layout.content_width,
+                                      te->line_height,
+                                      0xE2ECF8FF);
             }
+            host_render_draw_rect(-te->scroll_x, current_y, layout.content_width, 1.0f, 0x00000012);
+            text_editor_draw_indent_guides_for_line(te, &layout, line_number, current_y);
 
             if (text_editor_find_fold_header_index(te, line_number, &fold_index)) {
                 line_number = te->folded_regions[fold_index].end_line_number + 1u;
@@ -1654,72 +1692,81 @@ static void text_editor_draw(scene_node *n, render_ctx *rc) {
             uint32_t fold_index = 0u;
             int is_folded = text_editor_find_fold_header_index(te, line_number, &fold_index);
 
+            visible_line_number++;
+            if (visible_line_number < first_visible_line) {
+                if (is_folded) {
+                    line_number = te->folded_regions[fold_index].end_line_number + 1u;
+                } else {
+                    line_number++;
+                }
+                continue;
+            }
+            if (visible_line_number > last_visible_line) {
+                break;
+            }
+
             if (stats) {
                 stats->text_pass_lines++;
             }
-            visible_line_number++;
             current_y = te->font_size + ((float)(visible_line_number - 1u) * te->line_height);
 
-            if (current_y + te->scroll_y >= 0.0f
-                    && current_y - te->font_size + te->scroll_y <= layout.content_height) {
-                if (selection_min != selection_max
-                        && selection_min < line_end_offset
-                        && selection_max > line_start_offset) {
-                    uint32_t highlight_start =
-                        selection_min > line_start_offset ? selection_min : line_start_offset;
-                    uint32_t highlight_end =
-                        selection_max < line_end_offset ? selection_max : line_end_offset;
-                    uint32_t highlight_start_bytes =
-                        croft_editor_text_model_byte_offset_at(&te->text_model, highlight_start)
+            if (selection_min != selection_max
+                    && selection_min < line_end_offset
+                    && selection_max > line_start_offset) {
+                uint32_t highlight_start =
+                    selection_min > line_start_offset ? selection_min : line_start_offset;
+                uint32_t highlight_end =
+                    selection_max < line_end_offset ? selection_max : line_end_offset;
+                uint32_t highlight_start_bytes =
+                    croft_editor_text_model_byte_offset_at(&te->text_model, highlight_start)
+                    - line_start_byte;
+                uint32_t highlight_end_bytes =
+                    croft_editor_text_model_byte_offset_at(&te->text_model, highlight_end)
+                    - line_start_byte;
+                float x1 = layout.text_inset_x
+                    + text_editor_measure_text(te, line_text, highlight_start_bytes, te->font_size);
+                float x2 = layout.text_inset_x
+                    + text_editor_measure_text(te, line_text, highlight_end_bytes, te->font_size);
+                host_render_draw_rect(x1, current_y - te->font_size, x2 - x1, te->line_height, 0x5B9FE0CC);
+            }
+
+            text_editor_draw_whitespace_markers_for_line(te, &layout, line_number, current_y);
+
+            if (selection_min == selection_max
+                    && cursor_offset >= line_start_offset
+                    && cursor_offset <= line_end_offset) {
+                int millis = (int)(rc->time * 1000.0);
+                if ((millis / 500) % 2 == 0) {
+                    uint32_t cursor_bytes =
+                        croft_editor_text_model_byte_offset_at(&te->text_model, cursor_offset)
                         - line_start_byte;
-                    uint32_t highlight_end_bytes =
-                        croft_editor_text_model_byte_offset_at(&te->text_model, highlight_end)
-                        - line_start_byte;
-                    float x1 = layout.text_inset_x
-                        + text_editor_measure_text(te, line_text, highlight_start_bytes, te->font_size);
-                    float x2 = layout.text_inset_x
-                        + text_editor_measure_text(te, line_text, highlight_end_bytes, te->font_size);
-                    host_render_draw_rect(x1, current_y - te->font_size, x2 - x1, te->line_height, 0x5B9FE0CC);
+                    float cursor_x = layout.text_inset_x
+                        + text_editor_measure_text(te, line_text, cursor_bytes, te->font_size);
+                    host_render_draw_rect(cursor_x,
+                                          current_y - te->font_size,
+                                          2.0f,
+                                          te->line_height,
+                                          0x000000FF);
                 }
+            }
 
-                text_editor_draw_whitespace_markers_for_line(te, &layout, line_number, current_y);
+            if (line_len_bytes > 0u) {
+                host_render_draw_text(layout.text_inset_x,
+                                      current_y,
+                                      line_text,
+                                      line_len_bytes,
+                                      te->font_size,
+                                      rc->fg_color);
+            }
+            if (is_folded) {
+                float line_width =
+                    text_editor_measure_text(te, line_text, line_len_bytes, te->font_size);
+                float fold_x = layout.text_inset_x + line_width + 12.0f;
 
-                if (selection_min == selection_max
-                        && cursor_offset >= line_start_offset
-                        && cursor_offset <= line_end_offset) {
-                    int millis = (int)(rc->time * 1000.0);
-                    if ((millis / 500) % 2 == 0) {
-                        uint32_t cursor_bytes =
-                            croft_editor_text_model_byte_offset_at(&te->text_model, cursor_offset)
-                            - line_start_byte;
-                        float cursor_x = layout.text_inset_x
-                            + text_editor_measure_text(te, line_text, cursor_bytes, te->font_size);
-                        host_render_draw_rect(cursor_x,
-                                              current_y - te->font_size,
-                                              2.0f,
-                                              te->line_height,
-                                              0x000000FF);
-                    }
+                if (fold_x > layout.content_width - 28.0f) {
+                    fold_x = layout.content_width - 28.0f;
                 }
-
-                if (line_len_bytes > 0u) {
-                    host_render_draw_text(layout.text_inset_x,
-                                          current_y,
-                                          line_text,
-                                          line_len_bytes,
-                                          te->font_size,
-                                          rc->fg_color);
-                }
-                if (is_folded) {
-                    float line_width =
-                        text_editor_measure_text(te, line_text, line_len_bytes, te->font_size);
-                    float fold_x = layout.text_inset_x + line_width + 12.0f;
-
-                    if (fold_x > layout.content_width - 28.0f) {
-                        fold_x = layout.content_width - 28.0f;
-                    }
-                    host_render_draw_text(fold_x, current_y, "...", 3u, te->font_size - 1.0f, 0x7D8794FF);
-                }
+                host_render_draw_text(fold_x, current_y, "...", 3u, te->font_size - 1.0f, 0x7D8794FF);
             }
 
             if (is_folded) {
@@ -1748,14 +1795,8 @@ static void text_editor_draw(scene_node *n, render_ctx *rc) {
             int is_folded = text_editor_find_fold_header_index(te, line_number, &fold_index);
             int is_foldable = is_folded || text_editor_fold_region_from_model(te, line_number, &region);
 
-            if (stats) {
-                stats->gutter_pass_lines++;
-            }
             visible_line_number++;
-            current_y = te->font_size + ((float)(visible_line_number - 1u) * te->line_height);
-
-            if (current_y + te->scroll_y < 0.0f
-                    || current_y - te->font_size + te->scroll_y > layout.content_height) {
+            if (visible_line_number < first_visible_line) {
                 if (is_folded) {
                     line_number = te->folded_regions[fold_index].end_line_number + 1u;
                 } else {
@@ -1763,6 +1804,14 @@ static void text_editor_draw(scene_node *n, render_ctx *rc) {
                 }
                 continue;
             }
+            if (visible_line_number > last_visible_line) {
+                break;
+            }
+
+            if (stats) {
+                stats->gutter_pass_lines++;
+            }
+            current_y = te->font_size + ((float)(visible_line_number - 1u) * te->line_height);
 
             if (is_foldable) {
                 host_render_draw_text(6.0f,
