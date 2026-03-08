@@ -1,3 +1,4 @@
+#include "croft/editor_commands.h"
 #include "croft/editor_menu_ids.h"
 #include "croft/wit_host_clipboard_runtime.h"
 #include "croft/wit_host_clock_runtime.h"
@@ -565,6 +566,36 @@ static int textpad_replace_selection_utf8(textpad_state* state, const uint8_t* d
     return textpad_insert_utf8(state, start, data, len, inserted);
 }
 
+static int textpad_replace_range_utf8(textpad_state* state,
+                                      uint32_t start,
+                                      uint32_t end,
+                                      const uint8_t* data,
+                                      uint32_t len,
+                                      uint32_t next_anchor,
+                                      uint32_t next_cursor)
+{
+    uint32_t inserted = utf8_count_codepoints(data, len);
+
+    if (!state || start > end || end > state->char_count) {
+        return -1;
+    }
+    if (textpad_delete_range(state, start, end) != 0) {
+        return -1;
+    }
+    if (textpad_insert_utf8(state, start, data, len, inserted) != 0) {
+        return -1;
+    }
+    if (next_anchor > state->char_count) {
+        next_anchor = state->char_count;
+    }
+    if (next_cursor > state->char_count) {
+        next_cursor = state->char_count;
+    }
+    state->anchor = next_anchor;
+    state->cursor = next_cursor;
+    return 0;
+}
+
 static int textpad_insert_codepoint(textpad_state* state, uint32_t codepoint)
 {
     uint8_t encoded[4];
@@ -575,6 +606,56 @@ static int textpad_insert_codepoint(textpad_state* state, uint32_t codepoint)
     }
     encoded_len = utf8_encode_codepoint(codepoint, encoded);
     return textpad_replace_selection_utf8(state, encoded, encoded_len);
+}
+
+static int textpad_apply_indent_action(textpad_state* state, int outdent)
+{
+    croft_wit_owned_bytes exported = {0};
+    croft_editor_text_model model;
+    croft_editor_tab_settings settings;
+    croft_editor_tab_edit edit = {0};
+    int result = 0;
+
+    if (!state) {
+        return 0;
+    }
+
+    croft_editor_text_model_init(&model);
+    croft_editor_tab_settings_default(&settings);
+    if (textpad_export(state, &exported) != 0) {
+        goto cleanup;
+    }
+    if (croft_editor_text_model_set_text(&model,
+                                         (const char*)exported.data,
+                                         exported.len) != CROFT_EDITOR_OK) {
+        goto cleanup;
+    }
+    if (!croft_editor_command_build_tab_edit(&model,
+                                             state->anchor,
+                                             state->cursor,
+                                             &settings,
+                                             outdent,
+                                             &edit)) {
+        result = 1;
+        goto cleanup;
+    }
+    if (textpad_replace_range_utf8(state,
+                                   edit.replace_start_offset,
+                                   edit.replace_end_offset,
+                                   (const uint8_t*)edit.replacement_utf8,
+                                   (uint32_t)edit.replacement_utf8_len,
+                                   edit.next_anchor_offset,
+                                   edit.next_active_offset) != 0) {
+        goto cleanup;
+    }
+
+    result = 1;
+
+cleanup:
+    croft_editor_tab_edit_dispose(&edit);
+    croft_editor_text_model_dispose(&model);
+    croft_wit_owned_bytes_dispose(&exported);
+    return result;
 }
 
 static void textpad_move_cursor(textpad_state* state, uint32_t next, int selecting)
@@ -723,7 +804,11 @@ static int install_textpad_menu(croft_wit_host_menu_runtime* runtime)
             || !menu_add_item(runtime, &reply, CROFT_EDITOR_MENU_CUT, CROFT_EDITOR_MENU_EDIT_ROOT,
                               "Cut", "x", SAP_WIT_HOST_MENU_MODIFIERS_CMD)
             || !menu_add_item(runtime, &reply, CROFT_EDITOR_MENU_PASTE, CROFT_EDITOR_MENU_EDIT_ROOT,
-                              "Paste", "v", SAP_WIT_HOST_MENU_MODIFIERS_CMD)) {
+                              "Paste", "v", SAP_WIT_HOST_MENU_MODIFIERS_CMD)
+            || !menu_add_item(runtime, &reply, CROFT_EDITOR_MENU_INDENT, CROFT_EDITOR_MENU_EDIT_ROOT,
+                              "Indent Line", "]", SAP_WIT_HOST_MENU_MODIFIERS_CMD)
+            || !menu_add_item(runtime, &reply, CROFT_EDITOR_MENU_OUTDENT, CROFT_EDITOR_MENU_EDIT_ROOT,
+                              "Outdent Line", "[", SAP_WIT_HOST_MENU_MODIFIERS_CMD)) {
         return 0;
     }
 
@@ -816,6 +901,10 @@ static int textpad_apply_action(textpad_state* state,
                                          action->val.delete_right.flags);
             croft_wit_owned_bytes_dispose(&exported);
             return textpad_delete_range(state, state->cursor, next) == 0;
+        case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_INDENT:
+            return textpad_apply_indent_action(state, 0);
+        case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_OUTDENT:
+            return textpad_apply_indent_action(state, 1);
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_INSERT_CODEPOINT:
             return textpad_insert_codepoint(state, action->val.insert_codepoint) == 0;
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_SELECT_ALL:

@@ -50,6 +50,8 @@ interface types {
     move-end(motion),
     delete-left(deletion),
     delete-right(deletion),
+    indent,
+    outdent,
     insert-codepoint(u32),
     undo,
     redo,

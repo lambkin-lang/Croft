@@ -14,6 +14,7 @@
 enum {
     CROFT_KEY_RELEASE = 0,
     CROFT_KEY_ESCAPE = 256,
+    CROFT_KEY_TAB = 258,
     CROFT_KEY_BACKSPACE = 259,
     CROFT_KEY_DELETE = 261,
     CROFT_KEY_RIGHT = 262,
@@ -25,6 +26,8 @@ enum {
     CROFT_KEY_ENTER = 257,
     CROFT_KEY_F = 70,
     CROFT_KEY_G = 71,
+    CROFT_KEY_LEFT_BRACKET = 91,
+    CROFT_KEY_RIGHT_BRACKET = 93,
     CROFT_KEY_Y = 89,
     CROFT_KEY_Z = 90,
     CROFT_KEY_KP_ENTER_OLD = 284,
@@ -320,6 +323,61 @@ static int text_editor_utf8_codepoint_count(const uint8_t* utf8,
     return 0;
 }
 
+static int text_editor_utf8_decode_codepoint(const uint8_t* utf8,
+                                             size_t utf8_len,
+                                             size_t* consumed_out,
+                                             uint32_t* codepoint_out)
+{
+    uint8_t b0;
+
+    if (!utf8 || utf8_len == 0u || !consumed_out || !codepoint_out) {
+        return -1;
+    }
+
+    b0 = utf8[0];
+    if ((b0 & 0x80u) == 0u) {
+        *consumed_out = 1u;
+        *codepoint_out = (uint32_t)b0;
+        return 0;
+    }
+    if ((b0 & 0xE0u) == 0xC0u) {
+        if (utf8_len < 2u || (utf8[1] & 0xC0u) != 0x80u) {
+            return -1;
+        }
+        *consumed_out = 2u;
+        *codepoint_out = ((uint32_t)(b0 & 0x1Fu) << 6) | (uint32_t)(utf8[1] & 0x3Fu);
+        return 0;
+    }
+    if ((b0 & 0xF0u) == 0xE0u) {
+        if (utf8_len < 3u
+                || (utf8[1] & 0xC0u) != 0x80u
+                || (utf8[2] & 0xC0u) != 0x80u) {
+            return -1;
+        }
+        *consumed_out = 3u;
+        *codepoint_out = ((uint32_t)(b0 & 0x0Fu) << 12)
+            | ((uint32_t)(utf8[1] & 0x3Fu) << 6)
+            | (uint32_t)(utf8[2] & 0x3Fu);
+        return 0;
+    }
+    if ((b0 & 0xF8u) == 0xF0u) {
+        if (utf8_len < 4u
+                || (utf8[1] & 0xC0u) != 0x80u
+                || (utf8[2] & 0xC0u) != 0x80u
+                || (utf8[3] & 0xC0u) != 0x80u) {
+            return -1;
+        }
+        *consumed_out = 4u;
+        *codepoint_out = ((uint32_t)(b0 & 0x07u) << 18)
+            | ((uint32_t)(utf8[1] & 0x3Fu) << 12)
+            | ((uint32_t)(utf8[2] & 0x3Fu) << 6)
+            | (uint32_t)(utf8[3] & 0x3Fu);
+        return 0;
+    }
+
+    return -1;
+}
+
 static int text_editor_utf8_encode_codepoint(uint32_t codepoint, char out_utf8[4], uint32_t* out_len)
 {
     if (!out_utf8 || !out_len) {
@@ -352,6 +410,103 @@ static int text_editor_utf8_encode_codepoint(uint32_t codepoint, char out_utf8[4
         return 0;
     }
     return -1;
+}
+
+static int text_editor_replace_range_utf8(text_editor_node* te,
+                                          uint32_t start_offset,
+                                          uint32_t end_offset,
+                                          const uint8_t* utf8,
+                                          size_t utf8_len,
+                                          croft_editor_document_edit_kind edit_kind)
+{
+    if (!te) {
+        return -1;
+    }
+
+    if (te->document) {
+        return croft_editor_document_replace_range_with_utf8(te->document,
+                                                             start_offset,
+                                                             end_offset,
+                                                             utf8,
+                                                             utf8_len,
+                                                             edit_kind) == 0
+            ? 0
+            : -1;
+    }
+
+    {
+        SapTxnCtx* txn = sap_txn_begin(te->env, NULL, 0);
+        uint32_t insert_offset = start_offset;
+        size_t consumed_total = 0u;
+
+        if (!txn) {
+            return -1;
+        }
+
+        text_editor_delete_range(txn, te, start_offset, end_offset);
+        while (utf8 && consumed_total < utf8_len) {
+            size_t consumed = 0u;
+            uint32_t codepoint = 0u;
+
+            if (text_editor_utf8_decode_codepoint(utf8 + consumed_total,
+                                                  utf8_len - consumed_total,
+                                                  &consumed,
+                                                  &codepoint) != 0
+                    || text_insert(txn, te->text_tree, insert_offset, codepoint) != 0) {
+                sap_txn_abort(txn);
+                return -1;
+            }
+            consumed_total += consumed;
+            insert_offset++;
+        }
+
+        sap_txn_commit(txn);
+    }
+
+    return 0;
+}
+
+static int32_t text_editor_apply_tab_edit(text_editor_node* te, int outdent)
+{
+    croft_editor_tab_settings settings;
+    croft_editor_tab_edit edit = {0};
+    croft_editor_document_edit_kind edit_kind;
+    int32_t rc = 0;
+
+    if (!te) {
+        return -1;
+    }
+
+    croft_editor_tab_settings_default(&settings);
+    if (!croft_editor_command_build_tab_edit(&te->text_model,
+                                             te->sel_start,
+                                             te->sel_end,
+                                             &settings,
+                                             outdent,
+                                             &edit)) {
+        return 0;
+    }
+
+    edit_kind = (edit.replace_start_offset == edit.replace_end_offset)
+        ? CROFT_EDITOR_EDIT_INSERT
+        : CROFT_EDITOR_EDIT_REPLACE_ALL;
+    if (te->document && edit_kind == CROFT_EDITOR_EDIT_REPLACE_ALL) {
+        text_editor_break_coalescing(te);
+    }
+    if (text_editor_replace_range_utf8(te,
+                                       edit.replace_start_offset,
+                                       edit.replace_end_offset,
+                                       (const uint8_t*)edit.replacement_utf8,
+                                       edit.replacement_utf8_len,
+                                       edit_kind) != 0) {
+        rc = -1;
+    } else {
+        text_editor_set_selection(te, edit.next_anchor_offset, edit.next_active_offset, 0);
+        text_editor_sync_cache(te);
+    }
+
+    croft_editor_tab_edit_dispose(&edit);
+    return rc;
 }
 
 static void text_editor_find_query_clear(text_editor_node* te)
@@ -1014,6 +1169,10 @@ static void text_editor_char_event(scene_node *n, uint32_t codepoint) {
         return;
     }
 
+    if (codepoint == (uint32_t)'\t') {
+        return;
+    }
+
     if (!text_tree || !te->env) {
         return;
     }
@@ -1114,6 +1273,22 @@ static void text_editor_key_event(scene_node *n, int key, int action) {
             text_editor_node_find_previous(te);
         } else {
             text_editor_node_find_next(te);
+        }
+        return;
+    }
+    if (command_mode && key == CROFT_KEY_LEFT_BRACKET) {
+        text_editor_node_outdent(te);
+        return;
+    }
+    if (command_mode && key == CROFT_KEY_RIGHT_BRACKET) {
+        text_editor_node_indent(te);
+        return;
+    }
+    if (key == CROFT_KEY_TAB) {
+        if (selecting) {
+            text_editor_node_outdent(te);
+        } else {
+            text_editor_node_indent(te);
         }
         return;
     }
@@ -1414,6 +1589,14 @@ int32_t text_editor_node_find_previous(text_editor_node *n) {
     n->find_active = 1;
     text_editor_selection_bounds(n, &selection_min, NULL);
     return text_editor_find_previous_before(n, selection_min, 1);
+}
+
+int32_t text_editor_node_indent(text_editor_node *n) {
+    return text_editor_apply_tab_edit(n, 0);
+}
+
+int32_t text_editor_node_outdent(text_editor_node *n) {
+    return text_editor_apply_tab_edit(n, 1);
 }
 
 int32_t text_editor_node_copy_selection_utf8(text_editor_node *n, char **out_utf8, size_t *out_len) {

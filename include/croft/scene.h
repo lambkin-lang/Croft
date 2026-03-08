@@ -131,6 +131,8 @@ void text_editor_node_find_activate(text_editor_node *n);
 void text_editor_node_find_close(text_editor_node *n);
 int32_t text_editor_node_find_next(text_editor_node *n);
 int32_t text_editor_node_find_previous(text_editor_node *n);
+int32_t text_editor_node_indent(text_editor_node *n);
+int32_t text_editor_node_outdent(text_editor_node *n);
 int32_t text_editor_node_copy_selection_utf8(text_editor_node *n, char **out_utf8, size_t *out_len);
 int32_t text_editor_node_replace_selection_utf8(text_editor_node *n,
                                                 const uint8_t *utf8,

@@ -244,6 +244,10 @@ static int editor_install_menu(croft_wit_host_menu_runtime* runtime)
                               "Cut", "x", SAP_WIT_HOST_MENU_MODIFIERS_CMD)
             || !menu_add_item(runtime, &reply, CROFT_EDITOR_MENU_PASTE, CROFT_EDITOR_MENU_EDIT_ROOT,
                               "Paste", "v", SAP_WIT_HOST_MENU_MODIFIERS_CMD)
+            || !menu_add_item(runtime, &reply, CROFT_EDITOR_MENU_INDENT, CROFT_EDITOR_MENU_EDIT_ROOT,
+                              "Indent Line", "]", SAP_WIT_HOST_MENU_MODIFIERS_CMD)
+            || !menu_add_item(runtime, &reply, CROFT_EDITOR_MENU_OUTDENT, CROFT_EDITOR_MENU_EDIT_ROOT,
+                              "Outdent Line", "[", SAP_WIT_HOST_MENU_MODIFIERS_CMD)
             || !menu_add_item(runtime, &reply, CROFT_EDITOR_MENU_FIND, CROFT_EDITOR_MENU_EDIT_ROOT,
                               "Find", "f", SAP_WIT_HOST_MENU_MODIFIERS_CMD)
             || !menu_add_item(runtime, &reply, CROFT_EDITOR_MENU_FIND_NEXT, CROFT_EDITOR_MENU_EDIT_ROOT,
@@ -328,6 +332,10 @@ static int editor_apply_action(croft_wit_host_clipboard_runtime* clipboard_runti
                         ? CROFT_UI_MOD_CONTROL : 0u));
             g_editor.base.vtbl->on_key_event(&g_editor.base, 261, 1);
             return 1;
+        case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_INDENT:
+            return text_editor_node_indent(&g_editor) == 0;
+        case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_OUTDENT:
+            return text_editor_node_outdent(&g_editor) == 0;
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_INSERT_CODEPOINT:
             g_editor.base.vtbl->on_char_event(&g_editor.base, action->val.insert_codepoint);
             return 1;

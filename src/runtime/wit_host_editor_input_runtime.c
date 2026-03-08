@@ -10,6 +10,7 @@
 
 enum {
     CROFT_KEY_RELEASE = 0,
+    CROFT_KEY_TAB = 258,
     CROFT_KEY_BACKSPACE = 259,
     CROFT_KEY_DELETE = 261,
     CROFT_KEY_RIGHT = 262,
@@ -21,7 +22,9 @@ enum {
     CROFT_KEY_ENTER = 257,
     CROFT_KEY_A = 65,
     CROFT_KEY_C = 67,
+    CROFT_KEY_LEFT_BRACKET = 91,
     CROFT_KEY_Q = 81,
+    CROFT_KEY_RIGHT_BRACKET = 93,
     CROFT_KEY_S = 83,
     CROFT_KEY_V = 86,
     CROFT_KEY_X = 88,
@@ -35,6 +38,7 @@ struct croft_wit_host_editor_input_runtime {
     SapWitHostEditorInputEditorAction actions[CROFT_WIT_EDITOR_ACTION_CAP];
     uint32_t action_head;
     uint32_t action_count;
+    uint8_t suppress_tab_char;
 };
 
 static void croft_wit_host_editor_input_reply_zero(SapWitHostEditorInputReply* reply)
@@ -216,9 +220,17 @@ static void croft_wit_host_editor_input_translate_key(croft_wit_host_editor_inpu
                 croft_wit_host_editor_input_enqueue_simple(runtime,
                     SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_COPY);
                 return;
+            case CROFT_KEY_LEFT_BRACKET:
+                croft_wit_host_editor_input_enqueue_simple(runtime,
+                    SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_OUTDENT);
+                return;
             case CROFT_KEY_Q:
                 croft_wit_host_editor_input_enqueue_simple(runtime,
                     SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_QUIT);
+                return;
+            case CROFT_KEY_RIGHT_BRACKET:
+                croft_wit_host_editor_input_enqueue_simple(runtime,
+                    SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_INDENT);
                 return;
             case CROFT_KEY_S:
                 croft_wit_host_editor_input_enqueue_simple(runtime,
@@ -248,6 +260,13 @@ static void croft_wit_host_editor_input_translate_key(croft_wit_host_editor_inpu
     }
 
     switch (key->key) {
+        case CROFT_KEY_TAB:
+            croft_wit_host_editor_input_enqueue_simple(runtime,
+                (key->modifiers & CROFT_UI_MOD_SHIFT)
+                    ? SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_OUTDENT
+                    : SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_INDENT);
+            runtime->suppress_tab_char = 1u;
+            break;
         case CROFT_KEY_LEFT:
             croft_wit_host_editor_input_enqueue_motion(runtime,
                 SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_MOVE_LEFT, motion_flags);
@@ -330,6 +349,14 @@ static void croft_wit_host_editor_input_translate_menu(croft_wit_host_editor_inp
             croft_wit_host_editor_input_enqueue_simple(runtime,
                 SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_PASTE);
             break;
+        case CROFT_EDITOR_MENU_INDENT:
+            croft_wit_host_editor_input_enqueue_simple(runtime,
+                SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_INDENT);
+            break;
+        case CROFT_EDITOR_MENU_OUTDENT:
+            croft_wit_host_editor_input_enqueue_simple(runtime,
+                SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_OUTDENT);
+            break;
         default:
             break;
     }
@@ -351,6 +378,12 @@ int32_t croft_wit_host_editor_input_runtime_dispatch(
             return 0;
         case SAP_WIT_HOST_EDITOR_INPUT_COMMAND_WINDOW_CHAR: {
             SapWitHostEditorInputEditorAction action = {0};
+            if (runtime->suppress_tab_char && command->val.window_char.codepoint == (uint32_t)'\t') {
+                runtime->suppress_tab_char = 0u;
+                croft_wit_host_editor_input_reply_status_ok(reply_out);
+                return 0;
+            }
+            runtime->suppress_tab_char = 0u;
             action.case_tag = SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_INSERT_CODEPOINT;
             action.val.insert_codepoint = command->val.window_char.codepoint;
             croft_wit_host_editor_input_enqueue(runtime, &action);

@@ -125,3 +125,99 @@ int test_wit_host_editor_input_runtime_motion_modes(void)
     croft_wit_host_editor_input_runtime_destroy(runtime);
     return 0;
 }
+
+int test_wit_host_editor_input_runtime_indent_actions(void)
+{
+    croft_wit_host_editor_input_runtime* runtime;
+    SapWitHostEditorInputCommand command = {0};
+    SapWitHostEditorInputReply reply = {0};
+    SapWitHostEditorInputEditorAction action = {0};
+
+    runtime = croft_wit_host_editor_input_runtime_create();
+    if (!runtime) {
+        return 1;
+    }
+
+    command.case_tag = SAP_WIT_HOST_EDITOR_INPUT_COMMAND_WINDOW_KEY;
+    command.val.window_key.key = 258;
+    command.val.window_key.action = 1;
+    command.val.window_key.modifiers = 0u;
+    if (croft_wit_host_editor_input_runtime_dispatch(runtime, &command, &reply) != 0) {
+        croft_wit_host_editor_input_runtime_destroy(runtime);
+        return 1;
+    }
+
+    command.case_tag = SAP_WIT_HOST_EDITOR_INPUT_COMMAND_NEXT_ACTION;
+    if (croft_wit_host_editor_input_runtime_dispatch(runtime, &command, &reply) != 0
+            || wit_editor_input_expect_action(&reply, &action) != 1
+            || action.case_tag != SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_INDENT) {
+        croft_wit_host_editor_input_runtime_destroy(runtime);
+        return 1;
+    }
+
+    command.case_tag = SAP_WIT_HOST_EDITOR_INPUT_COMMAND_WINDOW_CHAR;
+    command.val.window_char.codepoint = (uint32_t)'\t';
+    if (croft_wit_host_editor_input_runtime_dispatch(runtime, &command, &reply) != 0) {
+        croft_wit_host_editor_input_runtime_destroy(runtime);
+        return 1;
+    }
+
+    command.case_tag = SAP_WIT_HOST_EDITOR_INPUT_COMMAND_NEXT_ACTION;
+    if (croft_wit_host_editor_input_runtime_dispatch(runtime, &command, &reply) != 0
+            || wit_editor_input_expect_action(&reply, &action) != 0) {
+        croft_wit_host_editor_input_runtime_destroy(runtime);
+        return 1;
+    }
+
+    command.case_tag = SAP_WIT_HOST_EDITOR_INPUT_COMMAND_WINDOW_KEY;
+    command.val.window_key.key = 258;
+    command.val.window_key.action = 1;
+    command.val.window_key.modifiers = CROFT_UI_MOD_SHIFT;
+    if (croft_wit_host_editor_input_runtime_dispatch(runtime, &command, &reply) != 0) {
+        croft_wit_host_editor_input_runtime_destroy(runtime);
+        return 1;
+    }
+
+    command.case_tag = SAP_WIT_HOST_EDITOR_INPUT_COMMAND_NEXT_ACTION;
+    if (croft_wit_host_editor_input_runtime_dispatch(runtime, &command, &reply) != 0
+            || wit_editor_input_expect_action(&reply, &action) != 1
+            || action.case_tag != SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_OUTDENT) {
+        croft_wit_host_editor_input_runtime_destroy(runtime);
+        return 1;
+    }
+
+    command.case_tag = SAP_WIT_HOST_EDITOR_INPUT_COMMAND_WINDOW_KEY;
+    command.val.window_key.key = 93;
+    command.val.window_key.action = 1;
+    command.val.window_key.modifiers = CROFT_UI_MOD_SUPER;
+    if (croft_wit_host_editor_input_runtime_dispatch(runtime, &command, &reply) != 0) {
+        croft_wit_host_editor_input_runtime_destroy(runtime);
+        return 1;
+    }
+
+    command.case_tag = SAP_WIT_HOST_EDITOR_INPUT_COMMAND_NEXT_ACTION;
+    if (croft_wit_host_editor_input_runtime_dispatch(runtime, &command, &reply) != 0
+            || wit_editor_input_expect_action(&reply, &action) != 1
+            || action.case_tag != SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_INDENT) {
+        croft_wit_host_editor_input_runtime_destroy(runtime);
+        return 1;
+    }
+
+    command.case_tag = SAP_WIT_HOST_EDITOR_INPUT_COMMAND_MENU_ACTION;
+    command.val.menu_action.action_id = 211;
+    if (croft_wit_host_editor_input_runtime_dispatch(runtime, &command, &reply) != 0) {
+        croft_wit_host_editor_input_runtime_destroy(runtime);
+        return 1;
+    }
+
+    command.case_tag = SAP_WIT_HOST_EDITOR_INPUT_COMMAND_NEXT_ACTION;
+    if (croft_wit_host_editor_input_runtime_dispatch(runtime, &command, &reply) != 0
+            || wit_editor_input_expect_action(&reply, &action) != 1
+            || action.case_tag != SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_OUTDENT) {
+        croft_wit_host_editor_input_runtime_destroy(runtime);
+        return 1;
+    }
+
+    croft_wit_host_editor_input_runtime_destroy(runtime);
+    return 0;
+}

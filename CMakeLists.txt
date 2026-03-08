@@ -1524,6 +1524,7 @@ if(TARGET croft_wit_host_window_runtime
               croft_wit_host_menu_runtime
               croft_wit_host_clipboard_runtime
               croft_wit_host_editor_input_runtime
+              croft_editor_commands
               croft_wit_text_program
               croft_wit_text_runtime
         REQUIRES croft_wit_host_window_runtime
@@ -1532,6 +1533,8 @@ if(TARGET croft_wit_host_window_runtime
                  croft_wit_host_menu_runtime
                  croft_wit_host_clipboard_runtime
                  croft_wit_host_editor_input_runtime
+                 croft_editor_core
+                 croft_editor_commands
                  croft_wit_text_program
                  croft_wit_text_runtime
         TAGS wit xpi common-core host-window host-gpu2d host-clock host-menu host-clipboard host-editor-input textpad native-window
