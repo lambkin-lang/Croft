@@ -1,3 +1,4 @@
+#include "croft/editor_brackets.h"
 #include "croft/editor_commands.h"
 #include "croft/editor_document.h"
 #include "croft/editor_document_fs.h"
@@ -361,6 +362,7 @@ static NSString* croft_editor_appkit_string_from_utf8(const char* utf8, size_t u
     CroftLineNumberRulerView* _lineNumberRuler;
     NSTextField* _statusLabel;
     NSMutableArray<NSValue*>* _selectionOccurrenceRanges;
+    NSMutableArray<NSValue*>* _bracketMatchRanges;
     BOOL _syncingFromDocument;
     NSInteger _autoCloseMillis;
 }
@@ -374,6 +376,7 @@ static NSString* croft_editor_appkit_string_from_utf8(const char* utf8, size_t u
         _windowTitle = title;
         _autoCloseMillis = autoCloseMillis;
         _selectionOccurrenceRanges = [[NSMutableArray alloc] init];
+        _bracketMatchRanges = [[NSMutableArray alloc] init];
     }
     return self;
 }
@@ -574,6 +577,21 @@ static NSString* croft_editor_appkit_string_from_utf8(const char* utf8, size_t u
     [_selectionOccurrenceRanges removeAllObjects];
 }
 
+- (void)clearBracketMatches {
+    NSLayoutManager* layoutManager = _textView.layoutManager;
+
+    if (!layoutManager) {
+        return;
+    }
+
+    for (NSValue* value in _bracketMatchRanges) {
+        NSRange range = value.rangeValue;
+        [layoutManager removeTemporaryAttribute:NSBackgroundColorAttributeName
+                              forCharacterRange:range];
+    }
+    [_bracketMatchRanges removeAllObjects];
+}
+
 - (void)updateSelectionOccurrences {
     NSString* text;
     NSRange selection;
@@ -622,9 +640,64 @@ static NSString* croft_editor_appkit_string_from_utf8(const char* utf8, size_t u
     }
 }
 
+- (void)updateBracketMatches {
+    NSString* text;
+    NSRange selection;
+    NSData* utf8;
+    NSLayoutManager* layoutManager = _textView.layoutManager;
+    croft_editor_text_model model;
+    croft_editor_bracket_match match = {0};
+
+    [self clearBracketMatches];
+
+    if (!_textView || !layoutManager) {
+        return;
+    }
+
+    text = _textView.string ?: @"";
+    selection = _textView.selectedRange;
+    if (selection.length != 0u || selection.location > text.length) {
+        return;
+    }
+
+    utf8 = [text dataUsingEncoding:NSUTF8StringEncoding allowLossyConversion:NO];
+    croft_editor_text_model_init(&model);
+    if (croft_editor_text_model_set_text(&model,
+                                         (const char*)utf8.bytes,
+                                         utf8 ? (size_t)utf8.length : 0u) == CROFT_EDITOR_OK) {
+        uint32_t cursor_offset =
+            croft_editor_appkit_codepoint_offset_for_utf16_index(text, selection.location);
+        if (croft_editor_bracket_match_near_offset(&model, cursor_offset, &match) == CROFT_EDITOR_OK) {
+            NSUInteger open_start =
+                croft_editor_appkit_utf16_index_for_codepoint_offset(text, &model, match.open_offset);
+            NSUInteger open_end =
+                croft_editor_appkit_utf16_index_for_codepoint_offset(text, &model, match.open_offset + 1u);
+            NSUInteger close_start =
+                croft_editor_appkit_utf16_index_for_codepoint_offset(text, &model, match.close_offset);
+            NSUInteger close_end =
+                croft_editor_appkit_utf16_index_for_codepoint_offset(text, &model, match.close_offset + 1u);
+            NSColor* color =
+                [NSColor colorWithCalibratedRed:0.80 green:0.88 blue:0.97 alpha:0.85];
+
+            [layoutManager addTemporaryAttribute:NSBackgroundColorAttributeName
+                                           value:color
+                               forCharacterRange:NSMakeRange(open_start, open_end - open_start)];
+            [_bracketMatchRanges addObject:[NSValue valueWithRange:NSMakeRange(open_start,
+                                                                               open_end - open_start)]];
+            [layoutManager addTemporaryAttribute:NSBackgroundColorAttributeName
+                                           value:color
+                               forCharacterRange:NSMakeRange(close_start, close_end - close_start)];
+            [_bracketMatchRanges addObject:[NSValue valueWithRange:NSMakeRange(close_start,
+                                                                               close_end - close_start)]];
+        }
+    }
+    croft_editor_text_model_dispose(&model);
+}
+
 - (void)refreshEditorChrome {
     [self updateWindowTitle];
     [self updateStatusBar];
+    [self updateBracketMatches];
     [self updateSelectionOccurrences];
     [_textView setNeedsDisplay:YES];
     [_lineNumberRuler invalidateMetrics];
@@ -888,6 +961,7 @@ cleanup:
 - (void)textViewDidChangeSelection:(NSNotification*)notification {
     (void)notification;
     [self updateStatusBar];
+    [self updateBracketMatches];
     [self updateSelectionOccurrences];
     [_textView setNeedsDisplay:YES];
     [_lineNumberRuler setNeedsDisplay:YES];
