@@ -101,6 +101,32 @@ static void print_frame_profile_summary(const char* variant, const render_frame_
            usec_to_msec(profile->present_total_usec));
 }
 
+static void print_render_profile_summary(const char* variant) {
+    croft_host_render_profile_snapshot profile = {0};
+
+    host_render_get_profile(&profile);
+    if (!profile.enabled) {
+        return;
+    }
+
+    printf("editor-render-profile variant=%s begin_calls=%llu begin_ms=%.3f lock_ms=%.3f target_ms=%.3f drawable_ms=%.3f surface_ms=%.3f command_buffer_ms=%.3f encoder_ms=%.3f submit_ms=%.3f present_ms=%.3f unlock_ms=%.3f blit_ms=%.3f end_calls=%llu end_ms=%.3f\n",
+           variant,
+           (unsigned long long)profile.begin_frame_calls,
+           usec_to_msec(profile.begin_frame_total_usec),
+           usec_to_msec(profile.context_lock_total_usec),
+           usec_to_msec(profile.target_update_total_usec),
+           usec_to_msec(profile.acquire_drawable_total_usec),
+           usec_to_msec(profile.surface_create_total_usec),
+           usec_to_msec(profile.command_buffer_total_usec),
+           usec_to_msec(profile.encoder_start_total_usec),
+           usec_to_msec(profile.submit_total_usec),
+           usec_to_msec(profile.present_total_usec),
+           usec_to_msec(profile.unlock_total_usec),
+           usec_to_msec(profile.blit_total_usec),
+           (unsigned long long)profile.end_frame_calls,
+           usec_to_msec(profile.end_frame_total_usec));
+}
+
 static void on_ui_event(int32_t type, int32_t arg0, int32_t arg1) {
     if (type == CROFT_UI_EVENT_KEY) {
         uint32_t modifiers = host_ui_get_modifiers();
@@ -234,6 +260,7 @@ int main(int argc, char** argv) {
         croft_editor_document_destroy(g_document);
         return 1;
     }
+    host_render_set_profiling(profile_enabled);
 
 #ifdef __APPLE__
     host_gesture_mac_init(host_ui_get_native_window(), (void*)on_ui_event);
@@ -331,6 +358,7 @@ int main(int argc, char** argv) {
            frame_count,
            (unsigned long long)((end_time - start_time) * 1000.0));
     print_frame_profile_summary("scene", &frame_profile);
+    print_render_profile_summary("scene");
     print_editor_profile_summary("scene", &g_editor);
     fflush(stdout);
 

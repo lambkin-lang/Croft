@@ -9,6 +9,8 @@
 #include <tgfx/core/Color.h>
 #include <tgfx/core/Font.h>
 #include <tgfx/core/TextBlob.h>
+#include <chrono>
+#include <cstring>
 #include <string>
 #include <OpenGL/gl3.h>
 
@@ -20,6 +22,27 @@ struct RenderState {
     GLuint quadVao = 0;
     GLuint quadProgram = 0;
 } state;
+static uint32_t g_profile_enabled = 0u;
+static croft_host_render_profile_snapshot g_profile_stats = {};
+
+static uint64_t profile_now_usec() {
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now().time_since_epoch())
+            .count());
+}
+
+static void profile_note(uint64_t* total_usec, uint64_t start_usec) {
+    uint64_t end_usec;
+
+    if (!total_usec || start_usec == 0u) {
+        return;
+    }
+    end_usec = profile_now_usec();
+    if (end_usec >= start_usec) {
+        *total_usec += end_usec - start_usec;
+    }
+}
 
 static const char* quadVert = 
     "#version 330 core\n"
@@ -54,6 +77,28 @@ static GLuint compile_shader(GLenum type, const char* src) {
 }
 
 extern "C" {
+
+void host_render_set_profiling(int enabled) {
+    g_profile_enabled = enabled ? 1u : 0u;
+    host_render_reset_profile();
+}
+
+void host_render_reset_profile(void) {
+    uint32_t enabled = g_profile_enabled;
+
+    std::memset(&g_profile_stats, 0, sizeof(g_profile_stats));
+    g_profile_stats.enabled = enabled;
+}
+
+void host_render_get_profile(croft_host_render_profile_snapshot* out_snapshot) {
+    if (!out_snapshot) {
+        return;
+    }
+
+    std::memset(out_snapshot, 0, sizeof(*out_snapshot));
+    *out_snapshot = g_profile_stats;
+    out_snapshot->enabled = g_profile_enabled;
+}
 
 int32_t host_render_init(void) {
     // Compile quad shader for final blit to FBO 0
@@ -103,6 +148,8 @@ void host_render_terminate(void) {
 }
 
 int32_t host_render_begin_frame(uint32_t width, uint32_t height) {
+    uint64_t begin_start_usec = g_profile_enabled ? profile_now_usec() : 0u;
+
     if (!state.device) {
         state.device = tgfx::GLDevice::Current();
         if (!state.device) {
@@ -111,11 +158,19 @@ int32_t host_render_begin_frame(uint32_t width, uint32_t height) {
         }
     }
     
-    state.context = state.device->lockContext();
+    {
+        uint64_t phase_start_usec = g_profile_enabled ? profile_now_usec() : 0u;
+        state.context = state.device->lockContext();
+        profile_note(&g_profile_stats.context_lock_total_usec, phase_start_usec);
+    }
     if (!state.context) return -1;
     
     // Explicitly set the OpenGL viewport before handing control to tgfx
-    glViewport(0, 0, width, height);
+    {
+        uint64_t phase_start_usec = g_profile_enabled ? profile_now_usec() : 0u;
+        glViewport(0, 0, width, height);
+        profile_note(&g_profile_stats.target_update_total_usec, phase_start_usec);
+    }
 
     GLint drawFboId = 0;
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &drawFboId);
@@ -128,7 +183,11 @@ int32_t host_render_begin_frame(uint32_t width, uint32_t height) {
 
     // Create an offscreen surface. Since tgfx spawns its own shared OpenGL context, 
     // we cannot render directly to FBO 0.
-    state.surface = tgfx::Surface::Make(state.context, width, height);
+    {
+        uint64_t phase_start_usec = g_profile_enabled ? profile_now_usec() : 0u;
+        state.surface = tgfx::Surface::Make(state.context, width, height);
+        profile_note(&g_profile_stats.surface_create_total_usec, phase_start_usec);
+    }
     if (!state.surface) {
         state.device->unlock();
         state.context = nullptr;
@@ -136,6 +195,10 @@ int32_t host_render_begin_frame(uint32_t width, uint32_t height) {
     }
     
     state.canvas = state.surface->getCanvas();
+    if (begin_start_usec != 0u) {
+        g_profile_stats.begin_frame_calls++;
+        profile_note(&g_profile_stats.begin_frame_total_usec, begin_start_usec);
+    }
     return 0;
 }
 
@@ -257,10 +320,16 @@ float host_render_measure_text(const char* text, uint32_t len, float font_size) 
 }
 
 int32_t host_render_end_frame(void) {
+    uint64_t end_start_usec = g_profile_enabled ? profile_now_usec() : 0u;
+
     if (state.context) {
-        bool result = state.context->flushAndSubmit(true);
-        if (!result) {
-            printf("host_render_end_frame: flushAndSubmit returned false.\n");
+        {
+            uint64_t phase_start_usec = g_profile_enabled ? profile_now_usec() : 0u;
+            bool result = state.context->flushAndSubmit(true);
+            profile_note(&g_profile_stats.submit_total_usec, phase_start_usec);
+            if (!result) {
+                printf("host_render_end_frame: flushAndSubmit returned false.\n");
+            }
         }
         
         GLenum tgfxErr = glGetError();
@@ -276,17 +345,26 @@ int32_t host_render_end_frame(void) {
         int height = state.surface->height();
         
         // UNLOCK BEFORE BLITTING! This restores the thread to the GLFW context.
-        state.device->unlock();
+        {
+            uint64_t phase_start_usec = g_profile_enabled ? profile_now_usec() : 0u;
+            state.device->unlock();
+            profile_note(&g_profile_stats.unlock_total_usec, phase_start_usec);
+        }
         
         // Force the GLFW context current explicitly, because tgfx's unlock may not be reliable
         // across differing OS context management paradigms like CGL vs NSOpenGL.
         // We MUST set it to NULL first because GLFW maintains a TLS cache of the current context
         // and will NO-OP if it thinks the window is already current!
         extern void* host_ui_get_window(void);
-        glfwMakeContextCurrent(NULL);
-        glfwMakeContextCurrent((GLFWwindow*)host_ui_get_window());
+        {
+            uint64_t phase_start_usec = g_profile_enabled ? profile_now_usec() : 0u;
+            glfwMakeContextCurrent(NULL);
+            glfwMakeContextCurrent((GLFWwindow*)host_ui_get_window());
+            profile_note(&g_profile_stats.present_total_usec, phase_start_usec);
+        }
 
         if (hasTex) {
+            uint64_t phase_start_usec = g_profile_enabled ? profile_now_usec() : 0u;
             glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
             
             // Draw via textured quad mapping our offscreen render texture to FBO 0
@@ -314,6 +392,7 @@ int32_t host_render_end_frame(void) {
             glBindVertexArray(0);
             glBindTexture(GL_TEXTURE_2D, 0);
             glUseProgram(0);
+            profile_note(&g_profile_stats.blit_total_usec, phase_start_usec);
             
         } else {
             // printf("host_render_end_frame: Failed to retrieve GL texture from surface.\n");
@@ -322,6 +401,10 @@ int32_t host_render_end_frame(void) {
         state.canvas = nullptr;
         state.surface = nullptr;
         state.context = nullptr;
+    }
+    if (end_start_usec != 0u) {
+        g_profile_stats.end_frame_calls++;
+        profile_note(&g_profile_stats.end_frame_total_usec, end_start_usec);
     }
     return 0;
 }

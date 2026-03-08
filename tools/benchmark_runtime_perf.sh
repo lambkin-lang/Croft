@@ -261,7 +261,7 @@ extract_profile_lines() {
         return
     fi
 
-    sed -n '/^editor-scene-frame /p;/^editor-scene-profile /p' "$log_file"
+    sed -n '/^editor-scene-frame /p;/^editor-render-profile /p;/^editor-scene-profile /p' "$log_file"
 }
 
 run_iteration() {

@@ -14,6 +14,8 @@
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
 
+#include <chrono>
+#include <cstring>
 #include <string>
 
 static std::shared_ptr<tgfx::MetalDevice> g_device;
@@ -23,6 +25,27 @@ static tgfx::Canvas* g_canvas = nullptr;
 static __strong NSView* g_view = nil;
 static __strong CAMetalLayer* g_layer = nil;
 static __strong id<CAMetalDrawable> g_drawable = nil;
+static uint32_t g_profile_enabled = 0u;
+static croft_host_render_profile_snapshot g_profile_stats = {};
+
+static uint64_t profile_now_usec() {
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now().time_since_epoch())
+            .count());
+}
+
+static void profile_note(uint64_t* total_usec, uint64_t start_usec) {
+    uint64_t end_usec;
+
+    if (!total_usec || start_usec == 0u) {
+        return;
+    }
+    end_usec = profile_now_usec();
+    if (end_usec >= start_usec) {
+        *total_usec += end_usec - start_usec;
+    }
+}
 
 static void update_layer_size(uint32_t width, uint32_t height) {
     if (!g_layer || !g_view) {
@@ -37,6 +60,28 @@ static void update_layer_size(uint32_t width, uint32_t height) {
 }
 
 extern "C" {
+
+void host_render_set_profiling(int enabled) {
+    g_profile_enabled = enabled ? 1u : 0u;
+    host_render_reset_profile();
+}
+
+void host_render_reset_profile(void) {
+    uint32_t enabled = g_profile_enabled;
+
+    std::memset(&g_profile_stats, 0, sizeof(g_profile_stats));
+    g_profile_stats.enabled = enabled;
+}
+
+void host_render_get_profile(croft_host_render_profile_snapshot* out_snapshot) {
+    if (!out_snapshot) {
+        return;
+    }
+
+    std::memset(out_snapshot, 0, sizeof(*out_snapshot));
+    *out_snapshot = g_profile_stats;
+    out_snapshot->enabled = g_profile_enabled;
+}
 
 int32_t host_render_init(void) {
     NSWindow* window = (__bridge NSWindow*)host_ui_get_native_window();
@@ -98,18 +143,32 @@ void host_render_terminate(void) {
 }
 
 int32_t host_render_begin_frame(uint32_t width, uint32_t height) {
+    uint64_t begin_start_usec = g_profile_enabled ? profile_now_usec() : 0u;
+
     if (!g_device || !g_layer || width == 0 || height == 0) {
         return -1;
     }
 
-    g_context = g_device->lockContext();
+    {
+        uint64_t phase_start_usec = g_profile_enabled ? profile_now_usec() : 0u;
+        g_context = g_device->lockContext();
+        profile_note(&g_profile_stats.context_lock_total_usec, phase_start_usec);
+    }
     if (!g_context) {
         return -1;
     }
 
-    update_layer_size(width, height);
+    {
+        uint64_t phase_start_usec = g_profile_enabled ? profile_now_usec() : 0u;
+        update_layer_size(width, height);
+        profile_note(&g_profile_stats.target_update_total_usec, phase_start_usec);
+    }
 
-    g_drawable = [g_layer nextDrawable];
+    {
+        uint64_t phase_start_usec = g_profile_enabled ? profile_now_usec() : 0u;
+        g_drawable = [g_layer nextDrawable];
+        profile_note(&g_profile_stats.acquire_drawable_total_usec, phase_start_usec);
+    }
     if (!g_drawable) {
         g_device->unlock();
         g_context = nullptr;
@@ -120,10 +179,14 @@ int32_t host_render_begin_frame(uint32_t width, uint32_t height) {
     metalInfo.texture = (__bridge const void*)g_drawable.texture;
     metalInfo.format = static_cast<unsigned>(g_drawable.texture.pixelFormat);
 
-    tgfx::BackendRenderTarget renderTarget(metalInfo,
-                                           static_cast<int>(width),
-                                           static_cast<int>(height));
-    g_surface = tgfx::Surface::MakeFrom(g_context, renderTarget, tgfx::ImageOrigin::TopLeft, 0);
+    {
+        uint64_t phase_start_usec = g_profile_enabled ? profile_now_usec() : 0u;
+        tgfx::BackendRenderTarget renderTarget(metalInfo,
+                                               static_cast<int>(width),
+                                               static_cast<int>(height));
+        g_surface = tgfx::Surface::MakeFrom(g_context, renderTarget, tgfx::ImageOrigin::TopLeft, 0);
+        profile_note(&g_profile_stats.surface_create_total_usec, phase_start_usec);
+    }
     if (!g_surface) {
         g_drawable = nil;
         g_device->unlock();
@@ -132,6 +195,10 @@ int32_t host_render_begin_frame(uint32_t width, uint32_t height) {
     }
 
     g_canvas = g_surface->getCanvas();
+    if (begin_start_usec != 0u) {
+        g_profile_stats.begin_frame_calls++;
+        profile_note(&g_profile_stats.begin_frame_total_usec, begin_start_usec);
+    }
     return 0;
 }
 
@@ -279,20 +346,36 @@ float host_render_measure_text(const char* text, uint32_t len, float font_size) 
 }
 
 int32_t host_render_end_frame(void) {
+    uint64_t end_start_usec = g_profile_enabled ? profile_now_usec() : 0u;
+
     if (!g_context) {
         return 0;
     }
 
-    g_context->flushAndSubmit(true);
+    {
+        uint64_t phase_start_usec = g_profile_enabled ? profile_now_usec() : 0u;
+        g_context->flushAndSubmit(true);
+        profile_note(&g_profile_stats.submit_total_usec, phase_start_usec);
+    }
     if (g_drawable) {
+        uint64_t phase_start_usec = g_profile_enabled ? profile_now_usec() : 0u;
         [g_drawable present];
+        profile_note(&g_profile_stats.present_total_usec, phase_start_usec);
     }
 
     g_canvas = nullptr;
     g_surface = nullptr;
     g_drawable = nil;
-    g_device->unlock();
+    {
+        uint64_t phase_start_usec = g_profile_enabled ? profile_now_usec() : 0u;
+        g_device->unlock();
+        profile_note(&g_profile_stats.unlock_total_usec, phase_start_usec);
+    }
     g_context = nullptr;
+    if (end_start_usec != 0u) {
+        g_profile_stats.end_frame_calls++;
+        profile_note(&g_profile_stats.end_frame_total_usec, end_start_usec);
+    }
     return 0;
 }
 

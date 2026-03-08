@@ -5,8 +5,10 @@
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
 
+#include <chrono>
 #include <CoreGraphics/CoreGraphics.h>
 #include <cmath>
+#include <cstring>
 #include <cstdio>
 #include <vector>
 
@@ -64,6 +66,8 @@ static uint32_t g_frame_height = 0;
 static MTLClearColor g_clear_color = MTLClearColorMake(0.0, 0.0, 0.0, 1.0);
 static bool g_encoder_started = false;
 static std::vector<RenderState> g_state_stack;
+static uint32_t g_profile_enabled = 0u;
+static croft_host_render_profile_snapshot g_profile_stats = {};
 
 static constexpr const char* kShaderSource = R"msl(
 #include <metal_stdlib>
@@ -120,6 +124,25 @@ fragment float4 croftTextFragment(VertexOut in [[stage_in]],
 
 static RenderState& current_state() {
     return g_state_stack.back();
+}
+
+static uint64_t profile_now_usec() {
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now().time_since_epoch())
+            .count());
+}
+
+static void profile_note(uint64_t* total_usec, uint64_t start_usec) {
+    uint64_t end_usec;
+
+    if (!total_usec || start_usec == 0u) {
+        return;
+    }
+    end_usec = profile_now_usec();
+    if (end_usec >= start_usec) {
+        *total_usec += end_usec - start_usec;
+    }
 }
 
 static simd::float4 rgba_to_color(uint32_t color_rgba) {
@@ -393,6 +416,28 @@ static CroftTextTextureEntry* cached_text_texture_entry(NSString* string, float 
 
 extern "C" {
 
+void host_render_set_profiling(int enabled) {
+    g_profile_enabled = enabled ? 1u : 0u;
+    host_render_reset_profile();
+}
+
+void host_render_reset_profile(void) {
+    uint32_t enabled = g_profile_enabled;
+
+    std::memset(&g_profile_stats, 0, sizeof(g_profile_stats));
+    g_profile_stats.enabled = enabled;
+}
+
+void host_render_get_profile(croft_host_render_profile_snapshot* out_snapshot) {
+    if (!out_snapshot) {
+        return;
+    }
+
+    std::memset(out_snapshot, 0, sizeof(*out_snapshot));
+    *out_snapshot = g_profile_stats;
+    out_snapshot->enabled = g_profile_enabled;
+}
+
 int32_t host_render_init(void) {
     NSWindow* window = (__bridge NSWindow*)host_ui_get_native_window();
     NSError* error = nil;
@@ -546,20 +591,34 @@ void host_render_terminate(void) {
 }
 
 int32_t host_render_begin_frame(uint32_t width, uint32_t height) {
+    uint64_t begin_start_usec = g_profile_enabled ? profile_now_usec() : 0u;
+
     if (!g_device || !g_command_queue || !g_layer || width == 0 || height == 0) {
         return -1;
     }
 
     g_frame_width = width;
     g_frame_height = height;
-    update_layer_size(width, height);
+    {
+        uint64_t phase_start_usec = g_profile_enabled ? profile_now_usec() : 0u;
+        update_layer_size(width, height);
+        profile_note(&g_profile_stats.target_update_total_usec, phase_start_usec);
+    }
 
-    g_drawable = [g_layer nextDrawable];
+    {
+        uint64_t phase_start_usec = g_profile_enabled ? profile_now_usec() : 0u;
+        g_drawable = [g_layer nextDrawable];
+        profile_note(&g_profile_stats.acquire_drawable_total_usec, phase_start_usec);
+    }
     if (!g_drawable) {
         return -1;
     }
 
-    g_command_buffer = [g_command_queue commandBuffer];
+    {
+        uint64_t phase_start_usec = g_profile_enabled ? profile_now_usec() : 0u;
+        g_command_buffer = [g_command_queue commandBuffer];
+        profile_note(&g_profile_stats.command_buffer_total_usec, phase_start_usec);
+    }
     if (!g_command_buffer) {
         g_drawable = nil;
         return -1;
@@ -569,6 +628,10 @@ int32_t host_render_begin_frame(uint32_t width, uint32_t height) {
     g_encoder_started = false;
     g_state_stack.clear();
     g_state_stack.push_back(RenderState{CGAffineTransformIdentity, false, CGRectZero});
+    if (begin_start_usec != 0u) {
+        g_profile_stats.begin_frame_calls++;
+        profile_note(&g_profile_stats.begin_frame_total_usec, begin_start_usec);
+    }
     return 0;
 }
 
@@ -621,7 +684,12 @@ int32_t host_render_clear(uint32_t color_rgba) {
 
     const simd::float4 color = rgba_to_color(color_rgba);
     g_clear_color = MTLClearColorMake(color.x, color.y, color.z, color.w);
-    return ensure_encoder_started(true) ? 0 : -1;
+    {
+        uint64_t phase_start_usec = g_profile_enabled ? profile_now_usec() : 0u;
+        int32_t rc = ensure_encoder_started(true) ? 0 : -1;
+        profile_note(&g_profile_stats.encoder_start_total_usec, phase_start_usec);
+        return rc;
+    }
 }
 
 int32_t host_render_draw_rect(float x, float y, float w, float h, uint32_t color_rgba) {
@@ -685,19 +753,34 @@ float host_render_measure_text(const char* text, uint32_t len, float font_size) 
 }
 
 int32_t host_render_end_frame(void) {
+    uint64_t end_start_usec = g_profile_enabled ? profile_now_usec() : 0u;
+
     if (!g_command_buffer || !g_drawable) {
         return -1;
     }
 
-    if (!g_encoder_started && !ensure_encoder_started(true)) {
-        g_command_buffer = nil;
-        g_drawable = nil;
-        return -1;
+    if (!g_encoder_started) {
+        uint64_t phase_start_usec = g_profile_enabled ? profile_now_usec() : 0u;
+        if (!ensure_encoder_started(true)) {
+            profile_note(&g_profile_stats.encoder_start_total_usec, phase_start_usec);
+            g_command_buffer = nil;
+            g_drawable = nil;
+            return -1;
+        }
+        profile_note(&g_profile_stats.encoder_start_total_usec, phase_start_usec);
     }
 
     [g_encoder endEncoding];
-    [g_command_buffer presentDrawable:g_drawable];
-    [g_command_buffer commit];
+    {
+        uint64_t phase_start_usec = g_profile_enabled ? profile_now_usec() : 0u;
+        [g_command_buffer presentDrawable:g_drawable];
+        profile_note(&g_profile_stats.present_total_usec, phase_start_usec);
+    }
+    {
+        uint64_t phase_start_usec = g_profile_enabled ? profile_now_usec() : 0u;
+        [g_command_buffer commit];
+        profile_note(&g_profile_stats.submit_total_usec, phase_start_usec);
+    }
 
     g_encoder = nil;
     g_command_buffer = nil;
@@ -706,6 +789,10 @@ int32_t host_render_end_frame(void) {
     g_state_stack.clear();
     g_frame_width = 0;
     g_frame_height = 0;
+    if (end_start_usec != 0u) {
+        g_profile_stats.end_frame_calls++;
+        profile_note(&g_profile_stats.end_frame_total_usec, end_start_usec);
+    }
     return 0;
 }
 
