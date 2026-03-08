@@ -1,5 +1,8 @@
 #include "croft/host_render.h"
+#include "host_render_tgfx_text_cache.h"
 #include <tgfx/gpu/opengl/GLDevice.h>
+#include <tgfx/gpu/Context.h>
+#include <tgfx/gpu/GPU.h>
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 #include <tgfx/gpu/opengl/GLTypes.h>
@@ -24,6 +27,7 @@ struct RenderState {
 } state;
 static uint32_t g_profile_enabled = 0u;
 static croft_host_render_profile_snapshot g_profile_stats = {};
+static croft_tgfx_text_cache::Cache g_text_cache = {};
 
 static uint64_t profile_now_usec() {
     return static_cast<uint64_t>(
@@ -145,6 +149,7 @@ void host_render_terminate(void) {
         state.context = nullptr;
     }
     state.device = nullptr;
+    croft_tgfx_text_cache::reset(&g_text_cache);
 }
 
 int32_t host_render_begin_frame(uint32_t width, uint32_t height) {
@@ -263,14 +268,7 @@ int32_t host_render_draw_text(float x, float y, const char* text, uint32_t len, 
     float a =  (color_rgba        & 0xFF) / 255.0f;
     paint.setColor(tgfx::Color{r, g, b, a});
     
-    auto typeface = tgfx::Typeface::MakeFromName("Helvetica", "");
-    if (!typeface) {
-        typeface = tgfx::Typeface::MakeFromName("", "");
-    }
-    
-    tgfx::Font font(typeface, font_size);
-    std::string str(text, static_cast<size_t>(len));
-    auto textBlob = tgfx::TextBlob::MakeFrom(str, font);
+    auto textBlob = croft_tgfx_text_cache::get_text_blob(&g_text_cache, text, len, font_size);
     if (textBlob) {
         state.canvas->drawTextBlob(textBlob, x, y, paint);
     }
@@ -278,58 +276,32 @@ int32_t host_render_draw_text(float x, float y, const char* text, uint32_t len, 
 }
 
 float host_render_measure_text(const char* text, uint32_t len, float font_size) {
-    if (len == 0) return 0.0f;
-    auto typeface = tgfx::Typeface::MakeFromName("Helvetica", "");
-    if (!typeface) {
-        typeface = tgfx::Typeface::MakeFromName("", "");
-    }
-    
-    tgfx::Font font(typeface, font_size);
-    
-    float totalAdvance = 0.0f;
-    uint32_t i = 0;
-    while (i < len) {
-        uint8_t c = static_cast<uint8_t>(text[i]);
-        uint32_t codepoint = 0;
-        int bytes = 1;
-        if ((c & 0x80) == 0) {
-            codepoint = c;
-        } else if ((c & 0xE0) == 0xC0) {
-            if (i + 1 < len) {
-                codepoint = ((c & 0x1F) << 6) | (text[i+1] & 0x3F);
-                bytes = 2;
-            } else break;
-        } else if ((c & 0xF0) == 0xE0) {
-            if (i + 2 < len) {
-                codepoint = ((c & 0x0F) << 12) | ((text[i+1] & 0x3F) << 6) | (text[i+2] & 0x3F);
-                bytes = 3;
-            } else break;
-        } else if ((c & 0xF8) == 0xF0) {
-            if (i + 3 < len) {
-                codepoint = ((c & 0x07) << 18) | ((text[i+1] & 0x3F) << 12) | ((text[i+2] & 0x3F) << 6) | (text[i+3] & 0x3F);
-                bytes = 4;
-            } else break;
-        }
-        
-        tgfx::GlyphID glyphID = font.getGlyphID(codepoint);
-        totalAdvance += font.getAdvance(glyphID);
-        i += bytes;
-    }
-    
-    return totalAdvance;
+    return croft_tgfx_text_cache::measure_text(&g_text_cache, text, len, font_size);
 }
 
 int32_t host_render_end_frame(void) {
     uint64_t end_start_usec = g_profile_enabled ? profile_now_usec() : 0u;
 
     if (state.context) {
+        std::unique_ptr<tgfx::Recording> recording;
+
         {
             uint64_t phase_start_usec = g_profile_enabled ? profile_now_usec() : 0u;
-            bool result = state.context->flushAndSubmit(true);
-            profile_note(&g_profile_stats.submit_total_usec, phase_start_usec);
-            if (!result) {
+            recording = state.context->flush();
+            profile_note(&g_profile_stats.flush_total_usec, phase_start_usec);
+            if (!recording) {
                 printf("host_render_end_frame: flushAndSubmit returned false.\n");
             }
+        }
+        if (recording) {
+            uint64_t phase_start_usec = g_profile_enabled ? profile_now_usec() : 0u;
+            state.context->submit(std::move(recording), false);
+            profile_note(&g_profile_stats.submit_total_usec, phase_start_usec);
+        }
+        {
+            uint64_t phase_start_usec = g_profile_enabled ? profile_now_usec() : 0u;
+            state.context->gpu()->queue()->waitUntilCompleted();
+            profile_note(&g_profile_stats.wait_total_usec, phase_start_usec);
         }
         
         GLenum tgfxErr = glGetError();

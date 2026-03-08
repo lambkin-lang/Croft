@@ -1,0 +1,175 @@
+#pragma once
+
+#include <tgfx/core/Font.h>
+#include <tgfx/core/TextBlob.h>
+#include <tgfx/core/Typeface.h>
+
+#include <cmath>
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <unordered_map>
+
+namespace croft_tgfx_text_cache {
+
+struct TextKey {
+    uint32_t font_size_centipoints;
+    std::string text;
+
+    bool operator==(const TextKey& other) const {
+        return font_size_centipoints == other.font_size_centipoints && text == other.text;
+    }
+};
+
+struct TextKeyHash {
+    size_t operator()(const TextKey& key) const {
+        size_t h1 = std::hash<uint32_t>{}(key.font_size_centipoints);
+        size_t h2 = std::hash<std::string>{}(key.text);
+        return h1 ^ (h2 + 0x9e3779b9u + (h1 << 6u) + (h1 >> 2u));
+    }
+};
+
+struct Cache {
+    std::shared_ptr<tgfx::Typeface> typeface = nullptr;
+    std::unordered_map<TextKey, std::shared_ptr<tgfx::TextBlob>, TextKeyHash> blobs = {};
+    std::unordered_map<TextKey, float, TextKeyHash> widths = {};
+};
+
+enum {
+    CROFT_TGFX_TEXT_BLOB_CACHE_LIMIT = 1024,
+    CROFT_TGFX_TEXT_WIDTH_CACHE_LIMIT = 4096
+};
+
+inline uint32_t font_size_key(float font_size) {
+    return static_cast<uint32_t>(std::lround(font_size * 100.0f));
+}
+
+inline const std::shared_ptr<tgfx::Typeface>& resolve_typeface(Cache* cache) {
+    static std::shared_ptr<tgfx::Typeface> empty = nullptr;
+
+    if (!cache) {
+        return empty;
+    }
+    if (!cache->typeface) {
+        cache->typeface = tgfx::Typeface::MakeFromName("Helvetica", "");
+        if (!cache->typeface) {
+            cache->typeface = tgfx::Typeface::MakeFromName("", "");
+        }
+    }
+    return cache->typeface;
+}
+
+inline tgfx::Font make_font(Cache* cache, float font_size) {
+    return tgfx::Font(resolve_typeface(cache), font_size);
+}
+
+inline void reset(Cache* cache) {
+    if (!cache) {
+        return;
+    }
+
+    cache->typeface.reset();
+    cache->blobs.clear();
+    cache->widths.clear();
+}
+
+inline std::shared_ptr<tgfx::TextBlob> get_text_blob(Cache* cache,
+                                                     const char* text,
+                                                     uint32_t len,
+                                                     float font_size) {
+    TextKey key;
+    auto found = cache ? cache->blobs.end() : decltype(cache->blobs.end()){};
+    tgfx::Font font = make_font(cache, font_size);
+
+    if (!cache || !text || len == 0) {
+        return nullptr;
+    }
+
+    key.font_size_centipoints = font_size_key(font_size);
+    key.text.assign(text, static_cast<size_t>(len));
+    found = cache->blobs.find(key);
+    if (found != cache->blobs.end()) {
+        return found->second;
+    }
+
+    if (cache->blobs.size() >= CROFT_TGFX_TEXT_BLOB_CACHE_LIMIT) {
+        cache->blobs.clear();
+    }
+
+    {
+        auto blob = tgfx::TextBlob::MakeFrom(key.text, font);
+        if (blob) {
+            cache->blobs.emplace(std::move(key), blob);
+        }
+        return blob;
+    }
+}
+
+inline float measure_text(Cache* cache, const char* text, uint32_t len, float font_size) {
+    TextKey key;
+    auto found = cache ? cache->widths.end() : decltype(cache->widths.end()){};
+    tgfx::Font font = make_font(cache, font_size);
+    float total_advance = 0.0f;
+    uint32_t i = 0;
+
+    if (!text || len == 0) {
+        return 0.0f;
+    }
+
+    if (cache) {
+        key.font_size_centipoints = font_size_key(font_size);
+        key.text.assign(text, static_cast<size_t>(len));
+        found = cache->widths.find(key);
+        if (found != cache->widths.end()) {
+            return found->second;
+        }
+    }
+
+    while (i < len) {
+        uint8_t c = static_cast<uint8_t>(text[i]);
+        uint32_t codepoint = 0;
+        int bytes = 1;
+        if ((c & 0x80) == 0) {
+            codepoint = c;
+        } else if ((c & 0xE0) == 0xC0) {
+            if (i + 1 < len) {
+                codepoint = ((c & 0x1F) << 6) | (text[i + 1] & 0x3F);
+                bytes = 2;
+            } else {
+                break;
+            }
+        } else if ((c & 0xF0) == 0xE0) {
+            if (i + 2 < len) {
+                codepoint = ((c & 0x0F) << 12) |
+                            ((text[i + 1] & 0x3F) << 6) |
+                            (text[i + 2] & 0x3F);
+                bytes = 3;
+            } else {
+                break;
+            }
+        } else if ((c & 0xF8) == 0xF0) {
+            if (i + 3 < len) {
+                codepoint = ((c & 0x07) << 18) |
+                            ((text[i + 1] & 0x3F) << 12) |
+                            ((text[i + 2] & 0x3F) << 6) |
+                            (text[i + 3] & 0x3F);
+                bytes = 4;
+            } else {
+                break;
+            }
+        }
+
+        total_advance += font.getAdvance(font.getGlyphID(codepoint));
+        i += static_cast<uint32_t>(bytes);
+    }
+
+    if (cache) {
+        if (cache->widths.size() >= CROFT_TGFX_TEXT_WIDTH_CACHE_LIMIT) {
+            cache->widths.clear();
+        }
+        cache->widths.emplace(std::move(key), total_advance);
+    }
+    return total_advance;
+}
+
+}  // namespace croft_tgfx_text_cache

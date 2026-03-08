@@ -18,7 +18,9 @@ typedef struct croft_host_render_profile_snapshot {
     uint64_t surface_create_total_usec;
     uint64_t command_buffer_total_usec;
     uint64_t encoder_start_total_usec;
+    uint64_t flush_total_usec;
     uint64_t submit_total_usec;
+    uint64_t wait_total_usec;
     uint64_t present_total_usec;
     uint64_t unlock_total_usec;
     uint64_t blit_total_usec;

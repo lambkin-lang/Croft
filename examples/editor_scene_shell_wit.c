@@ -75,7 +75,7 @@ static void print_render_profile_summary(const char* variant)
         return;
     }
 
-    printf("editor-render-profile variant=%s begin_calls=%llu begin_ms=%.3f lock_ms=%.3f target_ms=%.3f drawable_ms=%.3f surface_ms=%.3f command_buffer_ms=%.3f encoder_ms=%.3f submit_ms=%.3f present_ms=%.3f unlock_ms=%.3f blit_ms=%.3f end_calls=%llu end_ms=%.3f\n",
+    printf("editor-render-profile variant=%s begin_calls=%llu begin_ms=%.3f lock_ms=%.3f target_ms=%.3f drawable_ms=%.3f surface_ms=%.3f command_buffer_ms=%.3f encoder_ms=%.3f flush_ms=%.3f submit_ms=%.3f wait_ms=%.3f present_ms=%.3f unlock_ms=%.3f blit_ms=%.3f end_calls=%llu end_ms=%.3f\n",
            variant,
            (unsigned long long)profile.begin_frame_calls,
            usec_to_msec(profile.begin_frame_total_usec),
@@ -85,7 +85,9 @@ static void print_render_profile_summary(const char* variant)
            usec_to_msec(profile.surface_create_total_usec),
            usec_to_msec(profile.command_buffer_total_usec),
            usec_to_msec(profile.encoder_start_total_usec),
+           usec_to_msec(profile.flush_total_usec),
            usec_to_msec(profile.submit_total_usec),
+           usec_to_msec(profile.wait_total_usec),
            usec_to_msec(profile.present_total_usec),
            usec_to_msec(profile.unlock_total_usec),
            usec_to_msec(profile.blit_total_usec),

@@ -1,5 +1,6 @@
 #include "croft/host_render.h"
 #include "croft/host_ui.h"
+#include "host_render_tgfx_text_cache.h"
 
 #include <tgfx/core/Canvas.h>
 #include <tgfx/core/Color.h>
@@ -8,6 +9,8 @@
 #include <tgfx/core/Surface.h>
 #include <tgfx/core/TextBlob.h>
 #include <tgfx/gpu/Backend.h>
+#include <tgfx/gpu/Context.h>
+#include <tgfx/gpu/GPU.h>
 #include <tgfx/gpu/metal/MetalDevice.h>
 
 #import <AppKit/AppKit.h>
@@ -16,7 +19,6 @@
 
 #include <chrono>
 #include <cstring>
-#include <string>
 
 static std::shared_ptr<tgfx::MetalDevice> g_device;
 static tgfx::Context* g_context = nullptr;
@@ -25,6 +27,7 @@ static tgfx::Canvas* g_canvas = nullptr;
 static __strong NSView* g_view = nil;
 static __strong CAMetalLayer* g_layer = nil;
 static __strong id<CAMetalDrawable> g_drawable = nil;
+static croft_tgfx_text_cache::Cache g_text_cache = {};
 static uint32_t g_profile_enabled = 0u;
 static croft_host_render_profile_snapshot g_profile_stats = {};
 
@@ -140,6 +143,7 @@ void host_render_terminate(void) {
     g_layer = nil;
     g_view = nil;
     g_device = nullptr;
+    croft_tgfx_text_cache::reset(&g_text_cache);
 }
 
 int32_t host_render_begin_frame(uint32_t width, uint32_t height) {
@@ -276,14 +280,7 @@ int32_t host_render_draw_text(float x,
     float a = (color_rgba & 0xFF) / 255.0f;
     paint.setColor(tgfx::Color{r, g, b, a});
 
-    auto typeface = tgfx::Typeface::MakeFromName("Helvetica", "");
-    if (!typeface) {
-        typeface = tgfx::Typeface::MakeFromName("", "");
-    }
-
-    tgfx::Font font(typeface, font_size);
-    std::string str(text, static_cast<size_t>(len));
-    auto textBlob = tgfx::TextBlob::MakeFrom(str, font);
+    auto textBlob = croft_tgfx_text_cache::get_text_blob(&g_text_cache, text, len, font_size);
     if (textBlob) {
         g_canvas->drawTextBlob(textBlob, x, y, paint);
     }
@@ -291,58 +288,7 @@ int32_t host_render_draw_text(float x,
 }
 
 float host_render_measure_text(const char* text, uint32_t len, float font_size) {
-    if (len == 0) {
-        return 0.0f;
-    }
-
-    auto typeface = tgfx::Typeface::MakeFromName("Helvetica", "");
-    if (!typeface) {
-        typeface = tgfx::Typeface::MakeFromName("", "");
-    }
-
-    tgfx::Font font(typeface, font_size);
-    float totalAdvance = 0.0f;
-    uint32_t i = 0;
-    while (i < len) {
-        uint8_t c = static_cast<uint8_t>(text[i]);
-        uint32_t codepoint = 0;
-        int bytes = 1;
-        if ((c & 0x80) == 0) {
-            codepoint = c;
-        } else if ((c & 0xE0) == 0xC0) {
-            if (i + 1 < len) {
-                codepoint = ((c & 0x1F) << 6) | (text[i + 1] & 0x3F);
-                bytes = 2;
-            } else {
-                break;
-            }
-        } else if ((c & 0xF0) == 0xE0) {
-            if (i + 2 < len) {
-                codepoint = ((c & 0x0F) << 12) |
-                            ((text[i + 1] & 0x3F) << 6) |
-                            (text[i + 2] & 0x3F);
-                bytes = 3;
-            } else {
-                break;
-            }
-        } else if ((c & 0xF8) == 0xF0) {
-            if (i + 3 < len) {
-                codepoint = ((c & 0x07) << 18) |
-                            ((text[i + 1] & 0x3F) << 12) |
-                            ((text[i + 2] & 0x3F) << 6) |
-                            (text[i + 3] & 0x3F);
-                bytes = 4;
-            } else {
-                break;
-            }
-        }
-
-        tgfx::GlyphID glyph_id = font.getGlyphID(codepoint);
-        totalAdvance += font.getAdvance(glyph_id);
-        i += bytes;
-    }
-
-    return totalAdvance;
+    return croft_tgfx_text_cache::measure_text(&g_text_cache, text, len, font_size);
 }
 
 int32_t host_render_end_frame(void) {
@@ -353,9 +299,23 @@ int32_t host_render_end_frame(void) {
     }
 
     {
-        uint64_t phase_start_usec = g_profile_enabled ? profile_now_usec() : 0u;
-        g_context->flushAndSubmit(true);
-        profile_note(&g_profile_stats.submit_total_usec, phase_start_usec);
+        std::unique_ptr<tgfx::Recording> recording;
+
+        {
+            uint64_t phase_start_usec = g_profile_enabled ? profile_now_usec() : 0u;
+            recording = g_context->flush();
+            profile_note(&g_profile_stats.flush_total_usec, phase_start_usec);
+        }
+        if (recording) {
+            uint64_t phase_start_usec = g_profile_enabled ? profile_now_usec() : 0u;
+            g_context->submit(std::move(recording), false);
+            profile_note(&g_profile_stats.submit_total_usec, phase_start_usec);
+        }
+        {
+            uint64_t phase_start_usec = g_profile_enabled ? profile_now_usec() : 0u;
+            g_context->gpu()->queue()->waitUntilCompleted();
+            profile_note(&g_profile_stats.wait_total_usec, phase_start_usec);
+        }
     }
     if (g_drawable) {
         uint64_t phase_start_usec = g_profile_enabled ? profile_now_usec() : 0u;
