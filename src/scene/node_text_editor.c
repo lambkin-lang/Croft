@@ -4,6 +4,7 @@
 #include "croft/editor_document.h"
 #include "croft/editor_search.h"
 #include "croft/editor_status.h"
+#include "croft/editor_whitespace.h"
 #include "croft/host_ui.h"
 #include "croft/host_render.h"
 #include <sapling/txn.h>
@@ -870,6 +871,169 @@ static void text_editor_draw_codepoint_highlight(const text_editor_node* te,
     host_render_draw_rect(x1, current_y - te->font_size, x2 - x1, te->line_height, color_rgba);
 }
 
+static void text_editor_whitespace_marker_bounds(const text_editor_node* te,
+                                                 const text_editor_layout* layout,
+                                                 const char* line_text,
+                                                 uint32_t line_start_byte,
+                                                 const croft_editor_visible_whitespace* marker,
+                                                 float* out_x1,
+                                                 float* out_x2)
+{
+    uint32_t start_byte;
+    uint32_t end_byte;
+
+    if (!te || !layout || !line_text || !marker || !out_x1 || !out_x2) {
+        return;
+    }
+
+    start_byte = croft_editor_text_model_byte_offset_at(&te->text_model, marker->offset) - line_start_byte;
+    end_byte = croft_editor_text_model_byte_offset_at(&te->text_model, marker->offset + 1u) - line_start_byte;
+    *out_x1 = layout->text_inset_x + host_render_measure_text(line_text, start_byte, te->font_size);
+    *out_x2 = layout->text_inset_x + host_render_measure_text(line_text, end_byte, te->font_size);
+}
+
+static void text_editor_draw_whitespace_marker(const text_editor_node* te,
+                                               float x1,
+                                               float x2,
+                                               float current_y,
+                                               croft_editor_visible_whitespace_kind kind)
+{
+    float width = x2 - x1;
+    float marker_y;
+    uint32_t color = 0x99A3AFCC;
+
+    if (!te || width <= 0.0f) {
+        return;
+    }
+
+    marker_y = current_y - te->font_size + (te->line_height * 0.58f);
+    if (kind == CROFT_EDITOR_VISIBLE_WHITESPACE_SPACE) {
+        float dot_x = x1 + (width * 0.5f) - 1.0f;
+        host_render_draw_rect(dot_x, marker_y - 1.0f, 2.0f, 2.0f, color);
+        return;
+    }
+
+    {
+        float line_x1 = x1 + 2.0f;
+        float line_x2 = x2 - 3.0f;
+        if (line_x2 <= line_x1) {
+            line_x1 = x1 + 1.0f;
+            line_x2 = x2 - 1.0f;
+        }
+        if (line_x2 <= line_x1) {
+            return;
+        }
+
+        host_render_draw_rect(line_x1, marker_y, line_x2 - line_x1, 1.0f, color);
+        host_render_draw_rect(line_x2 - 2.0f, marker_y - 1.0f, 2.0f, 1.0f, color);
+        host_render_draw_rect(line_x2 - 1.0f, marker_y + 1.0f, 1.0f, 1.0f, color);
+        host_render_draw_rect(line_x1, marker_y - 1.5f, 1.0f, 3.0f, color);
+    }
+}
+
+static void text_editor_draw_indent_guides_for_line(const text_editor_node* te,
+                                                    const text_editor_layout* layout,
+                                                    uint32_t line_number,
+                                                    float current_y)
+{
+    croft_editor_tab_settings settings;
+    croft_editor_whitespace_line line = {0};
+    croft_editor_visible_whitespace marker = {0};
+    uint32_t line_start_byte;
+    uint32_t line_len_bytes = 0u;
+    const char* line_text;
+    uint32_t search_offset;
+
+    if (!te || !layout) {
+        return;
+    }
+
+    croft_editor_tab_settings_default(&settings);
+    if (croft_editor_whitespace_describe_line(&te->text_model, line_number, &settings, &line)
+            != CROFT_EDITOR_OK
+            || line.indent_guide_count == 0u) {
+        return;
+    }
+
+    line_start_byte = croft_editor_text_model_byte_offset_at(&te->text_model, line.line_start_offset);
+    line_text = croft_editor_text_model_line_utf8(&te->text_model, line_number, &line_len_bytes);
+    search_offset = line.line_start_offset;
+    while (croft_editor_whitespace_find_in_line(&te->text_model,
+                                                line_number,
+                                                &settings,
+                                                search_offset,
+                                                &marker) == CROFT_EDITOR_OK) {
+        uint32_t visual_end = marker.visual_column + marker.visual_width - 1u;
+
+        if (visual_end > line.leading_indent_columns) {
+            break;
+        }
+        if ((visual_end % settings.tab_size) == 0u) {
+            float x1 = 0.0f;
+            float x2 = 0.0f;
+            float width;
+            float unit_width;
+            float guide_x;
+
+            text_editor_whitespace_marker_bounds(te, layout, line_text, line_start_byte, &marker, &x1, &x2);
+            width = x2 - x1;
+            if (width > 0.0f) {
+                unit_width = width / (float)marker.visual_width;
+                guide_x = x2 - (unit_width * 0.5f) - 0.5f;
+                host_render_draw_rect(guide_x,
+                                      current_y - te->font_size + 1.0f,
+                                      1.0f,
+                                      te->line_height - 2.0f,
+                                      0xD2D9E2D8);
+            }
+        }
+
+        search_offset = marker.offset + 1u;
+    }
+}
+
+static void text_editor_draw_whitespace_markers_for_line(const text_editor_node* te,
+                                                         const text_editor_layout* layout,
+                                                         uint32_t line_number,
+                                                         float current_y)
+{
+    croft_editor_tab_settings settings;
+    croft_editor_visible_whitespace marker = {0};
+    uint32_t line_start_offset;
+    uint32_t line_end_offset;
+    uint32_t line_start_byte;
+    uint32_t line_len_bytes = 0u;
+    const char* line_text;
+    uint32_t search_offset;
+
+    if (!te || !layout) {
+        return;
+    }
+
+    croft_editor_tab_settings_default(&settings);
+    line_start_offset = croft_editor_text_model_line_start_offset(&te->text_model, line_number);
+    line_end_offset = croft_editor_text_model_line_end_offset(&te->text_model, line_number);
+    line_start_byte = croft_editor_text_model_byte_offset_at(&te->text_model, line_start_offset);
+    line_text = croft_editor_text_model_line_utf8(&te->text_model, line_number, &line_len_bytes);
+    search_offset = line_start_offset;
+    while (croft_editor_whitespace_find_in_line(&te->text_model,
+                                                line_number,
+                                                &settings,
+                                                search_offset,
+                                                &marker) == CROFT_EDITOR_OK) {
+        float x1 = 0.0f;
+        float x2 = 0.0f;
+
+        if (marker.offset >= line_end_offset) {
+            break;
+        }
+
+        text_editor_whitespace_marker_bounds(te, layout, line_text, line_start_byte, &marker, &x1, &x2);
+        text_editor_draw_whitespace_marker(te, x1, x2, current_y, marker.kind);
+        search_offset = marker.offset + 1u;
+    }
+}
+
 static void text_editor_draw_bracket_pair(text_editor_node* te,
                                           const text_editor_layout* layout)
 {
@@ -1025,6 +1189,7 @@ static void text_editor_draw(scene_node *n, render_ctx *rc) {
                                       0xE2ECF8FF);
             }
             host_render_draw_rect(-te->scroll_x, current_y, layout.content_width, 1.0f, 0x00000012);
+            text_editor_draw_indent_guides_for_line(te, &layout, line_number, current_y);
         }
     }
 
@@ -1056,6 +1221,8 @@ static void text_editor_draw(scene_node *n, render_ctx *rc) {
                     + host_render_measure_text(line_text, highlight_end_bytes, te->font_size);
                 host_render_draw_rect(x1, current_y - te->font_size, x2 - x1, te->line_height, 0x5B9FE0CC);
             }
+
+            text_editor_draw_whitespace_markers_for_line(te, &layout, line_number, current_y);
 
             if (selection_min == selection_max
                     && cursor_offset >= line_start_offset
