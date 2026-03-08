@@ -12,6 +12,15 @@
         }                                                                  \
     } while (0)
 
+static int command_edit_equals(const croft_editor_tab_edit* edit, const char* expected)
+{
+    size_t expected_len = strlen(expected);
+    return edit
+        && edit->replacement_utf8
+        && edit->replacement_utf8_len == expected_len
+        && memcmp(edit->replacement_utf8, expected, expected_len) == 0;
+}
+
 int test_editor_commands_word_moves(void) {
     croft_editor_text_model model;
     uint32_t anchor = 0;
@@ -220,6 +229,120 @@ int test_editor_commands_shift_word_part_selection(void) {
     ASSERT_COMMAND(active == 3u);
     ASSERT_COMMAND(range.start_column == 1u);
     ASSERT_COMMAND(range.end_column == 4u);
+
+    croft_editor_text_model_dispose(&model);
+    return 0;
+}
+
+int test_editor_commands_tab_insert(void) {
+    croft_editor_text_model model;
+    croft_editor_tab_settings settings;
+    croft_editor_tab_edit edit = {0};
+    uint32_t cursor;
+
+    croft_editor_text_model_init(&model);
+    croft_editor_tab_settings_default(&settings);
+    ASSERT_COMMAND(croft_editor_text_model_set_text(&model, "alpha", strlen("alpha")) == CROFT_EDITOR_OK);
+
+    cursor = croft_editor_text_model_get_offset_at(&model, 1u, 3u);
+    ASSERT_COMMAND(croft_editor_command_build_tab_edit(&model,
+                                                       cursor,
+                                                       cursor,
+                                                       &settings,
+                                                       0,
+                                                       &edit));
+    ASSERT_COMMAND(edit.replace_start_offset == cursor);
+    ASSERT_COMMAND(edit.replace_end_offset == cursor);
+    ASSERT_COMMAND(command_edit_equals(&edit, "  "));
+    ASSERT_COMMAND(edit.next_anchor_offset == cursor + 2u);
+    ASSERT_COMMAND(edit.next_active_offset == cursor + 2u);
+    croft_editor_tab_edit_dispose(&edit);
+
+    settings.insert_spaces = 0;
+    ASSERT_COMMAND(croft_editor_command_build_tab_edit(&model,
+                                                       cursor,
+                                                       cursor,
+                                                       &settings,
+                                                       0,
+                                                       &edit));
+    ASSERT_COMMAND(command_edit_equals(&edit, "\t"));
+    ASSERT_COMMAND(edit.next_anchor_offset == cursor + 1u);
+    ASSERT_COMMAND(edit.next_active_offset == cursor + 1u);
+    croft_editor_tab_edit_dispose(&edit);
+
+    croft_editor_text_model_dispose(&model);
+    return 0;
+}
+
+int test_editor_commands_indent_lines(void) {
+    croft_editor_text_model model;
+    croft_editor_tab_settings settings;
+    croft_editor_tab_edit edit = {0};
+    uint32_t anchor;
+    uint32_t active;
+
+    croft_editor_text_model_init(&model);
+    croft_editor_tab_settings_default(&settings);
+    ASSERT_COMMAND(croft_editor_text_model_set_text(&model,
+                                                    "one\ntwo\nthree",
+                                                    strlen("one\ntwo\nthree")) == CROFT_EDITOR_OK);
+
+    anchor = croft_editor_text_model_line_start_offset(&model, 1u);
+    active = croft_editor_text_model_line_start_offset(&model, 3u);
+    ASSERT_COMMAND(croft_editor_command_build_tab_edit(&model,
+                                                       anchor,
+                                                       active,
+                                                       &settings,
+                                                       0,
+                                                       &edit));
+    ASSERT_COMMAND(edit.replace_start_offset == 0u);
+    ASSERT_COMMAND(edit.replace_end_offset
+        == croft_editor_text_model_line_end_offset(&model, 2u));
+    ASSERT_COMMAND(command_edit_equals(&edit, "    one\n    two"));
+    ASSERT_COMMAND(edit.next_anchor_offset == anchor);
+    ASSERT_COMMAND(edit.next_active_offset == active + 8u);
+    croft_editor_tab_edit_dispose(&edit);
+
+    croft_editor_text_model_dispose(&model);
+    return 0;
+}
+
+int test_editor_commands_outdent_lines(void) {
+    croft_editor_text_model model;
+    croft_editor_tab_settings settings;
+    croft_editor_tab_edit edit = {0};
+    uint32_t anchor;
+    uint32_t active;
+
+    croft_editor_text_model_init(&model);
+    croft_editor_tab_settings_default(&settings);
+    ASSERT_COMMAND(croft_editor_text_model_set_text(&model,
+                                                    "    one\n\ttwo\n  three",
+                                                    strlen("    one\n\ttwo\n  three")) == CROFT_EDITOR_OK);
+
+    anchor = croft_editor_text_model_get_offset_at(&model, 1u, 3u);
+    active = croft_editor_text_model_codepoint_length(&model);
+    ASSERT_COMMAND(croft_editor_command_build_tab_edit(&model,
+                                                       anchor,
+                                                       active,
+                                                       &settings,
+                                                       1,
+                                                       &edit));
+    ASSERT_COMMAND(command_edit_equals(&edit, "one\ntwo\nthree"));
+    ASSERT_COMMAND(edit.next_anchor_offset == croft_editor_text_model_line_start_offset(&model, 1u));
+    ASSERT_COMMAND(edit.next_active_offset == active - 7u);
+    croft_editor_tab_edit_dispose(&edit);
+
+    ASSERT_COMMAND(croft_editor_text_model_set_text(&model,
+                                                    "plain",
+                                                    strlen("plain")) == CROFT_EDITOR_OK);
+    anchor = active = croft_editor_text_model_get_offset_at(&model, 1u, 2u);
+    ASSERT_COMMAND(!croft_editor_command_build_tab_edit(&model,
+                                                        anchor,
+                                                        active,
+                                                        &settings,
+                                                        1,
+                                                        &edit));
 
     croft_editor_text_model_dispose(&model);
     return 0;

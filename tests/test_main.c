@@ -233,6 +233,9 @@ extern int test_editor_commands_shift_word_selection(void);
 extern int test_editor_commands_word_part_moves(void);
 extern int test_editor_commands_word_part_deletes(void);
 extern int test_editor_commands_shift_word_part_selection(void);
+extern int test_editor_commands_tab_insert(void);
+extern int test_editor_commands_indent_lines(void);
+extern int test_editor_commands_outdent_lines(void);
 extern int test_wit_resource_open_command_roundtrip(void);
 extern int test_wit_resource_handle_roundtrip(void);
 extern int test_wit_text_runtime_roundtrip(void);
@@ -325,6 +328,9 @@ int main(void)
     RUN_TEST(test_editor_commands_word_part_moves);
     RUN_TEST(test_editor_commands_word_part_deletes);
     RUN_TEST(test_editor_commands_shift_word_part_selection);
+    RUN_TEST(test_editor_commands_tab_insert);
+    RUN_TEST(test_editor_commands_indent_lines);
+    RUN_TEST(test_editor_commands_outdent_lines);
 
     printf("\n[wit_common_core]\n");
     RUN_TEST(test_wit_resource_open_command_roundtrip);
