@@ -143,6 +143,12 @@ runtime_env_args() {
         example_wit_textpad_window)
             printf 'CROFT_WIT_TEXTPAD_AUTO_CLOSE_MS=%s\n' "$AUTO_CLOSE_MS"
             ;;
+        example_render_canvas_opengl|example_render_canvas_metal|example_render_canvas_metal_native)
+            printf 'CROFT_RENDER_AUTO_CLOSE_MS=%s\n' "$AUTO_CLOSE_MS"
+            if [[ "$EDITOR_PROFILE" == "1" ]]; then
+                printf 'CROFT_RENDER_PROFILE=1\n'
+            fi
+            ;;
         example_editor_text|example_editor_text_appkit|example_editor_text_metal_native)
             printf 'CROFT_EDITOR_AUTO_CLOSE_MS=%s\n' "$AUTO_CLOSE_MS"
             if [[ "$EDITOR_PROFILE" == "1" ]]; then
@@ -283,7 +289,7 @@ extract_profile_lines() {
         return
     fi
 
-    sed -n '/^editor-scene-frame /p;/^editor-render-profile /p;/^editor-scene-profile /p' "$log_file"
+    sed -n '/^editor-scene-frame /p;/^editor-render-profile /p;/^editor-scene-profile /p;/^render-profile /p' "$log_file"
 }
 
 run_iteration() {

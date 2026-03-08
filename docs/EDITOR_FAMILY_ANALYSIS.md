@@ -156,6 +156,56 @@ That final probe changes the conclusion one more time:
   with only a few frames per run it no longer dominates the sample's own wall
   time.
 
+## Submit Breakdown Probe
+
+On March 8, 2026, I then split the tgfx wrapper's combined submit path into:
+
+- `Context::flush()`
+- `Context::submit(recording, false)`
+- `queue()->waitUntilCompleted()`
+
+I also added a small Croft-side tgfx cache for repeated `Typeface`,
+`TextBlob`, and width measurements so the probe would distinguish wrapper text
+setup from tgfx's own command encoding.
+
+Rerunning the same profiled `5,000`-line benchmark produced:
+
+| Target | Sample wall ms | Frames | Draw-tree ms | Measure-text ms | Flush ms | Submit ms | Wait ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `example_editor_text` | `1,199` | `3` | `4.244` | `1.915` | `0.013` | `614.222` | `2.958` |
+| `example_editor_text_metal_native` | `1,200` | `4` | `10.000` | `5.832` | `0.000` | `0.077` | `0.000` |
+
+That probe narrows the remaining difference again:
+
+- The Croft-side tgfx text cache worked. The editor's own draw-tree time fell
+  from `31.375 ms` to `4.244 ms`, and measured text width work fell from
+  `21.762 ms` to `1.915 ms`.
+- The tgfx/Metal gap did not move with that cache. Its `submit` phase stayed
+  near `~620 ms`, while explicit queue waiting was only `2.958 ms`.
+- That means the remaining cost is not CPU/GPU synchronization in Croft's
+  wrapper and not repeated `TextBlob` creation in the wrapper either. It is
+  deeper inside tgfx's own command encoding / queue submission path.
+
+## Canvas Backend Probe
+
+To see whether that submit cost was editor-specific or a broader tgfx/Metal
+trait, I added the same profiling output to the smaller render-canvas examples
+and ran them on March 8, 2026 with `1200 ms` auto-close:
+
+| Target | Sample wall ms | Frames | Flush ms | Submit ms | Wait ms |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `example_render_canvas_metal` | `1,213` | `49` | `0.438` | `225.124` | `25.669` |
+| `example_render_canvas_metal_native` | `1,146` | `60` | `0.000` | `0.840` | `0.000` |
+
+That backend-only probe shows:
+
+- tgfx/Metal carries a real baseline submit cost even on a tiny canvas demo
+  with one text draw and a few rectangles.
+- The editor does amplify the problem dramatically, but the remaining delta is
+  not purely an editor-scene artifact.
+- Native Metal stays close to the frame loop's fixed sleep budget, while tgfx
+  spends noticeable CPU time per frame on submission even in the simpler case.
+
 ## What This Shows
 
 - Sapling text storage and file IO do not force a multi-megabyte editor.
@@ -179,6 +229,13 @@ That final probe changes the conclusion one more time:
 - The redraw-throttling probe shows the most foundational fix so far: for these
   editor shells, invalidation policy matters more than any one text-layout or
   renderer micro-optimization.
+- The submit-breakdown probe shows the remaining tgfx/Metal cost is not an
+  explicit `waitUntilCompleted()` stall. The dominant cost is tgfx's own submit
+  path before the queue wait.
+- The tgfx text cache removes most of Croft's own repeated text setup cost, so
+  the remaining delta is no longer plausibly explained by wrapper churn alone.
+- The canvas probe shows tgfx/Metal has a baseline backend submit tax even
+  outside the editor, while the text-heavy scene editor magnifies it sharply.
 - The remaining comparison work is not just about performance. It is about
   making hidden host services explicit: AppKit currently gives IME,
   accessibility, and undo-manager behavior "for free", while the direct-Metal
@@ -198,9 +255,12 @@ scene-family costs:
 - keep both runner wall time and sample-reported wall time visible in the
   benchmark history so GUI teardown cost stays measurable without obscuring
   in-loop work
-- if tgfx/Metal still matters after redraw throttling, profile `flushAndSubmit`
-  more deeply and see whether that backend can reuse or defer any per-frame
-  submit work
+- if tgfx/Metal still matters for text-heavy editors, instrument tgfx internals
+  around `DrawingBuffer::encode()`, atlas work, and queue submission instead of
+  spending more time on Croft-side wrapper sync
+- decide whether tgfx remains the right renderer for the text-heavy scene
+  editor, or whether direct Metal should become the primary path for that
+  family while tgfx stays focused on more general scene/canvas work
 - isolate input and accessibility concerns the same way `croft_editor_document`
   isolated the data layer
 - decide whether the direct-Metal editor should keep reusing the scene nodes or
