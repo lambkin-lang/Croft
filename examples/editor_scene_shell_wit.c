@@ -28,6 +28,61 @@ enum {
     CROFT_EDITOR_WINDOW_PADDING = 16
 };
 
+static int env_flag_enabled(const char* value)
+{
+    return value && value[0] != '\0' && !(value[0] == '0' && value[1] == '\0');
+}
+
+static double usec_to_msec(uint64_t usec)
+{
+    return (double)usec / 1000.0;
+}
+
+static void print_editor_profile_summary(const char* variant, const text_editor_node* editor)
+{
+    croft_text_editor_profile_snapshot profile = {0};
+
+    text_editor_node_get_profile(editor, &profile);
+    if (!profile.enabled) {
+        return;
+    }
+
+    printf("editor-scene-profile variant=%s kind=core draw_calls=%llu draw_ms=%.3f layout_calls=%llu layout_ms=%.3f ensure_cursor_calls=%llu ensure_cursor_ms=%.3f hit_calls=%llu hit_ms=%.3f hit_offsets=%llu\n",
+           variant,
+           (unsigned long long)profile.draw_calls,
+           usec_to_msec(profile.draw_total_usec),
+           (unsigned long long)profile.layout_calls,
+           usec_to_msec(profile.layout_total_usec),
+           (unsigned long long)profile.ensure_cursor_visible_calls,
+           usec_to_msec(profile.ensure_cursor_visible_total_usec),
+           (unsigned long long)profile.hit_index_calls,
+           usec_to_msec(profile.hit_index_total_usec),
+           (unsigned long long)profile.hit_index_offsets_scanned);
+    printf("editor-scene-profile variant=%s kind=line-map visible_count_calls=%llu visible_count_ms=%.3f visible_count_steps=%llu visible_lookup_calls=%llu visible_lookup_ms=%.3f visible_lookup_steps=%llu model_lookup_calls=%llu model_lookup_ms=%.3f model_lookup_steps=%llu\n",
+           variant,
+           (unsigned long long)profile.visible_line_count_calls,
+           usec_to_msec(profile.visible_line_count_total_usec),
+           (unsigned long long)profile.visible_line_count_steps,
+           (unsigned long long)profile.visible_line_lookup_calls,
+           usec_to_msec(profile.visible_line_lookup_total_usec),
+           (unsigned long long)profile.visible_line_lookup_steps,
+           (unsigned long long)profile.model_line_lookup_calls,
+           usec_to_msec(profile.model_line_lookup_total_usec),
+           (unsigned long long)profile.model_line_lookup_steps);
+    printf("editor-scene-profile variant=%s kind=text measure_calls=%llu measure_bytes=%llu measure_ms=%.3f background_lines=%llu text_lines=%llu gutter_lines=%llu search_calls=%llu search_ms=%.3f bracket_calls=%llu bracket_ms=%.3f\n",
+           variant,
+           (unsigned long long)profile.measure_text_calls,
+           (unsigned long long)profile.measure_text_total_bytes,
+           usec_to_msec(profile.measure_text_total_usec),
+           (unsigned long long)profile.background_pass_lines,
+           (unsigned long long)profile.text_pass_lines,
+           (unsigned long long)profile.gutter_pass_lines,
+           (unsigned long long)profile.search_draw_calls,
+           usec_to_msec(profile.search_draw_total_usec),
+           (unsigned long long)profile.bracket_draw_calls,
+           usec_to_msec(profile.bracket_draw_total_usec));
+}
+
 static int window_expect_ok(const SapWitHostWindowReply* reply, SapWitHostWindowResource* window_out)
 {
     if (!reply || !window_out) {
@@ -485,6 +540,7 @@ int main(int argc, char** argv)
 {
     const char* target_file = argc > 1 ? argv[1] : NULL;
     const char* auto_close_env = getenv("CROFT_EDITOR_AUTO_CLOSE_MS");
+    const char* profile_env = getenv("CROFT_EDITOR_PROFILE");
     const char* fallback =
         "Big analysis, small binaries.\n"
         "\n"
@@ -505,6 +561,7 @@ int main(int argc, char** argv)
     uint64_t start_ms = 0u;
     uint64_t end_ms = 0u;
     uint32_t frame_count = 0u;
+    int profile_enabled = env_flag_enabled(profile_env);
     int rc = 1;
 
     if (auto_close_env && auto_close_env[0] != '\0') {
@@ -576,6 +633,7 @@ int main(int argc, char** argv)
                               (float)fh - (float)(CROFT_EDITOR_WINDOW_PADDING * 2),
                               croft_editor_document_text(g_document));
         text_editor_node_bind_document(&g_editor, g_document);
+        text_editor_node_set_profiling(&g_editor, profile_enabled);
         scene_node_add_child(&g_root_vp.base, &g_editor.base);
     }
 
@@ -808,6 +866,7 @@ int main(int argc, char** argv)
     printf("editor-scene-wit frames=%u wall_ms=%llu\n",
            frame_count,
            (unsigned long long)(end_ms - start_ms));
+    print_editor_profile_summary("scene-wit", &g_editor);
     fflush(stdout);
     rc = 0;
 

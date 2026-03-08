@@ -14,6 +14,7 @@ AUTO_CLOSE_MS="${CROFT_RUNTIME_BENCH_AUTO_CLOSE_MS:-400}"
 KEEP_LOGS="${CROFT_RUNTIME_BENCH_KEEP:-80}"
 EDITOR_DOC_PATH="${CROFT_RUNTIME_BENCH_EDITOR_DOC:-}"
 EDITOR_LINE_COUNT="${CROFT_RUNTIME_BENCH_EDITOR_LINES:-0}"
+EDITOR_PROFILE="${CROFT_RUNTIME_BENCH_EDITOR_PROFILE:-0}"
 EDITOR_DOC_DIR="${LOG_ROOT}/editor_docs"
 
 TARGETS=()
@@ -37,6 +38,7 @@ Options:
   --auto-close-ms <ms>         Auto-close duration for GUI samples (default: 400)
   --editor-doc <path>          Document path for editor-family targets.
   --editor-lines <count>       Generate a shared editor fixture with this many lines.
+  --editor-profile             Enable scene editor profiling telemetry.
   --keep <count>               Keep newest N run logs (default: 80)
   --help                       Show this help
 USAGE
@@ -121,6 +123,9 @@ runtime_env_args() {
             ;;
         example_editor_text|example_editor_text_appkit|example_editor_text_metal_native)
             printf 'CROFT_EDITOR_AUTO_CLOSE_MS=%s\n' "$AUTO_CLOSE_MS"
+            if [[ "$EDITOR_PROFILE" == "1" ]]; then
+                printf 'CROFT_EDITOR_PROFILE=1\n'
+            fi
             ;;
     esac
 }
@@ -249,6 +254,16 @@ extract_wall_ms() {
     sed -n 's/.*wall_ms=\([0-9][0-9]*\).*/\1/p' "$log_file" | tail -n 1
 }
 
+extract_profile_lines() {
+    local log_file="$1"
+
+    if [[ ! -f "$log_file" ]]; then
+        return
+    fi
+
+    sed -n '/^editor-scene-profile /p' "$log_file"
+}
+
 run_iteration() {
     local target="$1"
     local iteration="$2"
@@ -259,6 +274,7 @@ run_iteration() {
     local env_args=()
     local target_args=()
     local status rc wall_ms frames
+    local profile_lines
     local line
     local timeout_ms
 
@@ -318,6 +334,7 @@ run_iteration() {
     wall_ms="${wall_ms:-}"
     frames="$(extract_frames "$log_file")"
     frames="${frames:-}"
+    profile_lines="$(extract_profile_lines "$log_file")"
 
     echo "-- ${target} run ${iteration} --"
     echo "status=${status}"
@@ -325,6 +342,9 @@ run_iteration() {
     echo "wall_ms=${wall_ms}"
     if [[ -n "$frames" ]]; then
         echo "frames=${frames}"
+    fi
+    if [[ -n "$profile_lines" ]]; then
+        printf '%s\n' "$profile_lines"
     fi
     echo "log=${log_file}"
 
@@ -367,6 +387,10 @@ while (( "$#" )); do
         --editor-lines)
             EDITOR_LINE_COUNT="${2:-}"
             shift 2
+            ;;
+        --editor-profile)
+            EDITOR_PROFILE="1"
+            shift
             ;;
         --keep)
             KEEP_LOGS="${2:-}"

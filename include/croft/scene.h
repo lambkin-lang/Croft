@@ -97,6 +97,38 @@ struct Text;
 struct SapEnv;
 struct croft_editor_document;
 
+typedef struct croft_text_editor_profile_snapshot {
+    uint32_t enabled;
+    uint64_t draw_calls;
+    uint64_t draw_total_usec;
+    uint64_t layout_calls;
+    uint64_t layout_total_usec;
+    uint64_t visible_line_count_calls;
+    uint64_t visible_line_count_total_usec;
+    uint64_t visible_line_count_steps;
+    uint64_t visible_line_lookup_calls;
+    uint64_t visible_line_lookup_total_usec;
+    uint64_t visible_line_lookup_steps;
+    uint64_t model_line_lookup_calls;
+    uint64_t model_line_lookup_total_usec;
+    uint64_t model_line_lookup_steps;
+    uint64_t ensure_cursor_visible_calls;
+    uint64_t ensure_cursor_visible_total_usec;
+    uint64_t search_draw_calls;
+    uint64_t search_draw_total_usec;
+    uint64_t bracket_draw_calls;
+    uint64_t bracket_draw_total_usec;
+    uint64_t hit_index_calls;
+    uint64_t hit_index_total_usec;
+    uint64_t hit_index_offsets_scanned;
+    uint64_t measure_text_calls;
+    uint64_t measure_text_total_usec;
+    uint64_t measure_text_total_bytes;
+    uint64_t background_pass_lines;
+    uint64_t text_pass_lines;
+    uint64_t gutter_pass_lines;
+} croft_text_editor_profile_snapshot;
+
 typedef struct text_editor_node {
     scene_node base;
     struct SapEnv *env;
@@ -124,12 +156,18 @@ typedef struct text_editor_node {
     } folded_regions[64];
     croft_editor_text_model text_model;
     croft_editor_selection selection;
+    uint32_t profiling_enabled;
+    croft_text_editor_profile_snapshot profile_stats;
 } text_editor_node;
 
 void text_editor_node_init(text_editor_node *n, struct SapEnv *env, float x, float y, float sx, float sy, struct Text *text_tree);
 void text_editor_node_bind_document(text_editor_node *n, struct croft_editor_document *document);
 void text_editor_node_set_text(text_editor_node *n, struct Text *text_tree);
 void text_editor_node_set_modifiers(text_editor_node *n, uint32_t modifiers);
+void text_editor_node_set_profiling(text_editor_node *n, int enabled);
+void text_editor_node_reset_profile(text_editor_node *n);
+void text_editor_node_get_profile(const text_editor_node *n,
+                                  croft_text_editor_profile_snapshot *out_snapshot);
 void text_editor_node_select_all(text_editor_node *n);
 int text_editor_node_is_find_active(const text_editor_node *n);
 void text_editor_node_find_activate(text_editor_node *n);
