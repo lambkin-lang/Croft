@@ -2,6 +2,7 @@
 #include "croft/editor_commands.h"
 #include "croft/editor_document.h"
 #include "croft/editor_document_fs.h"
+#include "croft/editor_folding.h"
 #include "croft/editor_status.h"
 #include "croft/editor_text_model.h"
 #include "croft/editor_whitespace.h"
@@ -12,6 +13,7 @@
 #include <float.h>
 #include <cstdio>
 #include <cstdlib>
+#include <vector>
 
 static uint32_t croft_editor_appkit_count_utf8_codepoints(const uint8_t* utf8, size_t utf8_len) {
     size_t offset = 0u;
@@ -108,6 +110,44 @@ static BOOL croft_editor_appkit_build_text_model(NSString* text, croft_editor_te
     return ok;
 }
 
+static NSRange croft_editor_appkit_fold_body_character_range(NSString* text,
+                                                             const croft_editor_text_model* model,
+                                                             NSRange foldedLineRange) {
+    uint32_t line_count;
+    uint32_t start_line_number;
+    uint32_t end_line_number;
+    uint32_t start_offset;
+    uint32_t end_offset;
+    NSUInteger start_index;
+    NSUInteger end_index;
+
+    if (!text || !model || foldedLineRange.location == NSNotFound || foldedLineRange.length < 2u) {
+        return NSMakeRange(NSNotFound, 0u);
+    }
+
+    line_count = croft_editor_text_model_line_count(model);
+    start_line_number = (uint32_t)foldedLineRange.location;
+    end_line_number = (uint32_t)(NSMaxRange(foldedLineRange) - 1u);
+    if (line_count == 0u
+            || start_line_number == 0u
+            || start_line_number >= end_line_number
+            || end_line_number > line_count) {
+        return NSMakeRange(NSNotFound, 0u);
+    }
+
+    start_offset = croft_editor_text_model_line_start_offset(model, start_line_number + 1u);
+    end_offset = end_line_number < line_count
+        ? croft_editor_text_model_line_start_offset(model, end_line_number + 1u)
+        : croft_editor_text_model_codepoint_length(model);
+    start_index = croft_editor_appkit_utf16_index_for_codepoint_offset(text, model, start_offset);
+    end_index = croft_editor_appkit_utf16_index_for_codepoint_offset(text, model, end_offset);
+    if (end_index < start_index) {
+        end_index = start_index;
+    }
+
+    return NSMakeRange(start_index, end_index - start_index);
+}
+
 static NSRect croft_editor_appkit_marker_rect(NSLayoutManager* layoutManager,
                                               NSTextContainer* textContainer,
                                               NSRange characterRange) {
@@ -171,8 +211,14 @@ static void croft_editor_appkit_draw_whitespace_marker(NSRect markerRect,
 - (BOOL)croftOutdentSelection;
 @end
 
+@protocol CroftEditorFoldingHandling <NSObject>
+- (BOOL)croftLineNumberIsFolded:(NSUInteger)lineNumber;
+- (BOOL)croftToggleFoldAtLineNumber:(NSUInteger)lineNumber;
+@end
+
 @interface CroftEditorTextView : NSTextView
 @property(nonatomic, weak) id<CroftEditorIndentHandling> croftIndentHandler;
+- (NSUInteger)croft_lineNumberForCharacterIndex:(NSUInteger)characterIndex;
 - (NSUInteger)croft_currentLineNumber;
 @end
 
@@ -320,10 +366,15 @@ static void croft_editor_appkit_draw_whitespace_marker(NSRect markerRect,
 
 - (NSUInteger)croft_currentLineNumber {
     NSString* text = self.string ?: @"";
-    NSUInteger selectionLocation = MIN(self.selectedRange.location, text.length);
+    return [self croft_lineNumberForCharacterIndex:MIN(self.selectedRange.location, text.length)];
+}
+
+- (NSUInteger)croft_lineNumberForCharacterIndex:(NSUInteger)characterIndex {
+    NSString* text = self.string ?: @"";
+    NSUInteger limit = MIN(characterIndex, text.length);
     NSUInteger lineNumber = 1;
 
-    for (NSUInteger index = 0; index < selectionLocation; index++) {
+    for (NSUInteger index = 0; index < limit; index++) {
         if ([text characterAtIndex:index] == '\n') {
             lineNumber++;
         }
@@ -362,7 +413,9 @@ static void croft_editor_appkit_draw_whitespace_marker(NSRect markerRect,
 @end
 
 @interface CroftLineNumberRulerView : NSRulerView
-- (instancetype)initWithTextView:(CroftEditorTextView*)textView;
+@property(nonatomic, weak) id<CroftEditorFoldingHandling> croftFoldingHandler;
+- (instancetype)initWithTextView:(CroftEditorTextView*)textView
+                  foldingHandler:(id<CroftEditorFoldingHandling>)foldingHandler;
 - (void)invalidateMetrics;
 @end
 
@@ -370,10 +423,12 @@ static void croft_editor_appkit_draw_whitespace_marker(NSRect markerRect,
     __weak CroftEditorTextView* _textView;
 }
 
-- (instancetype)initWithTextView:(CroftEditorTextView*)textView {
+- (instancetype)initWithTextView:(CroftEditorTextView*)textView
+                  foldingHandler:(id<CroftEditorFoldingHandling>)foldingHandler {
     self = [super initWithScrollView:textView.enclosingScrollView orientation:NSVerticalRuler];
     if (self) {
         _textView = textView;
+        _croftFoldingHandler = foldingHandler;
         self.clientView = textView;
         [self invalidateMetrics];
     }
@@ -394,17 +449,7 @@ static void croft_editor_appkit_draw_whitespace_marker(NSRect markerRect,
 }
 
 - (NSUInteger)lineNumberForCharacterIndex:(NSUInteger)characterIndex {
-    NSString* text = _textView.string ?: @"";
-    NSUInteger limit = MIN(characterIndex, text.length);
-    NSUInteger lineNumber = 1;
-
-    for (NSUInteger index = 0; index < limit; index++) {
-        if ([text characterAtIndex:index] == '\n') {
-            lineNumber++;
-        }
-    }
-
-    return lineNumber;
+    return [_textView croft_lineNumberForCharacterIndex:characterIndex];
 }
 
 - (CGFloat)requiredThickness {
@@ -421,7 +466,7 @@ static void croft_editor_appkit_draw_whitespace_marker(NSRect markerRect,
         NSFontAttributeName: [NSFont monospacedDigitSystemFontOfSize:12.0 weight:NSFontWeightRegular]
     };
     sampleSize = [sample sizeWithAttributes:attributes];
-    return ceil(sampleSize.width + 20.0);
+    return ceil(sampleSize.width + 34.0);
 }
 
 - (void)invalidateMetrics {
@@ -435,9 +480,15 @@ static void croft_editor_appkit_draw_whitespace_marker(NSRect markerRect,
     NSClipView* clipView = self.scrollView.contentView;
     NSRect visibleRect = clipView.documentVisibleRect;
     NSUInteger currentLine = [_textView croft_currentLineNumber];
+    NSString* text = _textView.string ?: @"";
+    croft_editor_text_model model;
+    croft_editor_tab_settings settings;
+    BOOL haveModel = NO;
     NSMutableParagraphStyle* style = [[NSMutableParagraphStyle alloc] init];
+    NSMutableParagraphStyle* markerStyle = [[NSMutableParagraphStyle alloc] init];
     NSDictionary* inactiveAttributes;
     NSDictionary* activeAttributes;
+    NSDictionary* markerAttributes;
     NSRect borderRect;
 
     (void)rect;
@@ -454,6 +505,7 @@ static void croft_editor_appkit_draw_whitespace_marker(NSRect markerRect,
     }
 
     style.alignment = NSTextAlignmentRight;
+    markerStyle.alignment = NSTextAlignmentCenter;
     inactiveAttributes = @{
         NSFontAttributeName: [NSFont monospacedDigitSystemFontOfSize:12.0 weight:NSFontWeightRegular],
         NSForegroundColorAttributeName: [NSColor colorWithCalibratedWhite:0.40 alpha:1.0],
@@ -464,6 +516,16 @@ static void croft_editor_appkit_draw_whitespace_marker(NSRect markerRect,
         NSForegroundColorAttributeName: [NSColor colorWithCalibratedRed:0.10 green:0.22 blue:0.38 alpha:1.0],
         NSParagraphStyleAttributeName: style
     };
+    markerAttributes = @{
+        NSFontAttributeName: [NSFont monospacedSystemFontOfSize:11.0 weight:NSFontWeightSemibold],
+        NSForegroundColorAttributeName: [NSColor colorWithCalibratedWhite:0.45 alpha:1.0],
+        NSParagraphStyleAttributeName: markerStyle
+    };
+
+    haveModel = croft_editor_appkit_build_text_model(text, &model);
+    if (haveModel) {
+        croft_editor_tab_settings_default(&settings);
+    }
 
     NSRange visibleGlyphRange =
         [layoutManager glyphRangeForBoundingRect:visibleRect inTextContainer:textContainer];
@@ -474,14 +536,32 @@ static void croft_editor_appkit_draw_whitespace_marker(NSRect markerRect,
                                                           effectiveRange:&lineGlyphRange];
         NSUInteger characterIndex = [layoutManager characterIndexForGlyphAtIndex:glyphIndex];
         NSUInteger lineNumber = [self lineNumberForCharacterIndex:characterIndex];
+        BOOL isFolded =
+            self.croftFoldingHandler ? [self.croftFoldingHandler croftLineNumberIsFolded:lineNumber] : NO;
+        BOOL isFoldable = isFolded;
         NSString* lineLabel = [NSString stringWithFormat:@"%lu", (unsigned long)lineNumber];
         NSDictionary* attributes = (lineNumber == currentLine) ? activeAttributes : inactiveAttributes;
-        NSRect labelRect = NSMakeRect(0.0,
+        NSRect markerRect = NSMakeRect(2.0,
+                                       NSMinY(lineRect) + 1.0,
+                                       16.0,
+                                       NSHeight(lineRect));
+        NSRect labelRect = NSMakeRect(18.0,
                                       NSMinY(lineRect) + 1.0,
-                                      self.ruleThickness - 8.0,
+                                      self.ruleThickness - 24.0,
                                       NSHeight(lineRect));
 
+        if (!isFoldable && haveModel) {
+            croft_editor_fold_region region = {0};
+            isFoldable = croft_editor_fold_region_for_line(&model,
+                                                           (uint32_t)lineNumber,
+                                                           &settings,
+                                                           &region) == CROFT_EDITOR_OK;
+        }
+
         if (NSIntersectsRect(lineRect, visibleRect)) {
+            if (isFoldable) {
+                [(isFolded ? @">" : @"v") drawInRect:markerRect withAttributes:markerAttributes];
+            }
             [lineLabel drawInRect:labelRect withAttributes:attributes];
         }
 
@@ -492,12 +572,66 @@ static void croft_editor_appkit_draw_whitespace_marker(NSRect markerRect,
             && !NSIsEmptyRect(layoutManager.extraLineFragmentRect)) {
         NSString* lineLabel = [NSString stringWithFormat:@"%lu", (unsigned long)[self lineCount]];
         NSDictionary* attributes = ([self lineCount] == currentLine) ? activeAttributes : inactiveAttributes;
-        NSRect labelRect = NSMakeRect(0.0,
+        NSRect labelRect = NSMakeRect(18.0,
                                       NSMinY(layoutManager.extraLineFragmentRect) + 1.0,
-                                      self.ruleThickness - 8.0,
+                                      self.ruleThickness - 24.0,
                                       NSHeight(layoutManager.extraLineFragmentRect));
         [lineLabel drawInRect:labelRect withAttributes:attributes];
     }
+
+    if (haveModel) {
+        croft_editor_text_model_dispose(&model);
+    }
+}
+
+- (void)mouseDown:(NSEvent*)event {
+    NSLayoutManager* layoutManager = _textView.layoutManager;
+    NSTextContainer* textContainer = _textView.textContainer;
+    NSClipView* clipView = self.scrollView.contentView;
+    NSPoint point = [self convertPoint:event.locationInWindow fromView:nil];
+    NSRect visibleRect;
+
+    if (!self.croftFoldingHandler
+            || point.x > 18.0
+            || !layoutManager
+            || !textContainer
+            || !clipView) {
+        [super mouseDown:event];
+        return;
+    }
+
+    visibleRect = clipView.documentVisibleRect;
+    {
+        NSRange visibleGlyphRange =
+            [layoutManager glyphRangeForBoundingRect:visibleRect inTextContainer:textContainer];
+        NSUInteger glyphIndex = visibleGlyphRange.location;
+
+        while (glyphIndex < NSMaxRange(visibleGlyphRange) && glyphIndex < layoutManager.numberOfGlyphs) {
+            NSRange lineGlyphRange;
+            NSRect lineRect = [layoutManager lineFragmentRectForGlyphAtIndex:glyphIndex
+                                                              effectiveRange:&lineGlyphRange];
+            NSUInteger characterIndex = [layoutManager characterIndexForGlyphAtIndex:glyphIndex];
+            NSUInteger lineNumber = [self lineNumberForCharacterIndex:characterIndex];
+
+            if (point.y >= NSMinY(lineRect) && point.y <= NSMaxY(lineRect)) {
+                if ([self.croftFoldingHandler croftToggleFoldAtLineNumber:lineNumber]) {
+                    return;
+                }
+                break;
+            }
+
+            glyphIndex = NSMaxRange(lineGlyphRange);
+        }
+    }
+
+    if (!NSIsEmptyRect(layoutManager.extraLineFragmentRect)
+            && point.y >= NSMinY(layoutManager.extraLineFragmentRect)
+            && point.y <= NSMaxY(layoutManager.extraLineFragmentRect)
+            && [self.croftFoldingHandler croftToggleFoldAtLineNumber:[self lineCount]]) {
+        return;
+    }
+
+    [super mouseDown:event];
 }
 
 @end
@@ -518,7 +652,13 @@ static void croft_editor_appkit_draw_whitespace_marker(NSRect markerRect,
 
 @end
 
-@interface CroftEditorController : NSObject <NSApplicationDelegate, NSWindowDelegate, NSTextViewDelegate, CroftEditorIndentHandling>
+@interface CroftEditorController
+    : NSObject <NSApplicationDelegate,
+                NSWindowDelegate,
+                NSTextViewDelegate,
+                NSLayoutManagerDelegate,
+                CroftEditorIndentHandling,
+                CroftEditorFoldingHandling>
 - (instancetype)initWithDocument:(croft_editor_document*)document
                            title:(NSString*)title
                  autoCloseMillis:(NSInteger)autoCloseMillis;
@@ -533,6 +673,8 @@ static void croft_editor_appkit_draw_whitespace_marker(NSRect markerRect,
     NSTextField* _statusLabel;
     NSMutableArray<NSValue*>* _selectionOccurrenceRanges;
     NSMutableArray<NSValue*>* _bracketMatchRanges;
+    NSMutableArray<NSValue*>* _foldedLineRanges;
+    NSMutableArray<NSValue*>* _foldedBodyCharacterRanges;
     BOOL _syncingFromDocument;
     NSInteger _autoCloseMillis;
 }
@@ -547,6 +689,8 @@ static void croft_editor_appkit_draw_whitespace_marker(NSRect markerRect,
         _autoCloseMillis = autoCloseMillis;
         _selectionOccurrenceRanges = [[NSMutableArray alloc] init];
         _bracketMatchRanges = [[NSMutableArray alloc] init];
+        _foldedLineRanges = [[NSMutableArray alloc] init];
+        _foldedBodyCharacterRanges = [[NSMutableArray alloc] init];
     }
     return self;
 }
@@ -633,6 +777,22 @@ static void croft_editor_appkit_draw_whitespace_marker(NSRect markerRect,
                                                   keyEquivalent:@"["];
     [outdentItem setTarget:self];
     [editMenu addItem:outdentItem];
+
+    [editMenu addItem:[NSMenuItem separatorItem]];
+
+    NSMenuItem* foldItem = [[NSMenuItem alloc] initWithTitle:@"Fold Region"
+                                                      action:@selector(foldSelection:)
+                                               keyEquivalent:@"["];
+    [foldItem setTarget:self];
+    [foldItem setKeyEquivalentModifierMask:NSEventModifierFlagCommand | NSEventModifierFlagOption];
+    [editMenu addItem:foldItem];
+
+    NSMenuItem* unfoldItem = [[NSMenuItem alloc] initWithTitle:@"Unfold Region"
+                                                        action:@selector(unfoldSelection:)
+                                                 keyEquivalent:@"]"];
+    [unfoldItem setTarget:self];
+    [unfoldItem setKeyEquivalentModifierMask:NSEventModifierFlagCommand | NSEventModifierFlagOption];
+    [editMenu addItem:unfoldItem];
 
     [editMenu addItem:[NSMenuItem separatorItem]];
 
@@ -873,6 +1033,217 @@ static void croft_editor_appkit_draw_whitespace_marker(NSRect markerRect,
     [_lineNumberRuler invalidateMetrics];
 }
 
+- (void)clearFolds {
+    [_foldedLineRanges removeAllObjects];
+    [_foldedBodyCharacterRanges removeAllObjects];
+}
+
+- (void)rebuildFoldedBodyCharacterRanges {
+    NSString* text = _textView.string ?: @"";
+    croft_editor_text_model model;
+
+    [_foldedBodyCharacterRanges removeAllObjects];
+    if (_foldedLineRanges.count == 0u || !_textView) {
+        return;
+    }
+
+    if (!croft_editor_appkit_build_text_model(text, &model)) {
+        for (NSUInteger index = 0u; index < _foldedLineRanges.count; index++) {
+            [_foldedBodyCharacterRanges addObject:[NSValue valueWithRange:NSMakeRange(NSNotFound, 0u)]];
+        }
+        return;
+    }
+
+    for (NSValue* value in _foldedLineRanges) {
+        NSRange bodyRange =
+            croft_editor_appkit_fold_body_character_range(text, &model, value.rangeValue);
+        [_foldedBodyCharacterRanges addObject:[NSValue valueWithRange:bodyRange]];
+    }
+
+    croft_editor_text_model_dispose(&model);
+}
+
+- (void)invalidateFolding {
+    NSLayoutManager* layoutManager = _textView.layoutManager;
+    NSString* text = _textView.string ?: @"";
+
+    [self rebuildFoldedBodyCharacterRanges];
+    if (layoutManager) {
+        NSRange fullRange = NSMakeRange(0u, text.length);
+
+        [layoutManager invalidateGlyphsForCharacterRange:fullRange
+                                          changeInLength:0
+                                    actualCharacterRange:NULL];
+        [layoutManager invalidateLayoutForCharacterRange:fullRange actualCharacterRange:NULL];
+        [layoutManager invalidateDisplayForCharacterRange:fullRange];
+    }
+
+    [_textView setNeedsDisplay:YES];
+    [_lineNumberRuler invalidateMetrics];
+}
+
+- (BOOL)lineIsFoldedHeader:(NSUInteger)lineNumber index:(NSUInteger*)indexOut {
+    for (NSUInteger index = 0u; index < _foldedLineRanges.count; index++) {
+        if (_foldedLineRanges[index].rangeValue.location == lineNumber) {
+            if (indexOut) {
+                *indexOut = index;
+            }
+            return YES;
+        }
+    }
+    return NO;
+}
+
+- (BOOL)lineIsInFoldedBody:(NSUInteger)lineNumber index:(NSUInteger*)indexOut {
+    for (NSUInteger index = 0u; index < _foldedLineRanges.count; index++) {
+        NSRange lineRange = _foldedLineRanges[index].rangeValue;
+
+        if (lineNumber > lineRange.location && lineNumber < NSMaxRange(lineRange)) {
+            if (indexOut) {
+                *indexOut = index;
+            }
+            return YES;
+        }
+    }
+    return NO;
+}
+
+- (BOOL)revealSelectionIfFolded {
+    NSRange selection = _textView.selectedRange;
+    BOOL changed = NO;
+
+    while (_foldedBodyCharacterRanges.count > 0u) {
+        BOOL removed = NO;
+
+        for (NSUInteger index = 0u; index < _foldedBodyCharacterRanges.count; index++) {
+            NSRange bodyRange = _foldedBodyCharacterRanges[index].rangeValue;
+            BOOL intersects = NO;
+
+            if (bodyRange.location == NSNotFound || bodyRange.length == 0u) {
+                continue;
+            }
+
+            if (selection.length == 0u) {
+                intersects =
+                    selection.location >= bodyRange.location
+                    && selection.location < NSMaxRange(bodyRange);
+            } else {
+                intersects = NSIntersectionRange(selection, bodyRange).length > 0u;
+            }
+
+            if (!intersects) {
+                continue;
+            }
+
+            [_foldedLineRanges removeObjectAtIndex:index];
+            [_foldedBodyCharacterRanges removeObjectAtIndex:index];
+            changed = YES;
+            removed = YES;
+            break;
+        }
+
+        if (!removed) {
+            break;
+        }
+    }
+
+    if (changed) {
+        [self invalidateFolding];
+    }
+    return changed;
+}
+
+- (BOOL)croftLineNumberIsFolded:(NSUInteger)lineNumber {
+    return [self lineIsFoldedHeader:lineNumber index:NULL];
+}
+
+- (BOOL)foldLineNumber:(NSUInteger)lineNumber {
+    if (lineNumber == 0u || !_textView) {
+        return NO;
+    }
+
+    if ([self lineIsFoldedHeader:lineNumber index:NULL]
+            || [self lineIsInFoldedBody:lineNumber index:NULL]) {
+        return NO;
+    }
+
+    {
+        NSString* text = _textView.string ?: @"";
+        croft_editor_text_model model;
+        croft_editor_tab_settings settings;
+        croft_editor_fold_region region = {0};
+
+        if (!croft_editor_appkit_build_text_model(text, &model)) {
+            return NO;
+        }
+
+        croft_editor_tab_settings_default(&settings);
+        if (croft_editor_fold_region_for_line(&model,
+                                              (uint32_t)lineNumber,
+                                              &settings,
+                                              &region) != CROFT_EDITOR_OK) {
+            croft_editor_text_model_dispose(&model);
+            return NO;
+        }
+        croft_editor_text_model_dispose(&model);
+
+        {
+            NSRange foldedLineRange = NSMakeRange(region.start_line_number,
+                                                  region.end_line_number - region.start_line_number + 1u);
+            NSUInteger insertIndex = _foldedLineRanges.count;
+
+            while (insertIndex > 0u
+                    && _foldedLineRanges[insertIndex - 1u].rangeValue.location > foldedLineRange.location) {
+                insertIndex--;
+            }
+            [_foldedLineRanges insertObject:[NSValue valueWithRange:foldedLineRange] atIndex:insertIndex];
+        }
+    }
+
+    [self invalidateFolding];
+    return YES;
+}
+
+- (BOOL)croftToggleFoldAtLineNumber:(NSUInteger)lineNumber {
+    NSUInteger existingIndex;
+
+    if (lineNumber == 0u || !_textView) {
+        return NO;
+    }
+
+    if ([self lineIsFoldedHeader:lineNumber index:&existingIndex]
+            || [self lineIsInFoldedBody:lineNumber index:&existingIndex]) {
+        [_foldedLineRanges removeObjectAtIndex:existingIndex];
+        [self invalidateFolding];
+        return YES;
+    }
+
+    return [self foldLineNumber:lineNumber];
+}
+
+- (BOOL)foldAtCurrentLine {
+    [self revealSelectionIfFolded];
+    return [self foldLineNumber:[_textView croft_currentLineNumber]];
+}
+
+- (BOOL)unfoldAtCurrentLine {
+    NSUInteger currentLine = [_textView croft_currentLineNumber];
+    NSUInteger existingIndex;
+
+    if ([self revealSelectionIfFolded]) {
+        return YES;
+    }
+
+    if (![self lineIsFoldedHeader:currentLine index:&existingIndex]
+            && ![self lineIsInFoldedBody:currentLine index:&existingIndex]) {
+        return NO;
+    }
+
+    [_foldedLineRanges removeObjectAtIndex:existingIndex];
+    [self invalidateFolding];
+    return YES;
+}
+
 - (BOOL)applyIndentAction:(BOOL)outdent {
     NSString* text = _textView.string ?: @"";
     NSData* utf8 = [text dataUsingEncoding:NSUTF8StringEncoding allowLossyConversion:NO];
@@ -997,8 +1368,10 @@ cleanup:
     }
 
     _syncingFromDocument = YES;
+    [self clearFolds];
     [_textView setString:text];
     _syncingFromDocument = NO;
+    [self invalidateFolding];
     free(utf8);
     [self refreshEditorChrome];
 }
@@ -1088,10 +1461,11 @@ cleanup:
     [textView setTextContainerInset:NSMakeSize(12.0, 8.0)];
     [textView setCroftIndentHandler:self];
     [textView setDelegate:self];
+    [[textView layoutManager] setDelegate:self];
 
     [scrollView setDocumentView:textView];
     CroftLineNumberRulerView* lineNumberRuler =
-        [[CroftLineNumberRulerView alloc] initWithTextView:textView];
+        [[CroftLineNumberRulerView alloc] initWithTextView:textView foldingHandler:self];
     [scrollView setVerticalRulerView:lineNumberRuler];
     [scrollView setHasVerticalRuler:YES];
     [scrollView setRulersVisible:YES];
@@ -1125,11 +1499,16 @@ cleanup:
     if (_syncingFromDocument) {
         return;
     }
+    if (_foldedLineRanges.count > 0u) {
+        [self clearFolds];
+        [self invalidateFolding];
+    }
     [self syncTextViewToDocument];
 }
 
 - (void)textViewDidChangeSelection:(NSNotification*)notification {
     (void)notification;
+    [self revealSelectionIfFolded];
     [self updateStatusBar];
     [self updateBracketMatches];
     [self updateSelectionOccurrences];
@@ -1150,6 +1529,16 @@ cleanup:
 - (IBAction)outdentSelection:(id)sender {
     (void)sender;
     [self croftOutdentSelection];
+}
+
+- (IBAction)foldSelection:(id)sender {
+    (void)sender;
+    [self foldAtCurrentLine];
+}
+
+- (IBAction)unfoldSelection:(id)sender {
+    (void)sender;
+    [self unfoldAtCurrentLine];
 }
 
 - (IBAction)saveDocument:(id)sender {
@@ -1177,6 +1566,53 @@ cleanup:
     (void)notification;
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     [NSApp terminate:nil];
+}
+
+- (NSUInteger)layoutManager:(NSLayoutManager*)layoutManager
+       shouldGenerateGlyphs:(const CGGlyph*)glyphs
+                 properties:(const NSGlyphProperty*)props
+           characterIndexes:(const NSUInteger*)charIndexes
+                       font:(NSFont*)aFont
+                forGlyphRange:(NSRange)glyphRange {
+    std::vector<NSGlyphProperty> properties;
+    bool changed = false;
+
+    if (_foldedBodyCharacterRanges.count == 0u
+            || glyphRange.length == 0u
+            || !glyphs
+            || !props
+            || !charIndexes) {
+        return 0u;
+    }
+
+    properties.assign(props, props + glyphRange.length);
+    for (NSUInteger index = 0u; index < glyphRange.length; index++) {
+        NSUInteger characterIndex = charIndexes[index];
+
+        for (NSValue* value in _foldedBodyCharacterRanges) {
+            NSRange range = value.rangeValue;
+
+            if (range.location == NSNotFound || range.length == 0u) {
+                continue;
+            }
+            if (characterIndex >= range.location && characterIndex < NSMaxRange(range)) {
+                properties[index] = (NSGlyphProperty)(properties[index] | NSGlyphPropertyNull);
+                changed = true;
+                break;
+            }
+        }
+    }
+
+    if (!changed) {
+        return 0u;
+    }
+
+    [layoutManager setGlyphs:glyphs
+                  properties:properties.data()
+            characterIndexes:charIndexes
+                        font:aFont
+               forGlyphRange:glyphRange];
+    return glyphRange.length;
 }
 
 @end
