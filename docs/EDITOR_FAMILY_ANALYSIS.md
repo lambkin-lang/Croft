@@ -107,6 +107,26 @@ The useful constraints from that probe are:
   part of the cliff still sits after the node has already emitted all of that
   geometry.
 
+## Follow-up Probe
+
+I then added frame-shell timing plus viewport culling for the main text-editor
+passes and reran the same profiled `5,000`-line benchmark. That produced:
+
+| Target | Wall ms | Frames | Begin-frame ms | Draw-tree ms | End-frame ms | Background lines | Text lines | Gutter lines |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `example_editor_text` | `5,239` | `32` | `146.876` | `328.227` | `667.059` | `1,184` | `1,184` | `1,184` |
+| `example_editor_text_metal_native` | `5,044` | `70` | `948.000` | `181.000` | `1.000` | `2,590` | `2,590` | `2,590` |
+
+That follow-up changes the conclusion again:
+
+- Viewport culling worked. The per-pass line counts dropped by roughly two
+  orders of magnitude.
+- The end-to-end wall time barely moved. Full-document redraw was real work,
+  but it was not the dominant source of the `5,000`-line cliff.
+- The remaining measured cost now clusters around the render-frame boundary:
+  `host_render_end_frame` in the tgfx/OpenGL path and `host_render_begin_frame`
+  in the native-Metal path.
+
 ## What This Shows
 
 - Sapling text storage and file IO do not force a multi-megabyte editor.
@@ -125,6 +145,9 @@ The useful constraints from that probe are:
 - The first scene-profile probe narrows that further: the immediate hot path is
   full-document redraw every frame, while line-map lookup and hit-testing are
   not part of the idle large-document cliff.
+- The follow-up probe narrows it again: once the editor stops drawing the whole
+  document, the dominant remaining cost is the render backend frame lifecycle,
+  not the editor node itself.
 - The remaining comparison work is not just about performance. It is about
   making hidden host services explicit: AppKit currently gives IME,
   accessibility, and undo-manager behavior "for free", while the direct-Metal
@@ -141,11 +164,11 @@ The next useful step is no longer generic runtime comparison either; that data
 now exists. The next useful step is to explain the large-document scene-family
 cliff:
 
-- add frame-shell timing around `host_render_begin_frame`,
-  `scene_node_draw_tree`, `host_render_end_frame`, and presentation so the
-  unexplained wall-time gap is visible
-- add viewport culling or a visible-line snapshot so the scene editor stops
-  walking and drawing all `5,000` lines every frame
+- move the next timing pass into the render backends themselves so
+  `tgfx::Surface::Make`, flush/submit/blit, and `CAMetalLayer` drawable
+  acquisition are measured directly
+- stop recreating or reacquiring expensive per-frame render resources where the
+  backend allows it
 - isolate input and accessibility concerns the same way `croft_editor_document`
   isolated the data layer
 - decide whether the direct-Metal editor should keep reusing the scene nodes or
