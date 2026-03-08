@@ -1,6 +1,7 @@
 #include "croft/editor_document.h"
 #include "croft/editor_document_fs.h"
 #include "croft/editor_menu_ids.h"
+#include "croft/editor_scene_runtime.h"
 #include "croft/host_render.h"
 #include "croft/host_ui.h"
 #include "croft/scene.h"
@@ -23,7 +24,7 @@ static scene_node* g_focused_node = NULL;
 static double g_mouse_x = 0.0;
 static double g_mouse_y = 0.0;
 static croft_editor_document* g_document = NULL;
-static int g_needs_redraw = 1;
+static croft_editor_scene_runtime_state g_runtime;
 
 enum {
     CROFT_EDITOR_WINDOW_PADDING = 16
@@ -48,7 +49,7 @@ static double usec_to_msec(uint64_t usec)
 
 static void request_redraw(void)
 {
-    g_needs_redraw = 1;
+    croft_editor_scene_runtime_request_redraw(&g_runtime);
 }
 
 static void print_frame_profile_summary(const char* variant, const render_frame_profile* profile)
@@ -645,9 +646,6 @@ int main(int argc, char** argv)
     uint32_t frame_count = 0u;
     int profile_enabled = env_flag_enabled(profile_env);
     render_frame_profile frame_profile = {0};
-    int last_cursor_blink_visible = -1;
-    uint32_t last_fw = 0u;
-    uint32_t last_fh = 0u;
     int rc = 1;
 
     if (auto_close_env && auto_close_env[0] != '\0') {
@@ -664,6 +662,8 @@ int main(int argc, char** argv)
     if (!g_document) {
         return 1;
     }
+
+    croft_editor_scene_runtime_state_init(&g_runtime);
 
     window_runtime = croft_wit_host_window_runtime_create();
     clock_runtime = croft_wit_host_clock_runtime_create();
@@ -934,7 +934,7 @@ int main(int argc, char** argv)
                 || !clock_expect_now(&clock_reply, &now_ms)) {
             goto cleanup;
         }
-        if (auto_close_ms > 0u && now_ms - start_ms >= (uint64_t)auto_close_ms) {
+        if (croft_editor_scene_runtime_should_auto_close(start_ms, now_ms, auto_close_ms)) {
             break;
         }
 
@@ -945,26 +945,15 @@ int main(int argc, char** argv)
             goto cleanup;
         }
 
-        g_root_vp.base.sx = (float)fw;
-        g_root_vp.base.sy = (float)fh;
-        g_editor.base.sx = (float)fw - (float)(CROFT_EDITOR_WINDOW_PADDING * 2);
-        g_editor.base.sy = (float)fh - (float)(CROFT_EDITOR_WINDOW_PADDING * 2);
-        if (fw != last_fw || fh != last_fh) {
-            last_fw = fw;
-            last_fh = fh;
-            request_redraw();
-        }
-        {
-            int cursor_blink_visible = (g_editor.sel_start == g_editor.sel_end)
-                ? (((int)(now_ms / 500u)) % 2)
-                : 1;
-            if (cursor_blink_visible != last_cursor_blink_visible) {
-                last_cursor_blink_visible = cursor_blink_visible;
-                request_redraw();
-            }
-        }
+        croft_editor_scene_runtime_sync_bounds(&g_runtime,
+                                               &g_root_vp,
+                                               &g_editor,
+                                               fw,
+                                               fh,
+                                               (float)CROFT_EDITOR_WINDOW_PADDING);
+        croft_editor_scene_runtime_sync_cursor_blink(&g_runtime, &g_editor, now_ms);
 
-        if (!g_needs_redraw) {
+        if (!croft_editor_scene_runtime_needs_redraw(&g_runtime)) {
             continue;
         }
 
@@ -1014,7 +1003,7 @@ int main(int argc, char** argv)
                     }
                 }
                 frame_count++;
-                g_needs_redraw = 0;
+                croft_editor_scene_runtime_note_frame_rendered(&g_runtime);
             }
         }
     }

@@ -914,6 +914,12 @@ croft_register_artifact(croft_editor_commands editor
     DEPENDS croft_editor_core
 )
 
+add_library(croft_editor_scene_runtime STATIC src/editor/editor_scene_runtime.c)
+croft_apply_public_includes(croft_editor_scene_runtime)
+croft_register_artifact(croft_editor_scene_runtime editor
+    TAGS tier8 editor scene runtime loop invalidation
+)
+
 add_library(croft_editor_document_core STATIC src/editor/editor_document.c)
 croft_apply_public_includes(croft_editor_document_core)
 croft_set_target_profile(croft_editor_document_core single-thread)
@@ -1693,8 +1699,8 @@ endif()
 
 if(CROFT_EXAMPLE_EDITOR_TARGET)
     if(NOT APPLE OR CROFT_EXAMPLE_GESTURE_TARGET)
-        set(CROFT_EDITOR_EXAMPLE_LINKS ${CROFT_EXAMPLE_EDITOR_TARGET} croft_a11y_stub croft_editor_document_fs)
-        set(CROFT_EDITOR_EXAMPLE_REQUIRES ${CROFT_EXAMPLE_EDITOR_TARGET} croft_editor_document_core croft_editor_document_fs)
+        set(CROFT_EDITOR_EXAMPLE_LINKS ${CROFT_EXAMPLE_EDITOR_TARGET} croft_a11y_stub croft_editor_document_fs croft_editor_scene_runtime)
+        set(CROFT_EDITOR_EXAMPLE_REQUIRES ${CROFT_EXAMPLE_EDITOR_TARGET} croft_editor_document_core croft_editor_document_fs croft_editor_scene_runtime)
         if(CROFT_EXAMPLE_GESTURE_TARGET)
             list(APPEND CROFT_EDITOR_EXAMPLE_LINKS ${CROFT_EXAMPLE_GESTURE_TARGET})
             list(APPEND CROFT_EDITOR_EXAMPLE_REQUIRES ${CROFT_EXAMPLE_GESTURE_TARGET})
@@ -1720,6 +1726,7 @@ if(TARGET croft_scene_text_editor_metal_native
         SOURCES examples/editor_scene_shell_wit.c
         LINKS croft_scene_text_editor_metal_native
               croft_editor_document_fs
+              croft_editor_scene_runtime
               croft_wit_host_window_runtime
               croft_wit_host_clock_runtime
               croft_wit_host_menu_runtime
@@ -1729,6 +1736,7 @@ if(TARGET croft_scene_text_editor_metal_native
         REQUIRES croft_scene_text_editor_metal_native
                  croft_editor_document_core
                  croft_editor_document_fs
+                 croft_editor_scene_runtime
                  croft_wit_host_window_runtime
                  croft_wit_host_clock_runtime
                  croft_wit_host_menu_runtime
@@ -1794,13 +1802,14 @@ endif()
 if(CROFT_BUILD_TESTS)
     enable_testing()
 
-    add_executable(test_croft tests/test_main.c tests/test_queue.c tests/host_tests/test_fs.c tests/test_editor_text_model.c tests/test_editor_brackets.c tests/test_editor_folding.c tests/test_editor_whitespace.c tests/test_editor_search.c tests/test_editor_status.c tests/test_editor_document.c tests/test_editor_commands.c tests/test_wit_resource_codegen.c tests/test_wit_text_runtime.c tests/test_wit_text_program.c tests/test_wit_store_runtime.c tests/test_wit_mailbox_runtime.c tests/test_wit_host_fs_runtime.c tests/test_wit_host_clock_runtime.c tests/test_wit_host_editor_input_runtime.c)
+    add_executable(test_croft tests/test_main.c tests/test_queue.c tests/host_tests/test_fs.c tests/test_editor_text_model.c tests/test_editor_brackets.c tests/test_editor_folding.c tests/test_editor_whitespace.c tests/test_editor_search.c tests/test_editor_status.c tests/test_editor_document.c tests/test_editor_commands.c tests/test_editor_scene_runtime.c tests/test_wit_resource_codegen.c tests/test_wit_text_runtime.c tests/test_wit_text_program.c tests/test_wit_store_runtime.c tests/test_wit_mailbox_runtime.c tests/test_wit_host_fs_runtime.c tests/test_wit_host_clock_runtime.c tests/test_wit_host_editor_input_runtime.c)
     target_include_directories(test_croft PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
     target_link_libraries(test_croft
         PRIVATE
             croft_host_queue
             croft_editor_document_fs
             croft_editor_commands
+            croft_editor_scene_runtime
             croft_wit_text_runtime
             croft_wit_text_program
             croft_wit_store_runtime

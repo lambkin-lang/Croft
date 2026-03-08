@@ -1,5 +1,6 @@
 #include "croft/editor_document.h"
 #include "croft/editor_document_fs.h"
+#include "croft/editor_scene_runtime.h"
 #include "croft/host_gesture.h"
 #include "croft/host_render.h"
 #include "croft/host_ui.h"
@@ -16,7 +17,7 @@ static scene_node* g_focused_node = NULL;
 static double g_mouse_x = 0;
 static double g_mouse_y = 0;
 static croft_editor_document* g_document = NULL;
-static int g_needs_redraw = 1;
+static croft_editor_scene_runtime_state g_runtime;
 
 enum {
     CROFT_EDITOR_WINDOW_PADDING = 16
@@ -46,7 +47,7 @@ static uint64_t monotonic_usec_now(void) {
 }
 
 static void request_redraw(void) {
-    g_needs_redraw = 1;
+    croft_editor_scene_runtime_request_redraw(&g_runtime);
 }
 
 static void print_editor_profile_summary(const char* variant, const text_editor_node* editor) {
@@ -251,9 +252,7 @@ int main(int argc, char** argv) {
     uint32_t frame_count = 0u;
     int profile_enabled = env_flag_enabled(profile_env);
     render_frame_profile frame_profile = {0};
-    int last_cursor_blink_visible = -1;
-    uint32_t last_fw = 0u;
-    uint32_t last_fh = 0u;
+    uint32_t auto_close_ms = 0u;
 
     g_document = croft_editor_document_open(argc > 0 ? argv[0] : NULL,
                                             target_file,
@@ -261,6 +260,14 @@ int main(int argc, char** argv) {
                                             strlen(fallback));
     if (!g_document) {
         return 1;
+    }
+
+    croft_editor_scene_runtime_state_init(&g_runtime);
+    if (auto_close_env && auto_close_env[0] != '\0') {
+        int parsed = atoi(auto_close_env);
+        if (parsed > 0) {
+            auto_close_ms = (uint32_t)parsed;
+        }
     }
 
     if (host_ui_init() != 0) {
@@ -305,35 +312,25 @@ int main(int argc, char** argv) {
     while (g_running && !host_ui_should_close()) {
         uint32_t fw = 0;
         uint32_t fh = 0;
-        int cursor_blink_visible;
+        uint64_t now_ms = monotonic_usec_now() / 1000u;
 
-        if (auto_close_env && auto_close_env[0] != '\0') {
-            int auto_close_ms = atoi(auto_close_env);
-            if (auto_close_ms > 0 && ((host_ui_get_time() - start_time) * 1000.0) >= (double)auto_close_ms) {
-                break;
-            }
+        if (croft_editor_scene_runtime_should_auto_close((uint64_t)(start_time * 1000.0),
+                                                         now_ms,
+                                                         auto_close_ms)) {
+            break;
         }
 
         host_ui_poll_events();
         host_ui_get_framebuffer_size(&fw, &fh);
-        if (fw != last_fw || fh != last_fh) {
-            last_fw = fw;
-            last_fh = fh;
-            request_redraw();
-        }
-        g_root_vp.base.sx = (float)fw;
-        g_root_vp.base.sy = (float)fh;
-        g_editor.base.sx = (float)fw - (float)(CROFT_EDITOR_WINDOW_PADDING * 2);
-        g_editor.base.sy = (float)fh - (float)(CROFT_EDITOR_WINDOW_PADDING * 2);
-        cursor_blink_visible = (g_editor.sel_start == g_editor.sel_end)
-            ? (((int)(host_ui_get_time() * 1000.0) / 500) % 2)
-            : 1;
-        if (cursor_blink_visible != last_cursor_blink_visible) {
-            last_cursor_blink_visible = cursor_blink_visible;
-            request_redraw();
-        }
+        croft_editor_scene_runtime_sync_bounds(&g_runtime,
+                                               &g_root_vp,
+                                               &g_editor,
+                                               fw,
+                                               fh,
+                                               (float)CROFT_EDITOR_WINDOW_PADDING);
+        croft_editor_scene_runtime_sync_cursor_blink(&g_runtime, &g_editor, now_ms);
 
-        if (!g_needs_redraw) {
+        if (!croft_editor_scene_runtime_needs_redraw(&g_runtime)) {
             continue;
         }
 
@@ -383,7 +380,7 @@ int main(int argc, char** argv) {
                     }
                 }
                 frame_count++;
-                g_needs_redraw = 0;
+                croft_editor_scene_runtime_note_frame_rendered(&g_runtime);
             }
         }
     }

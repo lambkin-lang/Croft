@@ -245,6 +245,9 @@ extern int test_editor_commands_shift_word_part_selection(void);
 extern int test_editor_commands_tab_insert(void);
 extern int test_editor_commands_indent_lines(void);
 extern int test_editor_commands_outdent_lines(void);
+extern int test_editor_scene_runtime_bounds_invalidate(void);
+extern int test_editor_scene_runtime_cursor_blink_invalidate(void);
+extern int test_editor_scene_runtime_auto_close(void);
 extern int test_wit_resource_open_command_roundtrip(void);
 extern int test_wit_resource_handle_roundtrip(void);
 extern int test_wit_text_runtime_roundtrip(void);
@@ -357,6 +360,11 @@ int main(void)
     RUN_TEST(test_editor_commands_tab_insert);
     RUN_TEST(test_editor_commands_indent_lines);
     RUN_TEST(test_editor_commands_outdent_lines);
+
+    printf("\n[editor_scene_runtime]\n");
+    RUN_TEST(test_editor_scene_runtime_bounds_invalidate);
+    RUN_TEST(test_editor_scene_runtime_cursor_blink_invalidate);
+    RUN_TEST(test_editor_scene_runtime_auto_close);
 
     printf("\n[wit_common_core]\n");
     RUN_TEST(test_wit_resource_open_command_roundtrip);

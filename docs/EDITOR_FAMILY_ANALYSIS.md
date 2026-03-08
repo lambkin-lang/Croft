@@ -192,11 +192,9 @@ That final probe changes the conclusion one more time:
 
 The next useful step is no longer "add the third family"; that part is done.
 The next useful step is no longer generic runtime comparison either; that data
-now exists. The next useful step is to explain the large-document scene-family
-cliff:
+now exists. The next useful step is to explain the remaining large-document
+scene-family costs:
 
-- push the new invalidation-driven redraw policy down into reusable host/scene
-  loop support instead of leaving it duplicated in the example shells
 - keep both runner wall time and sample-reported wall time visible in the
   benchmark history so GUI teardown cost stays measurable without obscuring
   in-loop work
