@@ -259,6 +259,7 @@ extern int test_wit_host_clock_runtime_monotonic(void);
 extern int test_wit_host_editor_input_runtime_shortcuts(void);
 extern int test_wit_host_editor_input_runtime_motion_modes(void);
 extern int test_wit_host_editor_input_runtime_indent_actions(void);
+extern int test_wit_host_editor_input_runtime_fold_actions(void);
 
 extern void run_test_fs(int argc, char **argv);
 
@@ -372,6 +373,7 @@ int main(void)
     RUN_TEST(test_wit_host_editor_input_runtime_shortcuts);
     RUN_TEST(test_wit_host_editor_input_runtime_motion_modes);
     RUN_TEST(test_wit_host_editor_input_runtime_indent_actions);
+    RUN_TEST(test_wit_host_editor_input_runtime_fold_actions);
 
     printf("\n[host_fs]\n");
     RUN_TEST(run_tier2_fs_tests);

@@ -221,3 +221,51 @@ int test_wit_host_editor_input_runtime_indent_actions(void)
     croft_wit_host_editor_input_runtime_destroy(runtime);
     return 0;
 }
+
+int test_wit_host_editor_input_runtime_fold_actions(void)
+{
+    croft_wit_host_editor_input_runtime* runtime;
+    SapWitHostEditorInputCommand command = {0};
+    SapWitHostEditorInputReply reply = {0};
+    SapWitHostEditorInputEditorAction action = {0};
+
+    runtime = croft_wit_host_editor_input_runtime_create();
+    if (!runtime) {
+        return 1;
+    }
+
+    command.case_tag = SAP_WIT_HOST_EDITOR_INPUT_COMMAND_WINDOW_KEY;
+    command.val.window_key.key = 91;
+    command.val.window_key.action = 1;
+    command.val.window_key.modifiers = CROFT_UI_MOD_SUPER | CROFT_UI_MOD_ALT;
+    if (croft_wit_host_editor_input_runtime_dispatch(runtime, &command, &reply) != 0) {
+        croft_wit_host_editor_input_runtime_destroy(runtime);
+        return 1;
+    }
+
+    command.case_tag = SAP_WIT_HOST_EDITOR_INPUT_COMMAND_NEXT_ACTION;
+    if (croft_wit_host_editor_input_runtime_dispatch(runtime, &command, &reply) != 0
+            || wit_editor_input_expect_action(&reply, &action) != 1
+            || action.case_tag != SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_FOLD) {
+        croft_wit_host_editor_input_runtime_destroy(runtime);
+        return 1;
+    }
+
+    command.case_tag = SAP_WIT_HOST_EDITOR_INPUT_COMMAND_MENU_ACTION;
+    command.val.menu_action.action_id = 213;
+    if (croft_wit_host_editor_input_runtime_dispatch(runtime, &command, &reply) != 0) {
+        croft_wit_host_editor_input_runtime_destroy(runtime);
+        return 1;
+    }
+
+    command.case_tag = SAP_WIT_HOST_EDITOR_INPUT_COMMAND_NEXT_ACTION;
+    if (croft_wit_host_editor_input_runtime_dispatch(runtime, &command, &reply) != 0
+            || wit_editor_input_expect_action(&reply, &action) != 1
+            || action.case_tag != SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_UNFOLD) {
+        croft_wit_host_editor_input_runtime_destroy(runtime);
+        return 1;
+    }
+
+    croft_wit_host_editor_input_runtime_destroy(runtime);
+    return 0;
+}

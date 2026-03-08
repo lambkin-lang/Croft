@@ -222,7 +222,9 @@ static void croft_wit_host_editor_input_translate_key(croft_wit_host_editor_inpu
                 return;
             case CROFT_KEY_LEFT_BRACKET:
                 croft_wit_host_editor_input_enqueue_simple(runtime,
-                    SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_OUTDENT);
+                    (key->modifiers & CROFT_UI_MOD_ALT)
+                        ? SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_FOLD
+                        : SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_OUTDENT);
                 return;
             case CROFT_KEY_Q:
                 croft_wit_host_editor_input_enqueue_simple(runtime,
@@ -230,7 +232,9 @@ static void croft_wit_host_editor_input_translate_key(croft_wit_host_editor_inpu
                 return;
             case CROFT_KEY_RIGHT_BRACKET:
                 croft_wit_host_editor_input_enqueue_simple(runtime,
-                    SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_INDENT);
+                    (key->modifiers & CROFT_UI_MOD_ALT)
+                        ? SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_UNFOLD
+                        : SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_INDENT);
                 return;
             case CROFT_KEY_S:
                 croft_wit_host_editor_input_enqueue_simple(runtime,
@@ -356,6 +360,14 @@ static void croft_wit_host_editor_input_translate_menu(croft_wit_host_editor_inp
         case CROFT_EDITOR_MENU_OUTDENT:
             croft_wit_host_editor_input_enqueue_simple(runtime,
                 SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_OUTDENT);
+            break;
+        case CROFT_EDITOR_MENU_FOLD:
+            croft_wit_host_editor_input_enqueue_simple(runtime,
+                SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_FOLD);
+            break;
+        case CROFT_EDITOR_MENU_UNFOLD:
+            croft_wit_host_editor_input_enqueue_simple(runtime,
+                SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_UNFOLD);
             break;
         default:
             break;

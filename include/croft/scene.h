@@ -117,6 +117,11 @@ typedef struct text_editor_node {
     int find_active;
     char find_query[128];
     uint32_t find_query_len;
+    uint32_t folded_region_count;
+    struct {
+        uint32_t start_line_number;
+        uint32_t end_line_number;
+    } folded_regions[64];
     croft_editor_text_model text_model;
     croft_editor_selection selection;
 } text_editor_node;
@@ -131,6 +136,9 @@ void text_editor_node_find_activate(text_editor_node *n);
 void text_editor_node_find_close(text_editor_node *n);
 int32_t text_editor_node_find_next(text_editor_node *n);
 int32_t text_editor_node_find_previous(text_editor_node *n);
+int32_t text_editor_node_fold(text_editor_node *n);
+int32_t text_editor_node_unfold(text_editor_node *n);
+int32_t text_editor_node_toggle_fold(text_editor_node *n);
 int32_t text_editor_node_indent(text_editor_node *n);
 int32_t text_editor_node_outdent(text_editor_node *n);
 int32_t text_editor_node_copy_selection_utf8(text_editor_node *n, char **out_utf8, size_t *out_len);
