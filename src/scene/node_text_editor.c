@@ -1,4 +1,5 @@
 #include "croft/scene.h"
+#include "croft/editor_brackets.h"
 #include "croft/editor_commands.h"
 #include "croft/editor_document.h"
 #include "croft/editor_search.h"
@@ -831,6 +832,67 @@ static void text_editor_draw_search_match(const text_editor_node* te,
     host_render_draw_rect(x1, current_y - te->font_size, x2 - x1, te->line_height, color_rgba);
 }
 
+static void text_editor_draw_codepoint_highlight(const text_editor_node* te,
+                                                 const text_editor_layout* layout,
+                                                 uint32_t offset,
+                                                 uint32_t color_rgba)
+{
+    croft_editor_position position;
+    uint32_t line_start_offset;
+    uint32_t line_start_byte;
+    uint32_t start_byte;
+    uint32_t end_byte;
+    uint32_t line_len_bytes = 0u;
+    const char* line_text;
+    float current_y;
+    float x1;
+    float x2;
+
+    if (!te || !layout
+            || offset >= croft_editor_text_model_codepoint_length(&te->text_model)) {
+        return;
+    }
+
+    position = croft_editor_text_model_get_position_at(&te->text_model, offset);
+    current_y = te->font_size + ((float)(position.line_number - 1u) * te->line_height);
+    if (current_y + te->scroll_y < 0.0f
+            || current_y - te->font_size + te->scroll_y > layout->content_height) {
+        return;
+    }
+
+    line_start_offset = croft_editor_text_model_line_start_offset(&te->text_model, position.line_number);
+    line_start_byte = croft_editor_text_model_byte_offset_at(&te->text_model, line_start_offset);
+    start_byte = croft_editor_text_model_byte_offset_at(&te->text_model, offset) - line_start_byte;
+    end_byte = croft_editor_text_model_byte_offset_at(&te->text_model, offset + 1u) - line_start_byte;
+    line_text = croft_editor_text_model_line_utf8(&te->text_model, position.line_number, &line_len_bytes);
+    x1 = layout->text_inset_x + host_render_measure_text(line_text, start_byte, te->font_size);
+    x2 = layout->text_inset_x + host_render_measure_text(line_text, end_byte, te->font_size);
+    host_render_draw_rect(x1, current_y - te->font_size, x2 - x1, te->line_height, color_rgba);
+}
+
+static void text_editor_draw_bracket_pair(text_editor_node* te,
+                                          const text_editor_layout* layout)
+{
+    croft_editor_bracket_match match = {0};
+    uint32_t selection_min = 0u;
+    uint32_t selection_max = 0u;
+
+    if (!te || !layout) {
+        return;
+    }
+
+    text_editor_selection_bounds(te, &selection_min, &selection_max);
+    if (selection_min != selection_max
+            || croft_editor_bracket_match_near_offset(&te->text_model,
+                                                      te->sel_end,
+                                                      &match) != CROFT_EDITOR_OK) {
+        return;
+    }
+
+    text_editor_draw_codepoint_highlight(te, layout, match.open_offset, 0xC8E0FFCC);
+    text_editor_draw_codepoint_highlight(te, layout, match.close_offset, 0xC8E0FFCC);
+}
+
 static void text_editor_draw_search_matches(text_editor_node* te,
                                             const text_editor_layout* layout)
 {
@@ -967,6 +1029,7 @@ static void text_editor_draw(scene_node *n, render_ctx *rc) {
     }
 
     text_editor_draw_search_matches(te, &layout);
+    text_editor_draw_bracket_pair(te, &layout);
 
     for (line_number = 1; line_number <= line_count; line_number++) {
         uint32_t line_start_offset = croft_editor_text_model_line_start_offset(&te->text_model, line_number);
