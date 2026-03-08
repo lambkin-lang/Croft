@@ -80,6 +80,33 @@ extra cost above that floor. AppKit stays close to the floor even at `5,000`
 lines, while both scene families climb sharply and stay very close to one
 another.
 
+## Scene Profile Probe
+
+To localize that `5,000`-line cliff, I added opt-in scene-editor telemetry and
+ran:
+
+`bash ./tools/benchmark_editor_runtime.sh --editor-profile --iterations 1 --editor-lines 5000 --keep 10`
+
+That single profiled pass produced:
+
+| Target | Wall ms | Frames | Editor draw ms | Measure-text calls | Measure-text ms | Background lines | Text lines | Gutter lines |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `example_editor_text` | `5,431` | `31` | `324.244` | `14,876` | `189.078` | `155,124` | `155,124` | `155,124` |
+| `example_editor_text_metal_native` | `5,098` | `72` | `202.812` | `34,520` | `95.331` | `360,288` | `360,288` | `360,288` |
+
+The useful constraints from that probe are:
+
+- The idle benchmark never touched the expensive line-mapping helpers:
+  `visible_line_count`, `visible_line_number_for_model_line`,
+  `model_line_number_for_visible_line`, and hit-testing all stayed at zero.
+- The scene editor is still redrawing the entire `~5,000`-line document in
+  each of its three per-frame passes. The line counters scale almost exactly as
+  `frames * line_count`, which means there is no viewport culling yet.
+- Text measurement is real work, but it is not the whole story. The measured
+  editor-node CPU time stayed far below the end-to-end wall time, so a large
+  part of the cliff still sits after the node has already emitted all of that
+  geometry.
+
 ## What This Shows
 
 - Sapling text storage and file IO do not force a multi-megabyte editor.
@@ -95,6 +122,9 @@ another.
   in large-document runtime than it matches AppKit, which suggests the current
   hot path is the shared scene-text layout/input stack rather than the render
   backend alone.
+- The first scene-profile probe narrows that further: the immediate hot path is
+  full-document redraw every frame, while line-map lookup and hit-testing are
+  not part of the idle large-document cliff.
 - The remaining comparison work is not just about performance. It is about
   making hidden host services explicit: AppKit currently gives IME,
   accessibility, and undo-manager behavior "for free", while the direct-Metal
@@ -111,8 +141,11 @@ The next useful step is no longer generic runtime comparison either; that data
 now exists. The next useful step is to explain the large-document scene-family
 cliff:
 
-- isolate or profile the shared scene-text layout/input path on larger
-  documents
+- add frame-shell timing around `host_render_begin_frame`,
+  `scene_node_draw_tree`, `host_render_end_frame`, and presentation so the
+  unexplained wall-time gap is visible
+- add viewport culling or a visible-line snapshot so the scene editor stops
+  walking and drawing all `5,000` lines every frame
 - isolate input and accessibility concerns the same way `croft_editor_document`
   isolated the data layer
 - decide whether the direct-Metal editor should keep reusing the scene nodes or
