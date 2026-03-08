@@ -293,28 +293,102 @@ Current status:
 - `example_wit_text_wasm_host` now reuses that same common-side WIT text logic
   inside a Wasm-hosted world over Croft's current `wasm3` host.
 
-### Family C: Native Desktop Variants
+### Family C: Document-Centric Editor Variants
 
-These prove optional host and render paths:
+These are the editor product line:
 
-- direct Metal native sample
-- Mac-collapsed AppKit sample
-- larger tgfx-backed comparison sample
+- small windowed textpad/editor shells over the shared document layer
+- direct-Metal editor variants that keep rendering explicit and small
+- Mac-collapsed AppKit variants that absorb more native text behavior
+- tgfx-backed scene-editor variants kept as comparison controls rather than the
+  strategic default
 
 Current status:
 
 - `example_wit_gpu_canvas` now covers the first WIT GPU/window/clock mix-in
-  boundary over the direct-Metal path.
+  boundary over the direct-Metal path that the editor line can build on.
 - `example_wit_text_window` now reuses the same common-side WIT text logic from
   the CLI world and renders it through native window/GPU mix-ins.
+- `example_wit_textpad_window` is now the smallest in-tree document-centric
+  windowed editor shell.
+- `example_editor_text` is now best treated as the tgfx-backed comparison
+  editor. Its current shell-level gesture wiring is transitional and should not
+  define the editor product direction.
+- `example_editor_text_appkit` is the Mac-collapsed CPU-native editor family.
+- `example_editor_text_metal_native` is the direct-Metal editor family and the
+  current small-binary reference path for a custom-rendered editor.
 
-### Family D: Wasm Host Execution Samples
+### Family D: Spatial and Zoomable Workspace Variants
+
+These are a separate product line from the document editors:
+
+- scene-graph and hit-testing baselines
+- zoomable canvas/workspace shells
+- future Code Bubbles-style multi-node code workspaces
+
+Current status:
+
+- `example_scene_graph` is the lower-level scene/layout/hit-test baseline.
+- `example_zoom_canvas` is the current spatial-workspace seed. It owns scroll
+  and pinch zoom as viewport/camera behavior and should remain separate from the
+  document-centric editor roadmap.
+
+### Family E: Wasm Host Execution Samples
 
 These should remain clearly on the host side:
 
 - embedded guest execution
 - WIT-backed service provision to the guest
 - comparison points for interpreter vs. other future Wasm hosts
+
+## Editor Product Direction
+
+The editor line should now be treated explicitly as a document-centric product
+family inspired by the core editing behavior of VS Code, not as the place where
+Croft also experiments with arbitrary zoomable workspaces.
+
+That means:
+
+- the editor line should keep pushing toward a capable programmer's editor
+  rather than toward a PAD++ or Code Bubbles canvas
+- the spatial/zoomable workspace line should continue as a separate family with
+  its own interaction model, viewport semantics, and planning questions
+- shared capabilities between those lines should stay at the document/editing
+  substrate, not at the shell or camera layer
+
+Explicit non-goals for the editor line:
+
+- not a drop-in replacement for VS Code
+- not the VS Code extension marketplace or LSP ecosystem
+- not a hidden spatial canvas with editor features bolted on top
+
+Current implemented editor baseline:
+
+- line numbers, current-line highlight, and status strip
+- find, next/previous match navigation, and selection-occurrence highlight
+- tab policy plus indent/outdent behavior
+- bracket matching
+- whitespace markers and indent guides
+- folding
+
+The next editor capabilities should focus on the hard, high-value portions of a
+VS Code-like document editor that do not require the extension/LSP ecosystem:
+
+1. syntax highlighting and tokenization for JavaScript/TypeScript, JSON, YAML,
+   Markdown, Python, and Lambkin
+2. an incremental line-state/token cache so highlighting and folding do not
+   devolve into full-buffer rescans
+3. replace and replace-all with honest undo/coalescing semantics
+4. wrapped-line layout, viewport mapping, and caret/selection geometry that
+   stay correct under proportional host metrics and custom-rendered metrics
+5. IME/composition, selection affinity, and text-input correctness for the
+   custom-rendered editor families
+6. decoration plumbing for diagnostics, search results, active ranges, and
+   syntax-driven styling without forcing one rendering strategy across families
+
+The spatial-workspace line should not move into larger implementation work until
+it has a clearer product definition. The first step there is a question list and
+vision pass, not more zoom behavior inside the text editors.
 
 ## Milestones
 
@@ -375,18 +449,24 @@ implementation shape, and coupling.
 
 ## Near-Term Priorities
 
-The next implementation passes should stay focused on the host-boundary and
-editor-boundary pressure points instead of broadening the system indiscriminately.
+The next implementation passes should stay focused on the editor and
+host-boundary pressure points instead of broadening the system indiscriminately.
 
-1. Use the now-stable automated runtime exercise for windowed GUI families to
-   compare editor and WIT window paths on honest shared workloads; the
-   menu-bearing paths are still the clearest pressure point.
-2. Move more of the direct-Metal/editor path onto WIT-facing boundaries while
-   keeping rendering itself intentionally direct for now.
-3. Extend the "same logic, different world" proof style with more paired
-   samples rather than isolated demos.
-4. Refine `tools/wit_codegen.c` around remaining exact-tail helper naming and
+1. Keep the document-editor line separate from the spatial-workspace line and
+   remove shell-level zoom ownership from the editor roadmap.
+2. Build the editor's syntax-highlighting pipeline around the first target
+   language set: JavaScript/TypeScript, JSON, YAML, Markdown, Python, and
+   Lambkin.
+3. Tighten the direct-Metal editor around text metrics, wrapped layout,
+   IME/composition, and accessibility so the hard native-editor seams become
+   explicit instead of hiding inside one renderer-centric module.
+4. Keep AppKit as the CPU-native contrast case and tgfx as the scene-rendered
+   comparison control while favoring direct Metal for the custom-rendered editor
+   line.
+5. Refine `tools/wit_codegen.c` around remaining exact-tail helper naming and
    how much rename metadata Lambkin should consume directly.
+6. Extend the "same logic, different world" proof style with more paired
+   samples rather than isolated demos.
 
 ## Long-Term Direction
 
@@ -410,8 +490,13 @@ implementation tasks:
 
 - a more explicit world catalog with durable naming and scope
 - a serious WIT-facing editor family for menu/input/accessibility/clipboard
+- a syntax-highlighting architecture that can serve both native-collapsed and
+  custom-rendered editor families
 - a decision about which host capabilities should remain reusable mix-ins
   versus which should stay family-specific or collapsed
+- a separate spatial-workspace product plan that makes room for zoomable code
+  bubbles, canvas semantics, and saved workspace structure without forcing those
+  decisions through the editor family first
 - a separate web-side Croft-shaped runtime effort for worker/browser hosts
 - performance benchmarking alongside size benchmarking for the main family
   comparisons
@@ -420,18 +505,25 @@ implementation tasks:
 
 The next concrete implementation work should happen in this order:
 
-1. Use the now-stable command-line runtime harness to benchmark the windowed
-   GUI families on larger shared documents, not just launch survival.
-2. Decide which remaining editor host seams should stay collapsed for the
-   direct-Metal family versus which should be forced through WIT now.
-3. Keep `tgfx` Metal as a comparison control while pushing the native
-   direct-Metal/editor path forward as the likely small-binary reference path.
-4. Refine `tools/wit_codegen.c` further around remaining exact-tail helpers
+1. Remove pinch-to-zoom and other viewport-zoom ownership from the scene editor
+   shells so the editor line stops advertising camera behavior as an editor
+   feature.
+2. Build the first syntax-highlighting/tokenization slice for
+   JavaScript/TypeScript, JSON, YAML, Markdown, Python, and Lambkin.
+3. Add the incremental token/line-state cache that the first highlighting pass
+   will need to stay responsive.
+4. Add replace and replace-all on top of the current search path with honest
+   undo/coalescing behavior across the editor families.
+5. Push direct-Metal editor work into wrapped-line layout, caret geometry, IME,
+   and accessibility seams rather than more shell-level chrome.
+6. Keep AppKit and tgfx alive as contrast cases while treating the native
+   direct-Metal editor as the main custom-rendered reference path.
+7. Refine `tools/wit_codegen.c` further around remaining exact-tail helpers
    and how rename/trace manifests should feed Lambkin.
-5. Extend the reused host-mix-in path beyond text/window samples into other
-   families where it clarifies product-line choices.
-6. Read `docs/LAMBKIN_XPI_JOURNAL.md` before expanding host/editor surface area
+8. Read `docs/LAMBKIN_XPI_JOURNAL.md` before expanding host/editor surface area
    so the current join-point questions remain explicit.
+9. Use `docs/SPATIAL_WORKSPACE_QUESTIONS.md` to define the workspace vision
+   before adding more zoom/canvas implementation work.
 
 ## Resume Checklist For Future Sessions
 
@@ -442,11 +534,13 @@ When resuming this work in a new session:
 3. Read `docs/EXAMPLE_MATRIX.md` to see the current modeled sample families.
 4. Read `docs/LAMBKIN_XPI_JOURNAL.md` to pick up the current join-points,
    XPIs, and open research questions.
-5. For any new code, decide whether it belongs to:
+5. Read `docs/SPATIAL_WORKSPACE_QUESTIONS.md` before treating zoom/canvas work
+   as an editor requirement again.
+6. For any new code, decide whether it belongs to:
    common support, WIT bindings, or host/platform support.
-6. If a change adds an OS dependency to a common target, stop and split the
+7. If a change adds an OS dependency to a common target, stop and split the
    boundary instead.
-7. If a new sample is added, state which world it models and which artifacts it
+8. If a new sample is added, state which world it models and which artifacts it
    should justify linking.
 
 ## Non-Goal Reminder
