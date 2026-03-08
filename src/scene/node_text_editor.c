@@ -1,6 +1,7 @@
 #include "croft/scene.h"
 #include "croft/editor_commands.h"
 #include "croft/editor_document.h"
+#include "croft/editor_status.h"
 #include "croft/host_ui.h"
 #include "croft/host_render.h"
 #include <sapling/txn.h>
@@ -25,6 +26,111 @@ enum {
     CROFT_KEY_KP_ENTER_OLD = 284,
     CROFT_KEY_KP_ENTER = 335
 };
+
+typedef struct text_editor_layout {
+    float gutter_width;
+    float gutter_font_size;
+    float text_inset_x;
+    float content_width;
+    float content_height;
+    float status_height;
+    float status_font_size;
+} text_editor_layout;
+
+static float text_editor_status_font_size(const text_editor_node* te) {
+    float font_size = te ? (te->font_size * 0.42f) : 14.0f;
+    if (font_size < 14.0f) {
+        font_size = 14.0f;
+    }
+    return font_size;
+}
+
+static float text_editor_gutter_font_size(const text_editor_node* te) {
+    float font_size = te ? (te->font_size * 0.72f) : 14.0f;
+    if (font_size < 12.0f) {
+        font_size = 12.0f;
+    }
+    if (te && font_size > te->font_size) {
+        font_size = te->font_size;
+    }
+    return font_size;
+}
+
+static void text_editor_compute_layout(const text_editor_node* te,
+                                       float node_width,
+                                       float node_height,
+                                       text_editor_layout* out_layout) {
+    uint32_t line_count = 1u;
+    uint32_t digits;
+    char line_label[16];
+    int line_label_len;
+    float gutter_font_size;
+    float status_font_size;
+    float gutter_label_width = 0.0f;
+
+    if (!out_layout) {
+        return;
+    }
+
+    if (te) {
+        line_count = croft_editor_text_model_line_count(&te->text_model);
+        if (line_count == 0u) {
+            line_count = 1u;
+        }
+    }
+
+    digits = croft_editor_line_number_digits(line_count);
+    line_label_len = snprintf(line_label, sizeof(line_label), "%u", line_count);
+    gutter_font_size = text_editor_gutter_font_size(te);
+    status_font_size = text_editor_status_font_size(te);
+    if (line_label_len > 0) {
+        gutter_label_width = host_render_measure_text(line_label,
+                                                      (uint32_t)line_label_len,
+                                                      gutter_font_size);
+    } else {
+        gutter_label_width = (float)digits * gutter_font_size * 0.6f;
+    }
+
+    out_layout->gutter_font_size = gutter_font_size;
+    out_layout->status_font_size = status_font_size;
+    out_layout->text_inset_x = 12.0f;
+    out_layout->status_height = status_font_size + 12.0f;
+    out_layout->content_height = node_height - out_layout->status_height;
+    if (out_layout->content_height < te->line_height) {
+        out_layout->content_height = te->line_height;
+    }
+    out_layout->gutter_width = gutter_label_width + 24.0f;
+    if (out_layout->gutter_width < 44.0f) {
+        out_layout->gutter_width = 44.0f;
+    }
+    out_layout->content_width = node_width - out_layout->gutter_width;
+    if (out_layout->content_width < 0.0f) {
+        out_layout->content_width = 0.0f;
+    }
+}
+
+static uint32_t text_editor_current_line_number(const text_editor_node* te) {
+    if (!te) {
+        return 1u;
+    }
+    if (te->selection.position_line_number == 0u) {
+        return 1u;
+    }
+    return te->selection.position_line_number;
+}
+
+static croft_editor_status_snapshot text_editor_status_snapshot_from_node(const text_editor_node* te) {
+    croft_editor_status_snapshot snapshot;
+
+    snapshot.line_number = text_editor_current_line_number(te);
+    snapshot.column = te ? te->selection.position_column : 1u;
+    snapshot.line_count = te ? croft_editor_text_model_line_count(&te->text_model) : 1u;
+    if (snapshot.line_count == 0u) {
+        snapshot.line_count = 1u;
+    }
+    snapshot.is_dirty = (te && te->document) ? croft_editor_document_is_dirty(te->document) : 0;
+    return snapshot;
+}
 
 static uint32_t text_editor_clamp_u32(uint32_t value, uint32_t min_value, uint32_t max_value) {
     if (value < min_value) {
@@ -196,17 +302,39 @@ static int text_editor_utf8_codepoint_count(const uint8_t* utf8,
 
 static void text_editor_draw(scene_node *n, render_ctx *rc) {
     text_editor_node *te = (text_editor_node *)n;
+    text_editor_layout layout;
+    croft_editor_status_snapshot status_snapshot;
+    char status_text[96];
     uint32_t line_count;
     uint32_t selection_min = 0;
     uint32_t selection_max = 0;
     uint32_t cursor_offset = te->sel_end;
+    uint32_t current_line = text_editor_current_line_number(te);
     uint32_t line_number;
 
+    text_editor_compute_layout(te, n->sx, n->sy, &layout);
+    status_snapshot = text_editor_status_snapshot_from_node(te);
+    if (croft_editor_status_format(&status_snapshot, status_text, sizeof(status_text)) != 0) {
+        status_text[0] = '\0';
+    }
+
     host_render_draw_rect(0, 0, n->sx, n->sy, rc->bg_color);
+    host_render_draw_rect(0, 0, layout.gutter_width, layout.content_height, 0xCFD5DEFF);
+    host_render_draw_rect(0, layout.content_height, n->sx, layout.status_height, 0xD5DAE2FF);
+    host_render_draw_rect(layout.gutter_width - 1.0f,
+                          0.0f,
+                          1.0f,
+                          layout.content_height,
+                          0x00000028);
+    host_render_draw_rect(0.0f,
+                          layout.content_height,
+                          n->sx,
+                          1.0f,
+                          0x00000028);
 
     host_render_save();
-    host_render_clip_rect(0, 0, n->sx, n->sy);
-    host_render_translate(te->scroll_x, te->scroll_y);
+    host_render_clip_rect(layout.gutter_width, 0, layout.content_width, layout.content_height);
+    host_render_translate(layout.gutter_width + te->scroll_x, te->scroll_y);
 
     text_editor_selection_bounds(te, &selection_min, &selection_max);
     line_count = croft_editor_text_model_line_count(&te->text_model);
@@ -219,7 +347,16 @@ static void text_editor_draw(scene_node *n, render_ctx *rc) {
         const char* line_text = croft_editor_text_model_line_utf8(&te->text_model, line_number, &line_len_bytes);
         float current_y = te->font_size + ((float)(line_number - 1u) * te->line_height);
 
-        if (current_y + te->scroll_y >= 0.0f && current_y - te->font_size + te->scroll_y <= n->sy) {
+        if (current_y + te->scroll_y >= 0.0f
+                && current_y - te->font_size + te->scroll_y <= layout.content_height) {
+            if (line_number == current_line) {
+                host_render_draw_rect(-te->scroll_x,
+                                      current_y - te->font_size,
+                                      layout.content_width,
+                                      te->line_height,
+                                      0xD7E3F3FF);
+            }
+
             if (selection_min != selection_max
                     && selection_min < line_end_offset
                     && selection_max > line_start_offset) {
@@ -229,8 +366,10 @@ static void text_editor_draw(scene_node *n, render_ctx *rc) {
                     croft_editor_text_model_byte_offset_at(&te->text_model, highlight_start) - line_start_byte;
                 uint32_t highlight_end_bytes =
                     croft_editor_text_model_byte_offset_at(&te->text_model, highlight_end) - line_start_byte;
-                float x1 = host_render_measure_text(line_text, highlight_start_bytes, te->font_size);
-                float x2 = host_render_measure_text(line_text, highlight_end_bytes, te->font_size);
+                float x1 = layout.text_inset_x
+                    + host_render_measure_text(line_text, highlight_start_bytes, te->font_size);
+                float x2 = layout.text_inset_x
+                    + host_render_measure_text(line_text, highlight_end_bytes, te->font_size);
                 host_render_draw_rect(x1, current_y - te->font_size, x2 - x1, te->line_height, 0x4B9CE2FF);
             }
 
@@ -241,21 +380,67 @@ static void text_editor_draw(scene_node *n, render_ctx *rc) {
                 if ((millis / 500) % 2 == 0) {
                     uint32_t cursor_bytes =
                         croft_editor_text_model_byte_offset_at(&te->text_model, cursor_offset) - line_start_byte;
-                    float cursor_x = host_render_measure_text(line_text, cursor_bytes, te->font_size);
+                    float cursor_x = layout.text_inset_x
+                        + host_render_measure_text(line_text, cursor_bytes, te->font_size);
                     host_render_draw_rect(cursor_x, current_y - te->font_size, 2.0f, te->line_height, 0x000000FF);
                 }
             }
 
-            host_render_draw_rect(0, current_y, n->sx, 1.0f, 0x0000FF33);
+            host_render_draw_rect(-te->scroll_x, current_y, layout.content_width, 1.0f, 0x00000018);
 
             if (line_len_bytes > 0u) {
-                host_render_draw_text(0, current_y, line_text, line_len_bytes, te->font_size, rc->fg_color);
+                host_render_draw_text(layout.text_inset_x,
+                                      current_y,
+                                      line_text,
+                                      line_len_bytes,
+                                      te->font_size,
+                                      rc->fg_color);
             }
         }
     }
-
-    host_render_draw_rect(0, 0, 1.0f, n->sy, 0x0000FF33);
     host_render_restore();
+
+    host_render_save();
+    host_render_clip_rect(0, 0, layout.gutter_width, layout.content_height);
+    host_render_translate(0.0f, te->scroll_y);
+    for (line_number = 1; line_number <= line_count; line_number++) {
+        char line_label[16];
+        int line_label_len;
+        float current_y = te->font_size + ((float)(line_number - 1u) * te->line_height);
+        float label_width;
+        uint32_t color = (line_number == current_line) ? 0x17385EFF : 0x5D6673FF;
+
+        if (current_y + te->scroll_y < 0.0f
+                || current_y - te->font_size + te->scroll_y > layout.content_height) {
+            continue;
+        }
+
+        line_label_len = snprintf(line_label, sizeof(line_label), "%u", line_number);
+        label_width = (line_label_len > 0)
+            ? host_render_measure_text(line_label,
+                                       (uint32_t)line_label_len,
+                                       layout.gutter_font_size)
+            : 0.0f;
+        if (line_label_len > 0) {
+            host_render_draw_text(layout.gutter_width - 12.0f - label_width,
+                                  current_y,
+                                  line_label,
+                                  (uint32_t)line_label_len,
+                                  layout.gutter_font_size,
+                                  color);
+        }
+    }
+    host_render_restore();
+
+    if (status_text[0] != '\0') {
+        uint32_t status_len = (uint32_t)strlen(status_text);
+        host_render_draw_text(12.0f,
+                              layout.content_height + layout.status_font_size + 4.0f,
+                              status_text,
+                              status_len,
+                              layout.status_font_size,
+                              0x2C3A4AFF);
+    }
 }
 
 static void text_editor_hit_test(scene_node *n, float x, float y, hit_result *out) {
@@ -269,6 +454,7 @@ static void text_editor_update_accessibility(scene_node *n) {
 }
 
 static uint32_t text_editor_hit_index(text_editor_node *te, float lx, float ly) {
+    text_editor_layout layout;
     uint32_t line_number;
     uint32_t line_start_offset;
     uint32_t line_end_offset;
@@ -279,8 +465,12 @@ static uint32_t text_editor_hit_index(text_editor_node *te, float lx, float ly) 
     uint32_t offset;
     float best_distance;
 
-    float doc_x = lx - te->scroll_x;
-    float doc_y = ly - te->scroll_y;
+    float doc_x;
+    float doc_y;
+
+    text_editor_compute_layout(te, te->base.sx, te->base.sy, &layout);
+    doc_x = lx - layout.gutter_width - te->scroll_x - layout.text_inset_x;
+    doc_y = ly - te->scroll_y;
 
     if (doc_y < 0.0f) {
         return 0;
@@ -315,6 +505,19 @@ static uint32_t text_editor_hit_index(text_editor_node *te, float lx, float ly) 
 
 static void text_editor_mouse_event(scene_node *n, int action, float local_x, float local_y) {
     text_editor_node *te = (text_editor_node *)n;
+    text_editor_layout layout;
+
+    text_editor_compute_layout(te, n->sx, n->sy, &layout);
+    if (local_y >= layout.content_height) {
+        if (action == 0 || action == 2) {
+            te->is_selecting = 0;
+        }
+        return;
+    }
+    if (local_x < layout.gutter_width) {
+        local_x = layout.gutter_width;
+    }
+
     if (action == 1) { // Down
         uint32_t hit_index = text_editor_hit_index(te, local_x, local_y);
         text_editor_break_coalescing(te);
