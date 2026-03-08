@@ -290,6 +290,7 @@ static uint32_t croft_editor_appkit_count_utf8_codepoints(const uint8_t* utf8, s
     CroftEditorTextView* _textView;
     CroftLineNumberRulerView* _lineNumberRuler;
     NSTextField* _statusLabel;
+    NSMutableArray<NSValue*>* _selectionOccurrenceRanges;
     BOOL _syncingFromDocument;
     NSInteger _autoCloseMillis;
 }
@@ -302,6 +303,7 @@ static uint32_t croft_editor_appkit_count_utf8_codepoints(const uint8_t* utf8, s
         _document = document;
         _windowTitle = title;
         _autoCloseMillis = autoCloseMillis;
+        _selectionOccurrenceRanges = [[NSMutableArray alloc] init];
     }
     return self;
 }
@@ -332,6 +334,79 @@ static uint32_t croft_editor_appkit_count_utf8_codepoints(const uint8_t* utf8, s
     [saveItem setEnabled:(croft_editor_document_path(_document) != NULL)];
     [fileMenu addItem:saveItem];
     [fileMenuItem setSubmenu:fileMenu];
+
+    NSMenuItem* editMenuItem = [[NSMenuItem alloc] initWithTitle:@"Edit" action:nil keyEquivalent:@""];
+    [menuBar addItem:editMenuItem];
+
+    NSMenu* editMenu = [[NSMenu alloc] initWithTitle:@"Edit"];
+    NSMenuItem* undoItem = [[NSMenuItem alloc] initWithTitle:@"Undo"
+                                                      action:@selector(undo:)
+                                               keyEquivalent:@"z"];
+    [undoItem setTarget:_textView];
+    [editMenu addItem:undoItem];
+
+    NSMenuItem* redoItem = [[NSMenuItem alloc] initWithTitle:@"Redo"
+                                                      action:@selector(redo:)
+                                               keyEquivalent:@"Z"];
+    [redoItem setTarget:_textView];
+    [editMenu addItem:redoItem];
+
+    [editMenu addItem:[NSMenuItem separatorItem]];
+
+    NSMenuItem* cutItem = [[NSMenuItem alloc] initWithTitle:@"Cut"
+                                                     action:@selector(cut:)
+                                              keyEquivalent:@"x"];
+    [cutItem setTarget:_textView];
+    [editMenu addItem:cutItem];
+
+    NSMenuItem* copyItem = [[NSMenuItem alloc] initWithTitle:@"Copy"
+                                                      action:@selector(copy:)
+                                               keyEquivalent:@"c"];
+    [copyItem setTarget:_textView];
+    [editMenu addItem:copyItem];
+
+    NSMenuItem* pasteItem = [[NSMenuItem alloc] initWithTitle:@"Paste"
+                                                       action:@selector(paste:)
+                                                keyEquivalent:@"v"];
+    [pasteItem setTarget:_textView];
+    [editMenu addItem:pasteItem];
+
+    NSMenuItem* selectAllItem = [[NSMenuItem alloc] initWithTitle:@"Select All"
+                                                           action:@selector(selectAll:)
+                                                    keyEquivalent:@"a"];
+    [selectAllItem setTarget:_textView];
+    [editMenu addItem:selectAllItem];
+
+    [editMenu addItem:[NSMenuItem separatorItem]];
+
+    NSMenuItem* findItem = [[NSMenuItem alloc] initWithTitle:@"Find"
+                                                      action:nil
+                                               keyEquivalent:@""];
+    NSMenu* findMenu = [[NSMenu alloc] initWithTitle:@"Find"];
+    NSMenuItem* showFindItem = [[NSMenuItem alloc] initWithTitle:@"Find..."
+                                                          action:@selector(performTextFinderAction:)
+                                                   keyEquivalent:@"f"];
+    [showFindItem setTarget:_textView];
+    [showFindItem setTag:NSTextFinderActionShowFindInterface];
+    [findMenu addItem:showFindItem];
+
+    NSMenuItem* findNextItem = [[NSMenuItem alloc] initWithTitle:@"Find Next"
+                                                          action:@selector(performTextFinderAction:)
+                                                   keyEquivalent:@"g"];
+    [findNextItem setTarget:_textView];
+    [findNextItem setTag:NSTextFinderActionNextMatch];
+    [findMenu addItem:findNextItem];
+
+    NSMenuItem* findPreviousItem = [[NSMenuItem alloc] initWithTitle:@"Find Previous"
+                                                              action:@selector(performTextFinderAction:)
+                                                       keyEquivalent:@"G"];
+    [findPreviousItem setTarget:_textView];
+    [findPreviousItem setTag:NSTextFinderActionPreviousMatch];
+    [findMenu addItem:findPreviousItem];
+
+    [findItem setSubmenu:findMenu];
+    [editMenu addItem:findItem];
+    [editMenuItem setSubmenu:editMenu];
 
     [NSApp setMainMenu:menuBar];
 }
@@ -400,9 +475,73 @@ static uint32_t croft_editor_appkit_count_utf8_codepoints(const uint8_t* utf8, s
     [_statusLabel setStringValue:(buffer[0] != '\0') ? [NSString stringWithUTF8String:buffer] : @""];
 }
 
+- (void)clearSelectionOccurrences {
+    NSLayoutManager* layoutManager = _textView.layoutManager;
+
+    if (!layoutManager) {
+        return;
+    }
+
+    for (NSValue* value in _selectionOccurrenceRanges) {
+        NSRange range = value.rangeValue;
+        [layoutManager removeTemporaryAttribute:NSBackgroundColorAttributeName
+                              forCharacterRange:range];
+    }
+    [_selectionOccurrenceRanges removeAllObjects];
+}
+
+- (void)updateSelectionOccurrences {
+    NSString* text;
+    NSRange selection;
+    NSString* selectedText;
+    NSRange searchRange;
+    NSLayoutManager* layoutManager = _textView.layoutManager;
+
+    [self clearSelectionOccurrences];
+
+    if (!_textView || !layoutManager) {
+        return;
+    }
+
+    text = _textView.string ?: @"";
+    selection = _textView.selectedRange;
+    if (selection.length == 0u || selection.length > 128u || NSMaxRange(selection) > text.length) {
+        return;
+    }
+
+    selectedText = [text substringWithRange:selection];
+    if ([selectedText rangeOfCharacterFromSet:[NSCharacterSet newlineCharacterSet]].location != NSNotFound) {
+        return;
+    }
+
+    searchRange = NSMakeRange(0u, text.length);
+    while (searchRange.location < text.length) {
+        NSRange foundRange = [text rangeOfString:selectedText
+                                         options:NSLiteralSearch
+                                           range:searchRange];
+        if (foundRange.location == NSNotFound) {
+            break;
+        }
+        if (!NSEqualRanges(foundRange, selection)) {
+            [layoutManager addTemporaryAttribute:NSBackgroundColorAttributeName
+                                           value:[NSColor colorWithCalibratedRed:0.95
+                                                                           green:0.89
+                                                                            blue:0.72
+                                                                           alpha:0.60]
+                               forCharacterRange:foundRange];
+            [_selectionOccurrenceRanges addObject:[NSValue valueWithRange:foundRange]];
+        }
+        if (NSMaxRange(foundRange) >= text.length) {
+            break;
+        }
+        searchRange = NSMakeRange(NSMaxRange(foundRange), text.length - NSMaxRange(foundRange));
+    }
+}
+
 - (void)refreshEditorChrome {
     [self updateWindowTitle];
     [self updateStatusBar];
+    [self updateSelectionOccurrences];
     [_textView setNeedsDisplay:YES];
     [_lineNumberRuler invalidateMetrics];
 }
@@ -453,8 +592,6 @@ static uint32_t croft_editor_appkit_count_utf8_codepoints(const uint8_t* utf8, s
 - (void)applicationDidFinishLaunching:(NSNotification*)notification {
     (void)notification;
     static const CGFloat kStatusBarHeight = 24.0;
-
-    [self buildMenuBar];
 
     _window = [[NSWindow alloc] initWithContentRect:NSMakeRect(80, 80, 1000, 760)
                                           styleMask:(NSWindowStyleMaskTitled |
@@ -534,6 +671,7 @@ static uint32_t croft_editor_appkit_count_utf8_codepoints(const uint8_t* utf8, s
     _textView = textView;
     _lineNumberRuler = lineNumberRuler;
     _statusLabel = statusLabel;
+    [self buildMenuBar];
     [self loadDocumentIntoView];
 
     [_window makeKeyAndOrderFront:nil];
@@ -557,6 +695,7 @@ static uint32_t croft_editor_appkit_count_utf8_codepoints(const uint8_t* utf8, s
 - (void)textViewDidChangeSelection:(NSNotification*)notification {
     (void)notification;
     [self updateStatusBar];
+    [self updateSelectionOccurrences];
     [_textView setNeedsDisplay:YES];
     [_lineNumberRuler setNeedsDisplay:YES];
 }
