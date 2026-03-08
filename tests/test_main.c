@@ -216,6 +216,9 @@ extern int test_editor_text_model_offsets(void);
 extern int test_editor_text_model_multibyte(void);
 extern int test_editor_text_model_selection(void);
 extern int test_editor_text_model_word_ranges(void);
+extern int test_editor_search_next_previous(void);
+extern int test_editor_search_multibyte(void);
+extern int test_editor_search_invalid_queries(void);
 extern int test_editor_status_line_number_digits(void);
 extern int test_editor_status_format(void);
 extern int test_editor_document_undo_redo_coalesced_insert(void);
@@ -297,6 +300,11 @@ int main(void)
     RUN_TEST(test_editor_text_model_multibyte);
     RUN_TEST(test_editor_text_model_selection);
     RUN_TEST(test_editor_text_model_word_ranges);
+
+    printf("\n[editor_search]\n");
+    RUN_TEST(test_editor_search_next_previous);
+    RUN_TEST(test_editor_search_multibyte);
+    RUN_TEST(test_editor_search_invalid_queries);
 
     printf("\n[editor_status]\n");
     RUN_TEST(test_editor_status_line_number_digits);
