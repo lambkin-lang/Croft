@@ -34,6 +34,15 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
+Profile-targeted slices are available through CTest labels:
+
+```bash
+ctest --test-dir build -L sapling-core --output-on-failure
+ctest --test-dir build -L sapling-threaded --output-on-failure
+ctest --test-dir build -L sapling-runner --output-on-failure
+ctest --test-dir build -L sapling-wasi --output-on-failure
+```
+
 Croft now emits a set of static libraries and records them in
 `build/croft-artifacts.json`. Lambkin can treat that manifest as the universe of
 available mix-ins for constraint solving and final link selection.
