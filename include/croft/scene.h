@@ -114,6 +114,9 @@ typedef struct text_editor_node {
     uint32_t preferred_column;
     uint32_t modifiers;
     int is_selecting;
+    int find_active;
+    char find_query[128];
+    uint32_t find_query_len;
     croft_editor_text_model text_model;
     croft_editor_selection selection;
 } text_editor_node;
@@ -123,6 +126,11 @@ void text_editor_node_bind_document(text_editor_node *n, struct croft_editor_doc
 void text_editor_node_set_text(text_editor_node *n, struct Text *text_tree);
 void text_editor_node_set_modifiers(text_editor_node *n, uint32_t modifiers);
 void text_editor_node_select_all(text_editor_node *n);
+int text_editor_node_is_find_active(const text_editor_node *n);
+void text_editor_node_find_activate(text_editor_node *n);
+void text_editor_node_find_close(text_editor_node *n);
+int32_t text_editor_node_find_next(text_editor_node *n);
+int32_t text_editor_node_find_previous(text_editor_node *n);
 int32_t text_editor_node_copy_selection_utf8(text_editor_node *n, char **out_utf8, size_t *out_len);
 int32_t text_editor_node_replace_selection_utf8(text_editor_node *n,
                                                 const uint8_t *utf8,

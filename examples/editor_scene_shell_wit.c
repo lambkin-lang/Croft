@@ -243,7 +243,14 @@ static int editor_install_menu(croft_wit_host_menu_runtime* runtime)
             || !menu_add_item(runtime, &reply, CROFT_EDITOR_MENU_CUT, CROFT_EDITOR_MENU_EDIT_ROOT,
                               "Cut", "x", SAP_WIT_HOST_MENU_MODIFIERS_CMD)
             || !menu_add_item(runtime, &reply, CROFT_EDITOR_MENU_PASTE, CROFT_EDITOR_MENU_EDIT_ROOT,
-                              "Paste", "v", SAP_WIT_HOST_MENU_MODIFIERS_CMD)) {
+                              "Paste", "v", SAP_WIT_HOST_MENU_MODIFIERS_CMD)
+            || !menu_add_item(runtime, &reply, CROFT_EDITOR_MENU_FIND, CROFT_EDITOR_MENU_EDIT_ROOT,
+                              "Find", "f", SAP_WIT_HOST_MENU_MODIFIERS_CMD)
+            || !menu_add_item(runtime, &reply, CROFT_EDITOR_MENU_FIND_NEXT, CROFT_EDITOR_MENU_EDIT_ROOT,
+                              "Find Next", "g", SAP_WIT_HOST_MENU_MODIFIERS_CMD)
+            || !menu_add_item(runtime, &reply, CROFT_EDITOR_MENU_FIND_PREVIOUS, CROFT_EDITOR_MENU_EDIT_ROOT,
+                              "Find Previous", "g",
+                              SAP_WIT_HOST_MENU_MODIFIERS_CMD | SAP_WIT_HOST_MENU_MODIFIERS_SHIFT)) {
         return 0;
     }
 
@@ -387,6 +394,44 @@ static int editor_apply_action(croft_wit_host_clipboard_runtime* clipboard_runti
         default:
             return 0;
     }
+}
+
+static int editor_handle_find_key(const SapWitHostWindowEvent* event)
+{
+    uint32_t modifiers;
+    int command_mode;
+
+    if (!event || event->case_tag != SAP_WIT_HOST_WINDOW_EVENT_KEY) {
+        return 0;
+    }
+
+    modifiers = event->val.key.modifiers;
+    command_mode = (modifiers & (CROFT_UI_MOD_SUPER | CROFT_UI_MOD_CONTROL)) != 0u;
+    text_editor_node_set_modifiers(&g_editor, modifiers);
+
+    if (text_editor_node_is_find_active(&g_editor)
+            || (command_mode
+                && (event->val.key.key == 70 || event->val.key.key == 71))) {
+        g_editor.base.vtbl->on_key_event(&g_editor.base,
+                                         event->val.key.key,
+                                         event->val.key.action);
+        return 1;
+    }
+
+    return 0;
+}
+
+static int editor_handle_find_char(const SapWitHostWindowEvent* event)
+{
+    if (!event || event->case_tag != SAP_WIT_HOST_WINDOW_EVENT_CHAR_EVENT) {
+        return 0;
+    }
+    if (!text_editor_node_is_find_active(&g_editor)) {
+        return 0;
+    }
+
+    g_editor.base.vtbl->on_char_event(&g_editor.base, event->val.char_event.codepoint);
+    return 1;
 }
 
 static int pump_editor_actions(croft_wit_host_editor_input_runtime* editor_input_runtime,
@@ -556,6 +601,9 @@ int main(int argc, char** argv)
                 case SAP_WIT_HOST_WINDOW_EVENT_KEY: {
                     SapWitHostEditorInputCommand input_command = {0};
                     SapWitHostEditorInputReply input_reply = {0};
+                    if (editor_handle_find_key(&event)) {
+                        break;
+                    }
                     input_command.case_tag = SAP_WIT_HOST_EDITOR_INPUT_COMMAND_WINDOW_KEY;
                     input_command.val.window_key.key = event.val.key.key;
                     input_command.val.window_key.action = event.val.key.action;
@@ -566,7 +614,8 @@ int main(int argc, char** argv)
                             || !editor_input_expect_status_ok(&input_reply)) {
                         goto cleanup;
                     }
-                    if (event.val.key.key == 256 && event.val.key.action == 1) {
+                    if (event.val.key.key == 256 && event.val.key.action == 1
+                            && !text_editor_node_is_find_active(&g_editor)) {
                         g_running = 0;
                     }
                     break;
@@ -574,6 +623,9 @@ int main(int argc, char** argv)
                 case SAP_WIT_HOST_WINDOW_EVENT_CHAR_EVENT: {
                     SapWitHostEditorInputCommand input_command = {0};
                     SapWitHostEditorInputReply input_reply = {0};
+                    if (editor_handle_find_char(&event)) {
+                        break;
+                    }
                     input_command.case_tag = SAP_WIT_HOST_EDITOR_INPUT_COMMAND_WINDOW_CHAR;
                     input_command.val.window_char.codepoint = event.val.char_event.codepoint;
                     if (croft_wit_host_editor_input_runtime_dispatch(editor_input_runtime,
@@ -659,6 +711,19 @@ int main(int argc, char** argv)
             }
             if (status == 0) {
                 break;
+            }
+
+            if (action_id == CROFT_EDITOR_MENU_FIND) {
+                text_editor_node_find_activate(&g_editor);
+                continue;
+            }
+            if (action_id == CROFT_EDITOR_MENU_FIND_NEXT) {
+                text_editor_node_find_next(&g_editor);
+                continue;
+            }
+            if (action_id == CROFT_EDITOR_MENU_FIND_PREVIOUS) {
+                text_editor_node_find_previous(&g_editor);
+                continue;
             }
 
             input_command.case_tag = SAP_WIT_HOST_EDITOR_INPUT_COMMAND_MENU_ACTION;

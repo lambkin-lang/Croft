@@ -22,15 +22,29 @@ enum {
 };
 
 static void on_ui_event(int32_t type, int32_t arg0, int32_t arg1) {
-    if (type == CROFT_UI_EVENT_KEY && arg0 == 256 && arg1 == 1) {
-        g_running = 0;
-    } else if (type == CROFT_UI_EVENT_KEY && arg0 == 81 && arg1 == 1) {
-        g_running = 0;
-    } else if (type == CROFT_UI_EVENT_KEY) {
+    if (type == CROFT_UI_EVENT_KEY) {
+        uint32_t modifiers = host_ui_get_modifiers();
+        text_editor_node_set_modifiers(&g_editor, modifiers);
+        if (text_editor_node_is_find_active(&g_editor)) {
+            if (g_focused_node && g_focused_node->vtbl && g_focused_node->vtbl->on_key_event) {
+                g_focused_node->vtbl->on_key_event(g_focused_node, arg0, arg1);
+            }
+            return;
+        }
+        if (arg0 == 256 && arg1 == 1) {
+            g_running = 0;
+            return;
+        }
+        if (arg0 == 81 && arg1 == 1
+                && (modifiers & (CROFT_UI_MOD_SUPER | CROFT_UI_MOD_CONTROL)) != 0u) {
+            g_running = 0;
+            return;
+        }
         if (g_focused_node && g_focused_node->vtbl && g_focused_node->vtbl->on_key_event) {
             g_focused_node->vtbl->on_key_event(g_focused_node, arg0, arg1);
         }
     } else if (type == CROFT_UI_EVENT_CHAR) {
+        text_editor_node_set_modifiers(&g_editor, host_ui_get_modifiers());
         if (g_focused_node && g_focused_node->vtbl && g_focused_node->vtbl->on_char_event) {
             g_focused_node->vtbl->on_char_event(g_focused_node, (uint32_t)arg0);
         }

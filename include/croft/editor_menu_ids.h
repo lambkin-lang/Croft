@@ -16,7 +16,10 @@ typedef enum croft_editor_menu_action_id {
     CROFT_EDITOR_MENU_SELECT_ALL = 203,
     CROFT_EDITOR_MENU_COPY = 204,
     CROFT_EDITOR_MENU_CUT = 205,
-    CROFT_EDITOR_MENU_PASTE = 206
+    CROFT_EDITOR_MENU_PASTE = 206,
+    CROFT_EDITOR_MENU_FIND = 207,
+    CROFT_EDITOR_MENU_FIND_NEXT = 208,
+    CROFT_EDITOR_MENU_FIND_PREVIOUS = 209
 } croft_editor_menu_action_id;
 
 #ifdef __cplusplus
