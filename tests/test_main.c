@@ -219,6 +219,9 @@ extern int test_editor_text_model_word_ranges(void);
 extern int test_editor_brackets_nested_pairs(void);
 extern int test_editor_brackets_near_cursor(void);
 extern int test_editor_brackets_unmatched_or_invalid(void);
+extern int test_editor_folding_nested_regions(void);
+extern int test_editor_folding_blank_lines_and_tabs(void);
+extern int test_editor_folding_invalid_lines(void);
 extern int test_editor_whitespace_describe_lines(void);
 extern int test_editor_whitespace_markers(void);
 extern int test_editor_whitespace_invalid_inputs(void);
@@ -315,6 +318,11 @@ int main(void)
     RUN_TEST(test_editor_brackets_nested_pairs);
     RUN_TEST(test_editor_brackets_near_cursor);
     RUN_TEST(test_editor_brackets_unmatched_or_invalid);
+
+    printf("\n[editor_folding]\n");
+    RUN_TEST(test_editor_folding_nested_regions);
+    RUN_TEST(test_editor_folding_blank_lines_and_tabs);
+    RUN_TEST(test_editor_folding_invalid_lines);
 
     printf("\n[editor_whitespace]\n");
     RUN_TEST(test_editor_whitespace_describe_lines);
