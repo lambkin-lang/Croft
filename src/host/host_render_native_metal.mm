@@ -1,5 +1,6 @@
 #include "croft/host_render.h"
 #include "croft/host_ui.h"
+#include "croft/editor_typography.h"
 
 #import <AppKit/AppKit.h>
 #import <Metal/Metal.h>
@@ -301,7 +302,16 @@ static int32_t encode_textured_rect(CGRect rect_device, id<MTLTexture> texture, 
 }
 
 static NSFont* resolve_font(float font_size) {
-    NSFont* font = [NSFont fontWithName:@"Helvetica" size:font_size];
+    NSFont* font = [NSFont fontWithName:@CROFT_EDITOR_MONOSPACE_FONT_REGULAR size:font_size];
+    if (!font) {
+        font = [NSFont fontWithName:@CROFT_EDITOR_MONOSPACE_FONT_FAMILY size:font_size];
+    }
+    if (!font) {
+        font = [NSFont userFixedPitchFontOfSize:font_size];
+    }
+    if (!font) {
+        font = [NSFont monospacedSystemFontOfSize:font_size weight:NSFontWeightRegular];
+    }
     if (!font) {
         font = [NSFont systemFontOfSize:font_size];
     }

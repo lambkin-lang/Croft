@@ -1,5 +1,7 @@
 #pragma once
 
+#include "croft/editor_typography.h"
+
 #include <tgfx/core/Font.h>
 #include <tgfx/core/TextBlob.h>
 #include <tgfx/core/Typeface.h>
@@ -51,7 +53,7 @@ inline const std::shared_ptr<tgfx::Typeface>& resolve_typeface(Cache* cache) {
         return empty;
     }
     if (!cache->typeface) {
-        cache->typeface = tgfx::Typeface::MakeFromName("Helvetica", "");
+        cache->typeface = tgfx::Typeface::MakeFromName(CROFT_EDITOR_MONOSPACE_FONT_FAMILY, "");
         if (!cache->typeface) {
             cache->typeface = tgfx::Typeface::MakeFromName("", "");
         }
