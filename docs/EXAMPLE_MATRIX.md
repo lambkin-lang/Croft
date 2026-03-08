@@ -119,10 +119,12 @@ Notes:
   editor shell, which is useful evidence: explicit host seams have measurable
   cost, but they are still far cheaper than the tgfx/Metal editor family.
 - Runtime benchmarking is now separate from size benchmarking through
-  `tools/benchmark_runtime_perf.sh`. The automated path currently covers the
-  non-GUI examples. On this macOS host, wrapped shell launches perturb the
-  windowed GUI samples enough that the harness now fails fast and prints the
-  exact direct command to run instead of hanging.
+  `tools/benchmark_runtime_perf.sh`. The automated path now covers both the
+  non-GUI examples and the current auto-close-capable macOS GUI samples.
+- `tools/benchmark_editor_runtime.sh` now gives the editor-family comparison a
+  matching runtime path: it runs `example_editor_text`,
+  `example_editor_text_appkit`, and `example_editor_text_metal_native` against
+  one generated benchmark document instead of comparing only optimized size.
 - The render backend comparison is currently done with separate build
   directories. Croft's current in-tree tgfx integration supports one GPU
   backend variant per configure, selected by `TGFX_USE_OPENGL` or

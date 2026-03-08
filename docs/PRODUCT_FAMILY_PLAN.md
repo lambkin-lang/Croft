@@ -378,9 +378,9 @@ implementation shape, and coupling.
 The next implementation passes should stay focused on the host-boundary and
 editor-boundary pressure points instead of broadening the system indiscriminately.
 
-1. Finish stabilizing automated runtime exercise for windowed GUI families; the
-   benchmark harness currently times out on those samples, and the menu-bearing
-   paths are the clearest pressure point.
+1. Use the now-stable automated runtime exercise for windowed GUI families to
+   compare editor and WIT window paths on honest shared workloads; the
+   menu-bearing paths are still the clearest pressure point.
 2. Move more of the direct-Metal/editor path onto WIT-facing boundaries while
    keeping rendering itself intentionally direct for now.
 3. Extend the "same logic, different world" proof style with more paired
@@ -420,8 +420,8 @@ implementation tasks:
 
 The next concrete implementation work should happen in this order:
 
-1. Fix the current command-line runtime harness so windowed GUI families can be
-   benchmarked without timing out.
+1. Use the now-stable command-line runtime harness to benchmark the windowed
+   GUI families on larger shared documents, not just launch survival.
 2. Decide which remaining editor host seams should stay collapsed for the
    direct-Metal family versus which should be forced through WIT now.
 3. Keep `tgfx` Metal as a comparison control while pushing the native

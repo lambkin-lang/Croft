@@ -114,6 +114,9 @@ bash ./tools/benchmark_tgfx_backends.sh
 # Compare the current editor families on macOS
 bash ./tools/benchmark_editor_families.sh
 
+# Compare editor-family runtime on a shared larger document
+bash ./tools/benchmark_editor_runtime.sh
+
 # Compare runtime/auto-close behavior across example families
 bash ./tools/benchmark_runtime_perf.sh
 
@@ -294,14 +297,15 @@ For editor-family experiments on macOS, Croft currently compares:
 - the direct-Metal scene editor (`example_editor_text_metal_native`)
 
 The `tools/benchmark_editor_families.sh` helper automates that comparison.
+The `tools/benchmark_editor_runtime.sh` helper complements it by timing the
+same three editors against one generated benchmark document with shared
+auto-close settings.
 The direct-Metal family now routes window/menu/clipboard/input/accessibility
 through WIT-facing runtimes while leaving rendering direct for now.
 The new `tools/benchmark_runtime_perf.sh` helper complements the size benchmark
-by timing repeated non-GUI example runs and recording any emitted `frames=`
-telemetry. On this macOS host the windowed GUI samples are now treated
-explicitly as direct terminal probes: the harness prints the exact top-level
-command to run instead of attempting a wrapped shell launch that perturbs the
-AppKit/GLFW lifecycle.
+by timing repeated example runs and recording any emitted `frames=` telemetry.
+On this macOS host it now handles the windowed GUI families directly too,
+including the editor-family trio and the smaller WIT window/textpad samples.
 
 Build specific artifacts directly when needed:
 

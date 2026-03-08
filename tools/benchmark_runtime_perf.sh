@@ -12,6 +12,9 @@ ITERATIONS="${CROFT_RUNTIME_BENCH_ITERATIONS:-3}"
 TIMEOUT_SECS="${CROFT_RUNTIME_BENCH_TIMEOUT_SECS:-3.0}"
 AUTO_CLOSE_MS="${CROFT_RUNTIME_BENCH_AUTO_CLOSE_MS:-400}"
 KEEP_LOGS="${CROFT_RUNTIME_BENCH_KEEP:-80}"
+EDITOR_DOC_PATH="${CROFT_RUNTIME_BENCH_EDITOR_DOC:-}"
+EDITOR_LINE_COUNT="${CROFT_RUNTIME_BENCH_EDITOR_LINES:-0}"
+EDITOR_DOC_DIR="${LOG_ROOT}/editor_docs"
 
 TARGETS=()
 
@@ -22,9 +25,8 @@ Usage:
 
 Builds and runs a selected example set repeatedly, recording wall-clock runtime
 and any `frames=` telemetry emitted by the sample. GUI samples use short
-auto-close timeouts where supported. On this macOS host, windowed GUI samples
-must be run as direct top-level terminal commands; the shell harness prints the
-exact command instead of attempting a wrapped launch.
+auto-close timeouts where supported. Editor-family targets can also open a
+shared benchmark document so runtime comparisons use the same content.
 
 Options:
   --target <cmake-target>      Benchmark one target. May be repeated.
@@ -33,6 +35,8 @@ Options:
   --iterations <count>         Number of runs per target (default: 3)
   --timeout <seconds>          Per-run timeout (default: 3.0)
   --auto-close-ms <ms>         Auto-close duration for GUI samples (default: 400)
+  --editor-doc <path>          Document path for editor-family targets.
+  --editor-lines <count>       Generate a shared editor fixture with this many lines.
   --keep <count>               Keep newest N run logs (default: 80)
   --help                       Show this help
 USAGE
@@ -115,22 +119,93 @@ runtime_env_args() {
         example_wit_textpad_window)
             printf 'CROFT_WIT_TEXTPAD_AUTO_CLOSE_MS=%s\n' "$AUTO_CLOSE_MS"
             ;;
-        example_editor_text_metal_native)
+        example_editor_text|example_editor_text_appkit|example_editor_text_metal_native)
             printf 'CROFT_EDITOR_AUTO_CLOSE_MS=%s\n' "$AUTO_CLOSE_MS"
             ;;
     esac
 }
 
-target_needs_terminal() {
+target_is_editor_family() {
     local target="$1"
     case "$target" in
-        example_wit_gpu_canvas|example_wit_text_window|example_wit_textpad_window|example_editor_text_metal_native)
+        example_editor_text|example_editor_text_appkit|example_editor_text_metal_native)
             return 0
             ;;
         *)
             return 1
             ;;
     esac
+}
+
+ensure_editor_doc() {
+    local line_count="$1"
+    local doc_path
+    local tmp_path
+    local line_index
+
+    if [[ -n "$EDITOR_DOC_PATH" ]]; then
+        if [[ ! -f "$EDITOR_DOC_PATH" ]]; then
+            echo "ERROR: --editor-doc file not found: ${EDITOR_DOC_PATH}" >&2
+            exit 1
+        fi
+        printf '%s\n' "$EDITOR_DOC_PATH"
+        return
+    fi
+
+    if [[ ! "$line_count" =~ ^[0-9]+$ ]] || (( line_count < 1 )); then
+        return
+    fi
+
+    mkdir -p "$EDITOR_DOC_DIR"
+    doc_path="${EDITOR_DOC_DIR}/generated-${line_count}.txt"
+    if [[ -f "$doc_path" ]]; then
+        printf '%s\n' "$doc_path"
+        return
+    fi
+
+    tmp_path="${doc_path}.tmp"
+    {
+        printf 'Croft editor runtime benchmark fixture\n'
+        printf 'Generated for cross-family runtime comparison.\n\n'
+        for ((line_index = 1; line_index <= line_count; ++line_index)); do
+            case $(((line_index - 1) % 6)) in
+                0)
+                    printf 'section %04d alpha beta gamma\n' "$line_index"
+                    ;;
+                1)
+                    printf '    item %04d delta epsilon zeta\n' "$line_index"
+                    ;;
+                2)
+                    printf '        detail %04d brackets () [] {}\n' "$line_index"
+                    ;;
+                3)
+                    printf '    note %04d search alpha indent\n' "$line_index"
+                    ;;
+                4)
+                    printf 'tail %04d plain text for scrolling\n' "$line_index"
+                    ;;
+                5)
+                    printf '\n'
+                    ;;
+            esac
+        done
+    } >"$tmp_path"
+    mv "$tmp_path" "$doc_path"
+    printf '%s\n' "$doc_path"
+}
+
+runtime_target_args() {
+    local target="$1"
+    local editor_doc
+
+    if ! target_is_editor_family "$target"; then
+        return
+    fi
+
+    editor_doc="$(ensure_editor_doc "$EDITOR_LINE_COUNT")"
+    if [[ -n "$editor_doc" ]]; then
+        printf '%s\n' "$editor_doc"
+    fi
 }
 
 print_cmd() {
@@ -174,23 +249,6 @@ extract_wall_ms() {
     sed -n 's/.*wall_ms=\([0-9][0-9]*\).*/\1/p' "$log_file" | tail -n 1
 }
 
-print_gui_direct_command() {
-    local binary="$1"
-    local env_args=()
-    local line
-
-    while IFS= read -r line; do
-        [[ -n "$line" ]] || continue
-        env_args+=("$line")
-    done < <(runtime_env_args "$(basename "$binary")")
-
-    if (( ${#env_args[@]} > 0 )); then
-        print_cmd env "${env_args[@]}" "$binary"
-    else
-        print_cmd "$binary"
-    fi
-}
-
 run_iteration() {
     local target="$1"
     local iteration="$2"
@@ -199,6 +257,7 @@ run_iteration() {
     local log_file
     local env_lines=()
     local env_args=()
+    local target_args=()
     local status rc wall_ms frames
     local line
     local timeout_ms
@@ -216,25 +275,27 @@ run_iteration() {
         env_lines+=("$line")
     done < <(runtime_env_args "$target")
 
-    if target_needs_terminal "$target"; then
-        {
-            echo "manual_direct_terminal_required=1"
-            echo "reason=wrapped_shell_launches_do_not_close_reliably_for_${target}_on_this_host"
-        } >"$log_file"
-        echo "ERROR: ${target} must be run as a direct top-level terminal command on this macOS host." >&2
-        echo "Run this command directly from your terminal:" >&2
-        print_gui_direct_command "$binary" >&2
-        return 1
-    fi
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        target_args+=("$line")
+    done < <(runtime_target_args "$target")
 
     timeout_ms="$(timeout_millis)"
 
     if (( ${#env_lines[@]} > 0 )); then
         env_args=(env)
         env_args+=("${env_lines[@]}")
-        print_cmd "${env_args[@]}" "$binary"
+        if (( ${#target_args[@]} > 0 )); then
+            print_cmd "${env_args[@]}" "$binary" "${target_args[@]}"
+        else
+            print_cmd "${env_args[@]}" "$binary"
+        fi
     else
-        print_cmd "$binary"
+        if (( ${#target_args[@]} > 0 )); then
+            print_cmd "$binary" "${target_args[@]}"
+        else
+            print_cmd "$binary"
+        fi
     fi
 
     summary="$(
@@ -243,7 +304,11 @@ run_iteration() {
                 export "$line"
             done
         fi
-        "$RUNNER_BIN" --timeout-ms "$timeout_ms" --log-file "$log_file" -- "$binary"
+        if (( ${#target_args[@]} > 0 )); then
+            "$RUNNER_BIN" --timeout-ms "$timeout_ms" --log-file "$log_file" -- "$binary" "${target_args[@]}"
+        else
+            "$RUNNER_BIN" --timeout-ms "$timeout_ms" --log-file "$log_file" -- "$binary"
+        fi
     )"
 
     status="$(printf '%s\n' "$summary" | awk -F= '/^status=/{print $2}')"
@@ -295,6 +360,14 @@ while (( "$#" )); do
             AUTO_CLOSE_MS="${2:-}"
             shift 2
             ;;
+        --editor-doc)
+            EDITOR_DOC_PATH="${2:-}"
+            shift 2
+            ;;
+        --editor-lines)
+            EDITOR_LINE_COUNT="${2:-}"
+            shift 2
+            ;;
         --keep)
             KEEP_LOGS="${2:-}"
             shift 2
@@ -318,6 +391,10 @@ fi
 
 if [[ ! "$ITERATIONS" =~ ^[0-9]+$ ]] || (( ITERATIONS < 1 )); then
     echo "ERROR: --iterations must be a positive integer" >&2
+    exit 1
+fi
+if [[ ! "$EDITOR_LINE_COUNT" =~ ^[0-9]+$ ]]; then
+    echo "ERROR: --editor-lines must be a non-negative integer" >&2
     exit 1
 fi
 

@@ -132,20 +132,22 @@ proving themselves inside the direct-Metal scene editor.
 - The newer editor-facing mix-ins are reusable enough to support a smaller,
   non-scene family member. That is good evidence that they are not purely
   scene-editor scaffolding.
-- The painful part moved: the remaining issue is not interface shape, it is
-  launch context. The GUI samples close cleanly when run directly, but the
-  shell harness itself perturbs those macOS binaries enough that it now has to
-  print direct commands instead of wrapping them.
-- That harness problem is useful architectural data. It suggests another host
-  seam around application lifecycle, activation policy, and automated runtime
-  control for native GUI worlds.
+- The painful part moved again: the runtime harness now drives the current
+  auto-close-capable GUI families directly, so the interesting comparison is no
+  longer "can they be launched cleanly?" but "what do they cost on the same
+  document and the same timed window?"
+- That still leaves a real host seam around application lifecycle, activation
+  policy, and automated runtime control for native GUI worlds, but it is now a
+  runtime-comparison concern instead of a hard blocker.
 
 ### New Risk Signal
 
-`tools/benchmark_runtime_perf.sh` no longer hangs on the windowed GUI samples:
-it now refuses the wrapped launch and prints the exact direct command to run.
-That is a cleaner failure mode, but it still means Croft lacks a clean
-automated runtime-control story for those worlds.
+`tools/benchmark_runtime_perf.sh` now drives the current windowed GUI samples
+directly when they expose auto-close support, and
+`tools/benchmark_editor_runtime.sh` adds a shared-document runtime comparison
+for the three editor families. The new risk is no longer timeout handling. It
+is whether Croft is comparing runtime on honest shared workloads often enough
+to inform product-line choices.
 
 ### Updated Questions
 
@@ -597,8 +599,8 @@ The next high-value steps look like this:
 - reuse the newer `host-menu`, `host-clipboard`, `host-editor-input`, and
   `host-a11y` mix-ins in more than one family so they stop being editor-only
   experiments
-- stabilize runtime automation for windowed GUI families so the new runtime
-  benchmark helper can report more than timeout signals
+- use the now-stable GUI runtime automation to compare editor and WIT window
+  families on honest shared workloads instead of only on launch survival
 - move more of the direct-Metal/editor host interaction onto WIT-facing
   boundaries where that clarifies family differences, but keep rendering itself
   deliberately direct for now
