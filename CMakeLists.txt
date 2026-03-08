@@ -893,7 +893,10 @@ croft_register_artifact(sapling compatibility
     DEPENDS sapling_core_threaded sapling_runner_core_threaded sapling_wasi_runtime_threaded sapling_runner_host sapling_wasi_host
 )
 
-add_library(croft_editor_core STATIC src/editor/editor_text_model.c)
+add_library(croft_editor_core STATIC
+    src/editor/editor_text_model.c
+    src/editor/editor_status.c
+)
 croft_apply_public_includes(croft_editor_core)
 croft_register_artifact(croft_editor_core editor
     TAGS tier8 editor text-model selection position range line-index
@@ -1783,7 +1786,7 @@ endif()
 if(CROFT_BUILD_TESTS)
     enable_testing()
 
-    add_executable(test_croft tests/test_main.c tests/test_queue.c tests/host_tests/test_fs.c tests/test_editor_text_model.c tests/test_editor_document.c tests/test_editor_commands.c tests/test_wit_resource_codegen.c tests/test_wit_text_runtime.c tests/test_wit_text_program.c tests/test_wit_store_runtime.c tests/test_wit_mailbox_runtime.c tests/test_wit_host_fs_runtime.c tests/test_wit_host_clock_runtime.c tests/test_wit_host_editor_input_runtime.c)
+    add_executable(test_croft tests/test_main.c tests/test_queue.c tests/host_tests/test_fs.c tests/test_editor_text_model.c tests/test_editor_status.c tests/test_editor_document.c tests/test_editor_commands.c tests/test_wit_resource_codegen.c tests/test_wit_text_runtime.c tests/test_wit_text_program.c tests/test_wit_store_runtime.c tests/test_wit_mailbox_runtime.c tests/test_wit_host_fs_runtime.c tests/test_wit_host_clock_runtime.c tests/test_wit_host_editor_input_runtime.c)
     target_include_directories(test_croft PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
     target_link_libraries(test_croft
         PRIVATE
