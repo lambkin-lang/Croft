@@ -197,9 +197,9 @@ cliff:
 
 - push the new invalidation-driven redraw policy down into reusable host/scene
   loop support instead of leaving it duplicated in the example shells
-- decide whether the runtime benchmark history should record both runner wall
-  time and sample-reported wall time so GUI teardown cost stays visible without
-  obscuring in-loop work
+- keep both runner wall time and sample-reported wall time visible in the
+  benchmark history so GUI teardown cost stays measurable without obscuring
+  in-loop work
 - if tgfx/Metal still matters after redraw throttling, profile `flushAndSubmit`
   more deeply and see whether that backend can reuse or defer any per-frame
   submit work

@@ -306,7 +306,8 @@ auto-close settings.
 The direct-Metal family now routes window/menu/clipboard/input/accessibility
 through WIT-facing runtimes while leaving rendering direct for now.
 The new `tools/benchmark_runtime_perf.sh` helper complements the size benchmark
-by timing repeated example runs and recording any emitted `frames=` telemetry.
+by timing repeated example runs, recording both runner and sample-reported wall
+time when available, and capturing any emitted `frames=` telemetry.
 On this macOS host it now handles the windowed GUI families directly too,
 including the editor-family trio and the smaller WIT window/textpad samples.
 

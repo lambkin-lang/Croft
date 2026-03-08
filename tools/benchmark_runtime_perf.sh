@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG_ROOT="${ROOT_DIR}/local_logs/runtime_bench"
 RUNS_DIR="${LOG_ROOT}/runs"
 HISTORY_CSV="${LOG_ROOT}/history.csv"
+HISTORY_HEADER="timestamp,git_describe,target,iteration,status,rc,wall_ms,sample_wall_ms,frames,log_file"
 RUNNER_SRC="${ROOT_DIR}/tools/runtime_bench_runner.c"
 RUNNER_BIN="${LOG_ROOT}/runtime_bench_runner"
 BUILD_DIR="build"
@@ -83,14 +84,34 @@ cleanup_old_logs() {
 }
 
 append_history_header_if_missing() {
-    if [[ -f "$HISTORY_CSV" ]]; then
+    mkdir -p "$LOG_ROOT"
+
+    if [[ ! -f "$HISTORY_CSV" ]]; then
+        printf '%s\n' "$HISTORY_HEADER" >"$HISTORY_CSV"
         return
     fi
 
-    mkdir -p "$LOG_ROOT"
-    cat >"$HISTORY_CSV" <<'CSV'
-timestamp,git_describe,target,iteration,status,rc,wall_ms,frames,log_file
-CSV
+    {
+        IFS= read -r header || header=""
+    } <"$HISTORY_CSV"
+
+    if [[ "$header" == "$HISTORY_HEADER" ]]; then
+        return
+    fi
+
+    if [[ "$header" == "timestamp,git_describe,target,iteration,status,rc,wall_ms,frames,log_file" ]]; then
+        local tmp_csv
+        tmp_csv="${HISTORY_CSV}.tmp"
+        {
+            printf '%s\n' "$HISTORY_HEADER"
+            tail -n +2 "$HISTORY_CSV" | awk -F, 'BEGIN { OFS="," } NF >= 9 { print $1, $2, $3, $4, $5, $6, $7, "", $8, $9 }'
+        } >"$tmp_csv"
+        mv "$tmp_csv" "$HISTORY_CSV"
+        return
+    fi
+
+    echo "ERROR: unsupported runtime benchmark history schema in ${HISTORY_CSV}" >&2
+    exit 1
 }
 
 append_history_row() {
@@ -101,11 +122,12 @@ append_history_row() {
     local status="$5"
     local rc="$6"
     local wall_ms="$7"
-    local frames="$8"
-    local log_file="$9"
+    local sample_wall_ms="$8"
+    local frames="$9"
+    local log_file="${10}"
 
-    printf '%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
-        "$timestamp" "$git_desc" "$target" "$iteration" "$status" "$rc" "$wall_ms" "$frames" "$log_file" \
+    printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
+        "$timestamp" "$git_desc" "$target" "$iteration" "$status" "$rc" "$wall_ms" "$sample_wall_ms" "$frames" "$log_file" \
         >>"$HISTORY_CSV"
 }
 
@@ -353,7 +375,7 @@ run_iteration() {
     fi
     echo "log=${log_file}"
 
-    append_history_row "$STAMP" "$GIT_DESC" "$target" "$iteration" "$status" "$rc" "$wall_ms" "$frames" "$log_file"
+    append_history_row "$STAMP" "$GIT_DESC" "$target" "$iteration" "$status" "$rc" "$wall_ms" "$sample_wall_ms" "$frames" "$log_file"
 }
 
 while (( "$#" )); do
