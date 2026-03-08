@@ -17,6 +17,10 @@ static double g_mouse_x = 0;
 static double g_mouse_y = 0;
 static croft_editor_document* g_document = NULL;
 
+enum {
+    CROFT_EDITOR_WINDOW_PADDING = 16
+};
+
 static void on_ui_event(int32_t type, int32_t arg0, int32_t arg1) {
     if (type == CROFT_UI_EVENT_KEY && arg0 == 256 && arg1 == 1) {
         g_running = 0;
@@ -144,10 +148,10 @@ int main(int argc, char** argv) {
         viewport_node_init(&g_root_vp, 0, 0, (float)fw, (float)fh);
         text_editor_node_init(&g_editor,
                               croft_editor_document_env(g_document),
-                              50.0f,
-                              50.0f,
-                              (float)fw - 100.0f,
-                              (float)fh - 100.0f,
+                              (float)CROFT_EDITOR_WINDOW_PADDING,
+                              (float)CROFT_EDITOR_WINDOW_PADDING,
+                              (float)fw - (float)(CROFT_EDITOR_WINDOW_PADDING * 2),
+                              (float)fh - (float)(CROFT_EDITOR_WINDOW_PADDING * 2),
                               croft_editor_document_text(g_document));
         text_editor_node_bind_document(&g_editor, g_document);
         scene_node_add_child(&g_root_vp.base, &g_editor.base);
@@ -169,15 +173,15 @@ int main(int argc, char** argv) {
         host_ui_get_framebuffer_size(&fw, &fh);
         g_root_vp.base.sx = (float)fw;
         g_root_vp.base.sy = (float)fh;
-        g_editor.base.sx = (float)fw - 100.0f;
-        g_editor.base.sy = (float)fh - 100.0f;
+        g_editor.base.sx = (float)fw - (float)(CROFT_EDITOR_WINDOW_PADDING * 2);
+        g_editor.base.sy = (float)fh - (float)(CROFT_EDITOR_WINDOW_PADDING * 2);
 
         if (host_render_begin_frame(fw, fh) == 0) {
             render_ctx rc;
-            host_render_clear(0x0000FFFF);
+            host_render_clear(0xF3F4F6FF);
 
             rc.fg_color = 0x111111FF;
-            rc.bg_color = 0xE0E0E0FF;
+            rc.bg_color = 0xFAFBFCFF;
             rc.time = host_ui_get_time();
             scene_node_draw_tree(&g_root_vp.base, &rc);
 

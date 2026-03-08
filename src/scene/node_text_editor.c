@@ -31,6 +31,7 @@ typedef struct text_editor_layout {
     float gutter_width;
     float gutter_font_size;
     float text_inset_x;
+    float text_inset_y;
     float content_width;
     float content_height;
     float status_height;
@@ -38,20 +39,23 @@ typedef struct text_editor_layout {
 } text_editor_layout;
 
 static float text_editor_status_font_size(const text_editor_node* te) {
-    float font_size = te ? (te->font_size * 0.42f) : 14.0f;
-    if (font_size < 14.0f) {
+    float font_size = te ? (te->font_size * 0.8f) : 12.0f;
+    if (font_size < 12.0f) {
+        font_size = 12.0f;
+    }
+    if (font_size > 14.0f) {
         font_size = 14.0f;
     }
     return font_size;
 }
 
 static float text_editor_gutter_font_size(const text_editor_node* te) {
-    float font_size = te ? (te->font_size * 0.72f) : 14.0f;
-    if (font_size < 12.0f) {
-        font_size = 12.0f;
+    float font_size = te ? (te->font_size * 0.82f) : 12.0f;
+    if (font_size < 11.0f) {
+        font_size = 11.0f;
     }
-    if (te && font_size > te->font_size) {
-        font_size = te->font_size;
+    if (te && font_size > te->font_size - 1.0f) {
+        font_size = te->font_size - 1.0f;
     }
     return font_size;
 }
@@ -94,14 +98,18 @@ static void text_editor_compute_layout(const text_editor_node* te,
     out_layout->gutter_font_size = gutter_font_size;
     out_layout->status_font_size = status_font_size;
     out_layout->text_inset_x = 12.0f;
-    out_layout->status_height = status_font_size + 12.0f;
+    out_layout->text_inset_y = 8.0f;
+    out_layout->status_height = status_font_size + 10.0f;
+    if (out_layout->status_height < 24.0f) {
+        out_layout->status_height = 24.0f;
+    }
     out_layout->content_height = node_height - out_layout->status_height;
     if (out_layout->content_height < te->line_height) {
         out_layout->content_height = te->line_height;
     }
-    out_layout->gutter_width = gutter_label_width + 24.0f;
-    if (out_layout->gutter_width < 44.0f) {
-        out_layout->gutter_width = 44.0f;
+    out_layout->gutter_width = gutter_label_width + 18.0f;
+    if (out_layout->gutter_width < 34.0f) {
+        out_layout->gutter_width = 34.0f;
     }
     out_layout->content_width = node_width - out_layout->gutter_width;
     if (out_layout->content_width < 0.0f) {
@@ -319,22 +327,23 @@ static void text_editor_draw(scene_node *n, render_ctx *rc) {
     }
 
     host_render_draw_rect(0, 0, n->sx, n->sy, rc->bg_color);
-    host_render_draw_rect(0, 0, layout.gutter_width, layout.content_height, 0xCFD5DEFF);
-    host_render_draw_rect(0, layout.content_height, n->sx, layout.status_height, 0xD5DAE2FF);
+    host_render_draw_rect(0, 0, layout.gutter_width, layout.content_height, 0xEEF1F4FF);
+    host_render_draw_rect(0, layout.content_height, n->sx, layout.status_height, 0xE8ECF1FF);
     host_render_draw_rect(layout.gutter_width - 1.0f,
                           0.0f,
                           1.0f,
                           layout.content_height,
-                          0x00000028);
+                          0x00000020);
     host_render_draw_rect(0.0f,
                           layout.content_height,
                           n->sx,
                           1.0f,
-                          0x00000028);
+                          0x00000020);
 
     host_render_save();
     host_render_clip_rect(layout.gutter_width, 0, layout.content_width, layout.content_height);
-    host_render_translate(layout.gutter_width + te->scroll_x, te->scroll_y);
+    host_render_translate(layout.gutter_width + te->scroll_x,
+                          layout.text_inset_y + te->scroll_y);
 
     text_editor_selection_bounds(te, &selection_min, &selection_max);
     line_count = croft_editor_text_model_line_count(&te->text_model);
@@ -354,7 +363,7 @@ static void text_editor_draw(scene_node *n, render_ctx *rc) {
                                       current_y - te->font_size,
                                       layout.content_width,
                                       te->line_height,
-                                      0xD7E3F3FF);
+                                      0xE2ECF8FF);
             }
 
             if (selection_min != selection_max
@@ -370,7 +379,7 @@ static void text_editor_draw(scene_node *n, render_ctx *rc) {
                     + host_render_measure_text(line_text, highlight_start_bytes, te->font_size);
                 float x2 = layout.text_inset_x
                     + host_render_measure_text(line_text, highlight_end_bytes, te->font_size);
-                host_render_draw_rect(x1, current_y - te->font_size, x2 - x1, te->line_height, 0x4B9CE2FF);
+                host_render_draw_rect(x1, current_y - te->font_size, x2 - x1, te->line_height, 0x5B9FE0CC);
             }
 
             if (selection_min == selection_max
@@ -386,7 +395,7 @@ static void text_editor_draw(scene_node *n, render_ctx *rc) {
                 }
             }
 
-            host_render_draw_rect(-te->scroll_x, current_y, layout.content_width, 1.0f, 0x00000018);
+            host_render_draw_rect(-te->scroll_x, current_y, layout.content_width, 1.0f, 0x00000012);
 
             if (line_len_bytes > 0u) {
                 host_render_draw_text(layout.text_inset_x,
@@ -402,13 +411,13 @@ static void text_editor_draw(scene_node *n, render_ctx *rc) {
 
     host_render_save();
     host_render_clip_rect(0, 0, layout.gutter_width, layout.content_height);
-    host_render_translate(0.0f, te->scroll_y);
+    host_render_translate(0.0f, layout.text_inset_y + te->scroll_y);
     for (line_number = 1; line_number <= line_count; line_number++) {
         char line_label[16];
         int line_label_len;
         float current_y = te->font_size + ((float)(line_number - 1u) * te->line_height);
         float label_width;
-        uint32_t color = (line_number == current_line) ? 0x17385EFF : 0x5D6673FF;
+        uint32_t color = (line_number == current_line) ? 0x17385EFF : 0x798493FF;
 
         if (current_y + te->scroll_y < 0.0f
                 || current_y - te->font_size + te->scroll_y > layout.content_height) {
@@ -422,7 +431,7 @@ static void text_editor_draw(scene_node *n, render_ctx *rc) {
                                        layout.gutter_font_size)
             : 0.0f;
         if (line_label_len > 0) {
-            host_render_draw_text(layout.gutter_width - 12.0f - label_width,
+            host_render_draw_text(layout.gutter_width - 8.0f - label_width,
                                   current_y,
                                   line_label,
                                   (uint32_t)line_label_len,
@@ -470,7 +479,7 @@ static uint32_t text_editor_hit_index(text_editor_node *te, float lx, float ly) 
 
     text_editor_compute_layout(te, te->base.sx, te->base.sy, &layout);
     doc_x = lx - layout.gutter_width - te->scroll_x - layout.text_inset_x;
-    doc_y = ly - te->scroll_y;
+    doc_y = ly - layout.text_inset_y - te->scroll_y;
 
     if (doc_y < 0.0f) {
         return 0;
@@ -783,8 +792,8 @@ void text_editor_node_init(text_editor_node *n, struct SapEnv *env, float x, flo
     n->scroll_y = 0;
     n->utf8_cache = NULL;
     n->utf8_len = 0;
-    n->font_size = 36.0f;     // Match tgfx default in host_render
-    n->line_height = 42.0f;
+    n->font_size = 15.0f;
+    n->line_height = 22.0f;
     n->sel_start = 0;
     n->sel_end = 0;
     n->preferred_column = 0;
