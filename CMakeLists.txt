@@ -1243,13 +1243,14 @@ if(APPLE)
     set_source_files_properties(src/host/mac/host_editor_appkit.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
     target_link_libraries(croft_editor_appkit
         PUBLIC
+            croft_editor_commands
             croft_editor_document_core
             croft_editor_document_fs
             "-framework AppKit"
     )
     croft_register_artifact(croft_editor_appkit editor
         TAGS tier9 editor native appkit textkit macos cpu
-        DEPENDS croft_editor_document_core croft_editor_document_fs
+        DEPENDS croft_editor_commands croft_editor_document_core croft_editor_document_fs
     )
 
     add_library(croft_a11y_macos STATIC src/host/mac/host_a11y.m)

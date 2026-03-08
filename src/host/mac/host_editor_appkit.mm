@@ -1,3 +1,4 @@
+#include "croft/editor_commands.h"
 #include "croft/editor_document.h"
 #include "croft/editor_document_fs.h"
 #include "croft/editor_status.h"
@@ -36,7 +37,62 @@ static uint32_t croft_editor_appkit_count_utf8_codepoints(const uint8_t* utf8, s
     return count;
 }
 
+static uint32_t croft_editor_appkit_codepoint_offset_for_utf16_index(NSString* text,
+                                                                     NSUInteger utf16_index) {
+    NSData* prefixUtf8;
+    NSString* prefix;
+
+    if (!text) {
+        return 0u;
+    }
+
+    utf16_index = MIN(utf16_index, text.length);
+    prefix = [text substringToIndex:utf16_index];
+    prefixUtf8 = [prefix dataUsingEncoding:NSUTF8StringEncoding allowLossyConversion:NO];
+    return croft_editor_appkit_count_utf8_codepoints((const uint8_t*)prefixUtf8.bytes,
+                                                     prefixUtf8 ? (size_t)prefixUtf8.length : 0u);
+}
+
+static NSUInteger croft_editor_appkit_utf16_index_for_codepoint_offset(NSString* text,
+                                                                       const croft_editor_text_model* model,
+                                                                       uint32_t codepoint_offset) {
+    uint32_t byte_offset;
+    NSString* prefix;
+
+    if (!text || !model) {
+        return 0u;
+    }
+
+    byte_offset = croft_editor_text_model_byte_offset_at(model, codepoint_offset);
+    prefix = [[NSString alloc] initWithBytes:model->utf8
+                                      length:(NSUInteger)byte_offset
+                                    encoding:NSUTF8StringEncoding];
+    if (!prefix) {
+        return MIN((NSUInteger)codepoint_offset, text.length);
+    }
+    return MIN(prefix.length, text.length);
+}
+
+static NSString* croft_editor_appkit_string_from_utf8(const char* utf8, size_t utf8_len) {
+    NSString* string;
+
+    if (!utf8 && utf8_len > 0u) {
+        return nil;
+    }
+
+    string = [[NSString alloc] initWithBytes:utf8 ? utf8 : ""
+                                     length:utf8_len
+                                   encoding:NSUTF8StringEncoding];
+    return string;
+}
+
+@protocol CroftEditorIndentHandling <NSObject>
+- (BOOL)croftIndentSelection;
+- (BOOL)croftOutdentSelection;
+@end
+
 @interface CroftEditorTextView : NSTextView
+@property(nonatomic, weak) id<CroftEditorIndentHandling> croftIndentHandler;
 - (NSUInteger)croft_currentLineNumber;
 @end
 
@@ -105,6 +161,20 @@ static uint32_t croft_editor_appkit_count_utf8_codepoints(const uint8_t* utf8, s
     }
 
     return lineNumber;
+}
+
+- (void)insertTab:(id)sender {
+    if (self.croftIndentHandler && [self.croftIndentHandler croftIndentSelection]) {
+        return;
+    }
+    [super insertTab:sender];
+}
+
+- (void)insertBacktab:(id)sender {
+    if (self.croftIndentHandler && [self.croftIndentHandler croftOutdentSelection]) {
+        return;
+    }
+    [super insertBacktab:sender];
 }
 
 - (void)drawViewBackgroundInRect:(NSRect)rect {
@@ -277,7 +347,7 @@ static uint32_t croft_editor_appkit_count_utf8_codepoints(const uint8_t* utf8, s
 
 @end
 
-@interface CroftEditorController : NSObject <NSApplicationDelegate, NSWindowDelegate, NSTextViewDelegate>
+@interface CroftEditorController : NSObject <NSApplicationDelegate, NSWindowDelegate, NSTextViewDelegate, CroftEditorIndentHandling>
 - (instancetype)initWithDocument:(croft_editor_document*)document
                            title:(NSString*)title
                  autoCloseMillis:(NSInteger)autoCloseMillis;
@@ -376,6 +446,20 @@ static uint32_t croft_editor_appkit_count_utf8_codepoints(const uint8_t* utf8, s
                                                     keyEquivalent:@"a"];
     [selectAllItem setTarget:_textView];
     [editMenu addItem:selectAllItem];
+
+    [editMenu addItem:[NSMenuItem separatorItem]];
+
+    NSMenuItem* indentItem = [[NSMenuItem alloc] initWithTitle:@"Indent Line"
+                                                        action:@selector(indentSelection:)
+                                                 keyEquivalent:@"]"];
+    [indentItem setTarget:self];
+    [editMenu addItem:indentItem];
+
+    NSMenuItem* outdentItem = [[NSMenuItem alloc] initWithTitle:@"Outdent Line"
+                                                         action:@selector(outdentSelection:)
+                                                  keyEquivalent:@"["];
+    [outdentItem setTarget:self];
+    [editMenu addItem:outdentItem];
 
     [editMenu addItem:[NSMenuItem separatorItem]];
 
@@ -546,6 +630,114 @@ static uint32_t croft_editor_appkit_count_utf8_codepoints(const uint8_t* utf8, s
     [_lineNumberRuler invalidateMetrics];
 }
 
+- (BOOL)applyIndentAction:(BOOL)outdent {
+    NSString* text = _textView.string ?: @"";
+    NSData* utf8 = [text dataUsingEncoding:NSUTF8StringEncoding allowLossyConversion:NO];
+    croft_editor_text_model model;
+    croft_editor_tab_settings settings;
+    croft_editor_tab_edit edit = {0};
+    NSRange selection = _textView.selectedRange;
+    uint32_t anchor_offset;
+    uint32_t active_offset;
+    BOOL handled = NO;
+
+    croft_editor_text_model_init(&model);
+    croft_editor_tab_settings_default(&settings);
+
+    selection.location = MIN(selection.location, text.length);
+    selection.length = MIN(selection.length, text.length - selection.location);
+    if (croft_editor_text_model_set_text(&model,
+                                         (const char*)utf8.bytes,
+                                         utf8 ? (size_t)utf8.length : 0u) != CROFT_EDITOR_OK) {
+        goto cleanup;
+    }
+
+    anchor_offset =
+        croft_editor_appkit_codepoint_offset_for_utf16_index(text, selection.location);
+    active_offset =
+        croft_editor_appkit_codepoint_offset_for_utf16_index(text, NSMaxRange(selection));
+    if (!croft_editor_command_build_tab_edit(&model,
+                                             anchor_offset,
+                                             active_offset,
+                                             &settings,
+                                             outdent ? 1 : 0,
+                                             &edit)) {
+        handled = YES;
+        goto cleanup;
+    }
+
+    {
+        NSUInteger replace_start =
+            croft_editor_appkit_utf16_index_for_codepoint_offset(text,
+                                                                 &model,
+                                                                 edit.replace_start_offset);
+        NSUInteger replace_end =
+            croft_editor_appkit_utf16_index_for_codepoint_offset(text,
+                                                                 &model,
+                                                                 edit.replace_end_offset);
+        NSRange replace_range = NSMakeRange(replace_start, replace_end - replace_start);
+        NSString* replacement =
+            croft_editor_appkit_string_from_utf8(edit.replacement_utf8, edit.replacement_utf8_len);
+
+        if (!replacement) {
+            goto cleanup;
+        }
+        if (![_textView shouldChangeTextInRange:replace_range replacementString:replacement]) {
+            goto cleanup;
+        }
+
+        [[_textView textStorage] replaceCharactersInRange:replace_range withString:replacement];
+        [_textView didChangeText];
+
+        {
+            NSString* updated_text = _textView.string ?: @"";
+            NSData* updated_utf8 =
+                [updated_text dataUsingEncoding:NSUTF8StringEncoding allowLossyConversion:NO];
+            croft_editor_text_model updated_model;
+            uint32_t selection_start_offset =
+                edit.next_anchor_offset < edit.next_active_offset
+                    ? edit.next_anchor_offset
+                    : edit.next_active_offset;
+            uint32_t selection_end_offset =
+                edit.next_anchor_offset < edit.next_active_offset
+                    ? edit.next_active_offset
+                    : edit.next_anchor_offset;
+
+            croft_editor_text_model_init(&updated_model);
+            if (croft_editor_text_model_set_text(&updated_model,
+                                                 (const char*)updated_utf8.bytes,
+                                                 updated_utf8 ? (size_t)updated_utf8.length : 0u)
+                    == CROFT_EDITOR_OK) {
+                NSUInteger new_start =
+                    croft_editor_appkit_utf16_index_for_codepoint_offset(updated_text,
+                                                                         &updated_model,
+                                                                         selection_start_offset);
+                NSUInteger new_end =
+                    croft_editor_appkit_utf16_index_for_codepoint_offset(updated_text,
+                                                                         &updated_model,
+                                                                         selection_end_offset);
+                [_textView setSelectedRange:NSMakeRange(new_start, new_end - new_start)];
+            }
+            croft_editor_text_model_dispose(&updated_model);
+        }
+    }
+
+    handled = YES;
+
+cleanup:
+    croft_editor_tab_edit_dispose(&edit);
+    croft_editor_text_model_dispose(&model);
+    return handled;
+}
+
+- (BOOL)croftIndentSelection {
+    return [self applyIndentAction:NO];
+}
+
+- (BOOL)croftOutdentSelection {
+    return [self applyIndentAction:YES];
+}
+
 - (void)loadDocumentIntoView {
     char* utf8 = NULL;
     size_t utf8Len = 0;
@@ -651,6 +843,7 @@ static uint32_t croft_editor_appkit_count_utf8_codepoints(const uint8_t* utf8, s
     [textView setGrammarCheckingEnabled:NO];
     [textView setFont:[NSFont monospacedSystemFontOfSize:15.0 weight:NSFontWeightRegular]];
     [textView setTextContainerInset:NSMakeSize(12.0, 8.0)];
+    [textView setCroftIndentHandler:self];
     [textView setDelegate:self];
 
     [scrollView setDocumentView:textView];
@@ -703,6 +896,16 @@ static uint32_t croft_editor_appkit_count_utf8_codepoints(const uint8_t* utf8, s
 - (void)scrollViewBoundsDidChange:(NSNotification*)notification {
     (void)notification;
     [_lineNumberRuler setNeedsDisplay:YES];
+}
+
+- (IBAction)indentSelection:(id)sender {
+    (void)sender;
+    [self croftIndentSelection];
+}
+
+- (IBAction)outdentSelection:(id)sender {
+    (void)sender;
+    [self croftOutdentSelection];
 }
 
 - (IBAction)saveDocument:(id)sender {
