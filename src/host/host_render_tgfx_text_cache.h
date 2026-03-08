@@ -8,6 +8,8 @@
 
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
+#include <cstring>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -63,6 +65,13 @@ inline const std::shared_ptr<tgfx::Typeface>& resolve_typeface(Cache* cache) {
 
 inline tgfx::Font make_font(Cache* cache, float font_size) {
     return tgfx::Font(resolve_typeface(cache), font_size);
+}
+
+inline void copy_probe_name(char* dest, size_t capacity, const std::string& value) {
+    if (!dest || capacity == 0u) {
+        return;
+    }
+    std::snprintf(dest, capacity, "%s", value.c_str());
 }
 
 inline void reset(Cache* cache) {
@@ -172,6 +181,43 @@ inline float measure_text(Cache* cache, const char* text, uint32_t len, float fo
         cache->widths.emplace(std::move(key), total_advance);
     }
     return total_advance;
+}
+
+inline int32_t probe_font(Cache* cache,
+                          float font_size,
+                          const char* sample,
+                          uint32_t len,
+                          croft_editor_font_probe* out_probe) {
+    const auto& typeface = resolve_typeface(cache);
+    tgfx::Font font;
+    tgfx::FontMetrics metrics;
+
+    if (!out_probe || !typeface) {
+        return -1;
+    }
+
+    std::memset(out_probe, 0, sizeof(*out_probe));
+    out_probe->point_size = font_size;
+    copy_probe_name(out_probe->requested_family,
+                    sizeof(out_probe->requested_family),
+                    CROFT_EDITOR_MONOSPACE_FONT_FAMILY);
+    copy_probe_name(out_probe->requested_style,
+                    sizeof(out_probe->requested_style),
+                    "");
+    copy_probe_name(out_probe->resolved_family,
+                    sizeof(out_probe->resolved_family),
+                    typeface->fontFamily());
+    copy_probe_name(out_probe->resolved_style,
+                    sizeof(out_probe->resolved_style),
+                    typeface->fontStyle());
+
+    font = make_font(cache, font_size);
+    metrics = font.getMetrics();
+    out_probe->line_height = std::fmax(0.0f, metrics.descent - metrics.ascent + metrics.leading);
+    if (sample && len > 0u) {
+        out_probe->sample_width = measure_text(cache, sample, len, font_size);
+    }
+    return 0;
 }
 
 }  // namespace croft_tgfx_text_cache

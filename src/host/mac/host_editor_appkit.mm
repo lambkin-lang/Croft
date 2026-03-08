@@ -5,9 +5,9 @@
 #include "croft/editor_folding.h"
 #include "croft/editor_status.h"
 #include "croft/editor_text_model.h"
+#include "croft/editor_typography_macos.h"
 #include "croft/editor_whitespace.h"
 #include "croft/host_editor_appkit.h"
-#include "croft/editor_typography.h"
 
 #import <AppKit/AppKit.h>
 
@@ -89,36 +89,6 @@ static NSString* croft_editor_appkit_string_from_utf8(const char* utf8, size_t u
                                      length:utf8_len
                                    encoding:NSUTF8StringEncoding];
     return string;
-}
-
-static NSFont* croft_editor_appkit_monospace_font(CGFloat size) {
-    NSFont* font = [NSFont fontWithName:@CROFT_EDITOR_MONOSPACE_FONT_REGULAR size:size];
-
-    if (!font) {
-        font = [NSFont fontWithName:@CROFT_EDITOR_MONOSPACE_FONT_FAMILY size:size];
-    }
-    if (!font) {
-        font = [NSFont userFixedPitchFontOfSize:size];
-    }
-    if (!font) {
-        font = [NSFont monospacedSystemFontOfSize:size weight:NSFontWeightRegular];
-    }
-    if (!font) {
-        font = [NSFont systemFontOfSize:size];
-    }
-    return font;
-}
-
-static NSFont* croft_editor_appkit_monospace_bold_font(CGFloat size) {
-    NSFont* font = [NSFont fontWithName:@CROFT_EDITOR_MONOSPACE_FONT_BOLD size:size];
-
-    if (!font) {
-        font = [NSFont monospacedSystemFontOfSize:size weight:NSFontWeightSemibold];
-    }
-    if (!font) {
-        font = croft_editor_appkit_monospace_font(size);
-    }
-    return font;
 }
 
 static BOOL croft_editor_appkit_build_text_model(NSString* text, croft_editor_text_model* out_model) {
@@ -494,7 +464,7 @@ static void croft_editor_appkit_draw_whitespace_marker(NSRect markerRect,
     }
 
     attributes = @{
-        NSFontAttributeName: croft_editor_appkit_monospace_font(12.0)
+        NSFontAttributeName: croft_editor_mac_monospace_font(12.0)
     };
     sampleSize = [sample sizeWithAttributes:attributes];
     return ceil(sampleSize.width + 34.0);
@@ -538,17 +508,17 @@ static void croft_editor_appkit_draw_whitespace_marker(NSRect markerRect,
     style.alignment = NSTextAlignmentRight;
     markerStyle.alignment = NSTextAlignmentCenter;
     inactiveAttributes = @{
-        NSFontAttributeName: croft_editor_appkit_monospace_font(12.0),
+        NSFontAttributeName: croft_editor_mac_monospace_font(12.0),
         NSForegroundColorAttributeName: [NSColor colorWithCalibratedWhite:0.40 alpha:1.0],
         NSParagraphStyleAttributeName: style
     };
     activeAttributes = @{
-        NSFontAttributeName: croft_editor_appkit_monospace_bold_font(12.0),
+        NSFontAttributeName: croft_editor_mac_monospace_bold_font(12.0),
         NSForegroundColorAttributeName: [NSColor colorWithCalibratedRed:0.10 green:0.22 blue:0.38 alpha:1.0],
         NSParagraphStyleAttributeName: style
     };
     markerAttributes = @{
-        NSFontAttributeName: croft_editor_appkit_monospace_bold_font(11.0),
+        NSFontAttributeName: croft_editor_mac_monospace_bold_font(11.0),
         NSForegroundColorAttributeName: [NSColor colorWithCalibratedWhite:0.45 alpha:1.0],
         NSParagraphStyleAttributeName: markerStyle
     };
@@ -1469,7 +1439,7 @@ cleanup:
     [statusLabel setSelectable:NO];
     [statusLabel setBordered:NO];
     [statusLabel setDrawsBackground:NO];
-    [statusLabel setFont:croft_editor_appkit_monospace_font(12.0)];
+    [statusLabel setFont:croft_editor_mac_monospace_font(12.0)];
     [statusLabel setTextColor:[NSColor colorWithCalibratedRed:0.17 green:0.23 blue:0.29 alpha:1.0]];
     [statusLabel setStringValue:@""];
     [statusBar addSubview:statusLabel];
@@ -1488,7 +1458,7 @@ cleanup:
     [textView setAutomaticDataDetectionEnabled:NO];
     [textView setContinuousSpellCheckingEnabled:NO];
     [textView setGrammarCheckingEnabled:NO];
-    [textView setFont:croft_editor_appkit_monospace_font(15.0)];
+    [textView setFont:croft_editor_mac_monospace_font(15.0)];
     [textView setTextContainerInset:NSMakeSize(12.0, 8.0)];
     [textView setCroftIndentHandler:self];
     [textView setDelegate:self];

@@ -47,6 +47,33 @@ static double usec_to_msec(uint64_t usec)
     return (double)usec / 1000.0;
 }
 
+static void print_font_probe_summary(const char* variant,
+                                     const char* backend,
+                                     float editor_line_height,
+                                     float font_size)
+{
+    croft_editor_font_probe probe = {0};
+
+    if (host_render_probe_font(font_size,
+                               CROFT_EDITOR_FONT_PROBE_SAMPLE,
+                               (uint32_t)strlen(CROFT_EDITOR_FONT_PROBE_SAMPLE),
+                               &probe) != 0) {
+        return;
+    }
+
+    printf("editor-font-probe variant=%s backend=%s role=text requested_family=%s requested_style=%s resolved_family=%s resolved_style=%s point_size=%.1f sample_width=%.3f font_line_height=%.3f editor_line_height=%.3f\n",
+           variant,
+           backend,
+           probe.requested_family,
+           probe.requested_style,
+           probe.resolved_family,
+           probe.resolved_style,
+           probe.point_size,
+           probe.sample_width,
+           probe.line_height,
+           editor_line_height);
+}
+
 static void request_redraw(void)
 {
     croft_editor_scene_runtime_request_redraw(&g_runtime);
@@ -625,6 +652,7 @@ int main(int argc, char** argv)
 {
     const char* target_file = argc > 1 ? argv[1] : NULL;
     const char* auto_close_env = getenv("CROFT_EDITOR_AUTO_CLOSE_MS");
+    const char* font_probe_env = getenv("CROFT_EDITOR_FONT_PROBE");
     const char* profile_env = getenv("CROFT_EDITOR_PROFILE");
     const char* fallback =
         "Big analysis, small binaries.\n"
@@ -646,6 +674,7 @@ int main(int argc, char** argv)
     uint64_t start_ms = 0u;
     uint64_t end_ms = 0u;
     uint32_t frame_count = 0u;
+    int font_probe_enabled = env_flag_enabled(font_probe_env);
     int profile_enabled = env_flag_enabled(profile_env);
     render_frame_profile frame_profile = {0};
     int rc = 1;
@@ -724,6 +753,9 @@ int main(int argc, char** argv)
         text_editor_node_bind_document(&g_editor, g_document);
         text_editor_node_set_profiling(&g_editor, profile_enabled);
         scene_node_add_child(&g_root_vp.base, &g_editor.base);
+        if (font_probe_enabled) {
+            print_font_probe_summary("scene-wit", "native-metal", g_editor.line_height, g_editor.font_size);
+        }
     }
 
     clock_command.case_tag = SAP_WIT_HOST_CLOCK_COMMAND_MONOTONIC_NOW;

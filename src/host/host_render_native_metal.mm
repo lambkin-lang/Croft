@@ -1,6 +1,6 @@
 #include "croft/host_render.h"
 #include "croft/host_ui.h"
-#include "croft/editor_typography.h"
+#include "croft/editor_typography_macos.h"
 
 #import <AppKit/AppKit.h>
 #import <Metal/Metal.h>
@@ -302,20 +302,7 @@ static int32_t encode_textured_rect(CGRect rect_device, id<MTLTexture> texture, 
 }
 
 static NSFont* resolve_font(float font_size) {
-    NSFont* font = [NSFont fontWithName:@CROFT_EDITOR_MONOSPACE_FONT_REGULAR size:font_size];
-    if (!font) {
-        font = [NSFont fontWithName:@CROFT_EDITOR_MONOSPACE_FONT_FAMILY size:font_size];
-    }
-    if (!font) {
-        font = [NSFont userFixedPitchFontOfSize:font_size];
-    }
-    if (!font) {
-        font = [NSFont monospacedSystemFontOfSize:font_size weight:NSFontWeightRegular];
-    }
-    if (!font) {
-        font = [NSFont systemFontOfSize:font_size];
-    }
-    return font;
+    return croft_editor_mac_monospace_font(font_size);
 }
 
 static NSString* text_cache_key(NSString* string, float font_size) {
@@ -760,6 +747,18 @@ float host_render_measure_text(const char* text, uint32_t len, float font_size) 
     };
     NSSize size = [string sizeWithAttributes:attrs];
     return static_cast<float>(std::ceil(size.width));
+}
+
+int32_t host_render_probe_font(float font_size,
+                               const char* sample,
+                               uint32_t len,
+                               croft_editor_font_probe* out_probe) {
+    return croft_editor_mac_probe_font(resolve_font(font_size),
+                                       font_size,
+                                       CROFT_EDITOR_MONOSPACE_FONT_REGULAR,
+                                       sample,
+                                       len,
+                                       out_probe);
 }
 
 int32_t host_render_end_frame(void) {

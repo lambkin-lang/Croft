@@ -291,6 +291,13 @@ float host_render_measure_text(const char* text, uint32_t len, float font_size) 
     return croft_tgfx_text_cache::measure_text(&g_text_cache, text, len, font_size);
 }
 
+int32_t host_render_probe_font(float font_size,
+                               const char* sample,
+                               uint32_t len,
+                               croft_editor_font_probe* out_probe) {
+    return croft_tgfx_text_cache::probe_font(&g_text_cache, font_size, sample, len, out_probe);
+}
+
 int32_t host_render_end_frame(void) {
     uint64_t end_start_usec = g_profile_enabled ? profile_now_usec() : 0u;
 

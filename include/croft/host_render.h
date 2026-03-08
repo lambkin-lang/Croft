@@ -1,6 +1,8 @@
 #ifndef CROFT_HOST_RENDER_H
 #define CROFT_HOST_RENDER_H
 
+#include "croft/editor_typography.h"
+
 #include <stdint.h>
 #include <stddef.h>
 
@@ -71,6 +73,11 @@ int32_t host_render_draw_text(float x, float y, const char* text, uint32_t len, 
 
 // Computes the graphical width of the given utf8 text
 float host_render_measure_text(const char* text, uint32_t len, float font_size);
+
+int32_t host_render_probe_font(float font_size,
+                               const char* sample,
+                               uint32_t len,
+                               croft_editor_font_probe* out_probe);
 
 /**
  * Flushes drawing commands to the GPU.
