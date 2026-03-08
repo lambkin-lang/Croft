@@ -63,6 +63,43 @@ small-binary end of the spectrum. More importantly, the extra size now buys
 explicit host seams that Lambkin can reason about instead of one collapsed
 editor shell.
 
+## Typography Probe
+
+On March 8, 2026, I added an opt-in typography probe to the three editor
+executables and ran them with `CROFT_EDITOR_FONT_PROBE=1` and the usual
+`1500 ms` auto-close.
+
+For this `build/` directory, `TGFX_USE_OPENGL` is `OFF` and `TGFX_USE_METAL` is
+`ON`, so the live tgfx datapoint below is the tgfx/Metal editor. The tgfx font
+probe is still shared by both Croft tgfx backends, because both
+`host_render.cpp` and `host_render_metal.mm` now route through the same
+`host_render_tgfx_text_cache.h` helper.
+
+Probe string: `0O1lI []{}() +-*/ _=<>|`
+
+| Target | Requested style | Resolved family | Resolved style | Sample width | Font line height | Editor line height |
+| --- | --- | --- | --- | ---: | ---: | ---: |
+| `example_editor_text` | `""` | `Menlo` | `Regular` | `207.708` | `17.461` | `22.000` |
+| `example_editor_text_metal_native` | `Menlo-Regular` | `Menlo` | `Menlo-Regular` | `208.000` | `18.000` | `22.000` |
+| `example_editor_text_appkit` | `Menlo-Regular` | `Menlo` | `Menlo-Regular` | `208.000` | `18.000` | `18.000` |
+
+The useful constraints from that probe are:
+
+- The direct-Metal renderer and the AppKit/TextKit editor are now effectively
+  aligned on the same named face and the same measured width/line-height for
+  the probe string at `15 pt`.
+- tgfx is very close, but not identical. It resolves the same family, reports
+  style as `Regular`, and lands slightly under the AppKit/direct-Metal sample
+  width and line height.
+- The biggest remaining visual drift is no longer font-family selection. It is
+  editor layout policy: both scene editors still run the text at a fixed
+  `22 px` line height while AppKit/TextKit sits at the font's own `18 px`
+  default line height.
+- That means "use the same monospaced font" is necessary but not sufficient.
+  To make the direct-Metal scene editor converge further toward AppKit, the
+  next typography-facing work is line-height, baseline, and inset policy rather
+  than another round of font-family changes.
+
 ## Runtime Results
 
 From the shared-document runtime benchmark on March 8, 2026, using
