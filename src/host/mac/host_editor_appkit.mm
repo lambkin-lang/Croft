@@ -4,6 +4,7 @@
 #include "croft/editor_document_fs.h"
 #include "croft/editor_status.h"
 #include "croft/editor_text_model.h"
+#include "croft/editor_whitespace.h"
 #include "croft/host_editor_appkit.h"
 
 #import <AppKit/AppKit.h>
@@ -87,6 +88,84 @@ static NSString* croft_editor_appkit_string_from_utf8(const char* utf8, size_t u
     return string;
 }
 
+static BOOL croft_editor_appkit_build_text_model(NSString* text, croft_editor_text_model* out_model) {
+    NSData* utf8;
+    BOOL ok;
+
+    if (!out_model) {
+        return NO;
+    }
+
+    croft_editor_text_model_init(out_model);
+    text = text ?: @"";
+    utf8 = [text dataUsingEncoding:NSUTF8StringEncoding allowLossyConversion:NO];
+    ok = croft_editor_text_model_set_text(out_model,
+                                          (const char*)utf8.bytes,
+                                          utf8 ? (size_t)utf8.length : 0u) == CROFT_EDITOR_OK;
+    if (!ok) {
+        croft_editor_text_model_dispose(out_model);
+    }
+    return ok;
+}
+
+static NSRect croft_editor_appkit_marker_rect(NSLayoutManager* layoutManager,
+                                              NSTextContainer* textContainer,
+                                              NSRange characterRange) {
+    NSRange glyphRange;
+
+    if (!layoutManager || !textContainer || characterRange.length == 0u) {
+        return NSZeroRect;
+    }
+
+    glyphRange = [layoutManager glyphRangeForCharacterRange:characterRange actualCharacterRange:NULL];
+    if (glyphRange.location == NSNotFound || glyphRange.length == 0u) {
+        return NSZeroRect;
+    }
+    return [layoutManager boundingRectForGlyphRange:glyphRange inTextContainer:textContainer];
+}
+
+static void croft_editor_appkit_draw_whitespace_marker(NSRect markerRect,
+                                                       croft_editor_visible_whitespace_kind kind) {
+    NSColor* color = [NSColor colorWithCalibratedWhite:0.63 alpha:0.78];
+    CGFloat midY;
+
+    if (NSIsEmptyRect(markerRect) || NSWidth(markerRect) <= 0.0) {
+        return;
+    }
+
+    midY = NSMidY(markerRect);
+    [color setFill];
+    [color setStroke];
+    if (kind == CROFT_EDITOR_VISIBLE_WHITESPACE_SPACE) {
+        NSRectFill(NSMakeRect(NSMidX(markerRect) - 1.0, midY - 1.0, 2.0, 2.0));
+        return;
+    }
+
+    {
+        NSBezierPath* path = [NSBezierPath bezierPath];
+        CGFloat startX = NSMinX(markerRect) + 2.0;
+        CGFloat endX = NSMaxX(markerRect) - 3.0;
+
+        if (endX <= startX) {
+            startX = NSMinX(markerRect) + 1.0;
+            endX = NSMaxX(markerRect) - 1.0;
+        }
+        if (endX <= startX) {
+            return;
+        }
+
+        [path setLineWidth:1.0];
+        [path moveToPoint:NSMakePoint(startX, midY)];
+        [path lineToPoint:NSMakePoint(endX, midY)];
+        [path moveToPoint:NSMakePoint(startX, midY - 2.0)];
+        [path lineToPoint:NSMakePoint(startX, midY + 2.0)];
+        [path moveToPoint:NSMakePoint(endX - 3.0, midY - 2.0)];
+        [path lineToPoint:NSMakePoint(endX, midY)];
+        [path lineToPoint:NSMakePoint(endX - 3.0, midY + 2.0)];
+        [path stroke];
+    }
+}
+
 @protocol CroftEditorIndentHandling <NSObject>
 - (BOOL)croftIndentSelection;
 - (BOOL)croftOutdentSelection;
@@ -98,6 +177,95 @@ static NSString* croft_editor_appkit_string_from_utf8(const char* utf8, size_t u
 @end
 
 @implementation CroftEditorTextView
+
+- (void)croft_drawWhitespaceInRect:(NSRect)rect {
+    NSLayoutManager* layoutManager = self.layoutManager;
+    NSTextContainer* textContainer = self.textContainer;
+    NSString* text = self.string ?: @"";
+    NSClipView* clipView = self.enclosingScrollView.contentView;
+    NSRect visibleRect;
+    croft_editor_text_model model;
+    croft_editor_tab_settings settings;
+    NSRange visibleGlyphRange;
+    NSUInteger glyphIndex;
+
+    (void)rect;
+
+    if (!layoutManager || !textContainer || !clipView) {
+        return;
+    }
+
+    if (!croft_editor_appkit_build_text_model(text, &model)) {
+        return;
+    }
+
+    croft_editor_tab_settings_default(&settings);
+    visibleRect = clipView.documentVisibleRect;
+    visibleGlyphRange =
+        [layoutManager glyphRangeForBoundingRect:visibleRect inTextContainer:textContainer];
+    glyphIndex = visibleGlyphRange.location;
+    while (glyphIndex < NSMaxRange(visibleGlyphRange) && glyphIndex < layoutManager.numberOfGlyphs) {
+        NSRange lineGlyphRange;
+        NSRect lineRect = [layoutManager lineFragmentRectForGlyphAtIndex:glyphIndex
+                                                          effectiveRange:&lineGlyphRange];
+        NSUInteger characterIndex = [layoutManager characterIndexForGlyphAtIndex:glyphIndex];
+        uint32_t codepointOffset =
+            croft_editor_appkit_codepoint_offset_for_utf16_index(text, characterIndex);
+        uint32_t lineNumber = croft_editor_text_model_get_position_at(&model, codepointOffset).line_number;
+        croft_editor_whitespace_line line = {0};
+        croft_editor_visible_whitespace marker = {0};
+        uint32_t searchOffset;
+
+        if (croft_editor_whitespace_describe_line(&model, lineNumber, &settings, &line)
+                != CROFT_EDITOR_OK) {
+            glyphIndex = NSMaxRange(lineGlyphRange);
+            continue;
+        }
+
+        searchOffset = line.line_start_offset;
+        while (croft_editor_whitespace_find_in_line(&model,
+                                                    lineNumber,
+                                                    &settings,
+                                                    searchOffset,
+                                                    &marker) == CROFT_EDITOR_OK) {
+            NSUInteger start;
+            NSUInteger end;
+            NSRect markerRect;
+            uint32_t visualEnd = marker.visual_column + marker.visual_width - 1u;
+
+            if (marker.offset >= line.line_end_offset) {
+                break;
+            }
+
+            start = croft_editor_appkit_utf16_index_for_codepoint_offset(text, &model, marker.offset);
+            end = croft_editor_appkit_utf16_index_for_codepoint_offset(text, &model, marker.offset + 1u);
+            markerRect = croft_editor_appkit_marker_rect(layoutManager,
+                                                         textContainer,
+                                                         NSMakeRange(start, end - start));
+            if (!NSIntersectsRect(markerRect, visibleRect)) {
+                searchOffset = marker.offset + 1u;
+                continue;
+            }
+
+            if (visualEnd <= line.leading_indent_columns && (visualEnd % settings.tab_size) == 0u) {
+                CGFloat unitWidth = NSWidth(markerRect) / (CGFloat)marker.visual_width;
+                CGFloat guideX = NSMaxX(markerRect) - (unitWidth * 0.5);
+                [[NSColor colorWithCalibratedWhite:0.82 alpha:0.85] setFill];
+                NSRectFill(NSMakeRect(guideX,
+                                      NSMinY(lineRect) + 1.0,
+                                      1.0,
+                                      NSHeight(lineRect) - 2.0));
+            }
+
+            croft_editor_appkit_draw_whitespace_marker(markerRect, marker.kind);
+            searchOffset = marker.offset + 1u;
+        }
+
+        glyphIndex = NSMaxRange(lineGlyphRange);
+    }
+
+    croft_editor_text_model_dispose(&model);
+}
 
 - (NSRect)croft_currentLineRect {
     NSLayoutManager* layoutManager = self.layoutManager;
@@ -187,6 +355,8 @@ static NSString* croft_editor_appkit_string_from_utf8(const char* utf8, size_t u
         [[NSColor colorWithCalibratedRed:0.86 green:0.91 blue:0.97 alpha:1.0] setFill];
         NSRectFill(visibleRect);
     }
+
+    [self croft_drawWhitespaceInRect:rect];
 }
 
 @end
