@@ -233,6 +233,10 @@ such as:
 - `croft_ui_glfw_opengl + croft_render_tgfx_opengl + croft_scene_core_tgfx_opengl`
 - `croft_scene_text_editor_tgfx_opengl + sapling + croft_a11y_stub`
 
+Each artifact entry also records a `profile` when the target graph is pinned to
+the single-thread or threaded Sapling family, so downstream selection can avoid
+mixing incompatible variants.
+
 This keeps Croft modular while preserving the "big analysis, small
 binaries" goal: Croft builds the solution space, Lambkin chooses the
 smallest correct binary.

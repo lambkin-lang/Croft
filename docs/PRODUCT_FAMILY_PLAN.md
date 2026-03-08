@@ -183,6 +183,10 @@ Current status:
   `sapling_runner_host`, and `sapling_wasi_host` now keep runner/WASI host
   shell concerns out of `sapling_core` while making the threaded profile an
   explicit build-graph choice instead of a downstream compile flag.
+- `build/croft-artifacts.json` now records per-artifact profile metadata, and
+  the first Sapling-adjacent tier8 artifacts (`croft_editor_document_*`,
+  `croft_wit_text_runtime`, and `croft_wit_store_runtime`) stay explicitly
+  single-thread until their own wrapper state machines gain synchronization.
 - `croft_editor_document_core` now carries document state/history and
   `croft_editor_document_fs` now handles file-backed open/save.
 - The first common-side WIT package now exists in `schemas/wit/common-core.wit`

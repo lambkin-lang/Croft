@@ -114,10 +114,20 @@ function(croft_json_string out_var value)
 endfunction()
 
 function(croft_register_artifact target kind)
-    cmake_parse_arguments(ART "" "" "TAGS;DEPENDS" ${ARGN})
+    cmake_parse_arguments(ART "" "PROFILE" "TAGS;DEPENDS" ${ARGN})
+    if(ART_PROFILE)
+        set(profile "${ART_PROFILE}")
+    else()
+        croft_get_sapling_profile(profile ${target})
+    endif()
+    if(profile)
+        croft_json_string(profile_json "${profile}")
+    else()
+        set(profile_json "null")
+    endif()
     croft_json_array(tags_json ${ART_TAGS})
     croft_json_array(depends_json ${ART_DEPENDS})
-    set(entry "    {\n      \"name\": \"${target}\",\n      \"kind\": \"${kind}\",\n      \"tags\": ${tags_json},\n      \"depends\": ${depends_json}\n    }")
+    set(entry "    {\n      \"name\": \"${target}\",\n      \"kind\": \"${kind}\",\n      \"profile\": ${profile_json},\n      \"tags\": ${tags_json},\n      \"depends\": ${depends_json}\n    }")
     set_property(GLOBAL APPEND PROPERTY CROFT_ARTIFACT_ENTRIES "${entry}")
     set_property(GLOBAL APPEND PROPERTY CROFT_INSTALL_TARGETS "${target}")
 endfunction()
@@ -788,6 +798,7 @@ if(CROFT_BUILD_TESTS)
 endif()
 croft_register_artifact(sapling_core datastore
     TAGS tier3 tier4 sapling core single-thread linear-memory
+    DEPENDS croft_thatch_core
 )
 
 add_library(sapling_core_threaded STATIC ${SAPLING_CORE_SOURCES})
@@ -799,6 +810,7 @@ if(CROFT_BUILD_TESTS)
 endif()
 croft_register_artifact(sapling_core_threaded datastore
     TAGS tier3 tier4 sapling core threaded
+    DEPENDS croft_thatch_core
 )
 
 add_library(sapling_runner_core STATIC ${SAPLING_RUNNER_CORE_SOURCES})
@@ -895,6 +907,7 @@ add_library(croft_editor_document_core STATIC src/editor/editor_document.c)
 croft_apply_public_includes(croft_editor_document_core)
 target_link_libraries(croft_editor_document_core PUBLIC croft_editor_core sapling_core)
 croft_register_artifact(croft_editor_document_core editor
+    PROFILE single-thread
     TAGS tier8 editor document sapling common host-neutral
     DEPENDS croft_editor_core sapling_core
 )
@@ -903,6 +916,7 @@ add_library(croft_editor_document_fs STATIC src/editor/editor_document_fs.c)
 croft_apply_public_includes(croft_editor_document_fs)
 target_link_libraries(croft_editor_document_fs PUBLIC croft_editor_document_core croft_fs)
 croft_register_artifact(croft_editor_document_fs editor
+    PROFILE single-thread
     TAGS tier8 editor document filesystem io
     DEPENDS croft_editor_document_core croft_fs
 )
@@ -911,6 +925,7 @@ add_library(croft_editor_document STATIC src/editor/editor_document_aggregate.c)
 croft_apply_public_includes(croft_editor_document)
 target_link_libraries(croft_editor_document PUBLIC croft_editor_document_core croft_editor_document_fs)
 croft_register_artifact(croft_editor_document editor
+    PROFILE single-thread
     TAGS tier8 editor document compatibility aggregate
     DEPENDS croft_editor_document_core croft_editor_document_fs
 )
@@ -920,6 +935,7 @@ add_dependencies(croft_wit_text_runtime common_wit_schema_gen)
 croft_apply_public_includes(croft_wit_text_runtime)
 target_link_libraries(croft_wit_text_runtime PUBLIC sapling_core croft_wit_common_core)
 croft_register_artifact(croft_wit_text_runtime wit
+    PROFILE single-thread
     TAGS tier8 wit text resource-handles common-core machine-generated-model
     DEPENDS sapling_core croft_wit_common_core
 )
@@ -938,6 +954,7 @@ add_dependencies(croft_wit_store_runtime common_wit_schema_gen)
 croft_apply_public_includes(croft_wit_store_runtime)
 target_link_libraries(croft_wit_store_runtime PUBLIC sapling_core croft_wit_common_core)
 croft_register_artifact(croft_wit_store_runtime wit
+    PROFILE single-thread
     TAGS tier8 wit db txn resource-handles common-core machine-generated-model
     DEPENDS sapling_core croft_wit_common_core
 )

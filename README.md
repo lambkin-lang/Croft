@@ -45,7 +45,9 @@ ctest --test-dir build -L sapling-wasi --output-on-failure
 
 Croft now emits a set of static libraries and records them in
 `build/croft-artifacts.json`. Lambkin can treat that manifest as the universe of
-available mix-ins for constraint solving and final link selection.
+available mix-ins for constraint solving and final link selection. Each
+artifact entry now also carries a `profile` field when the target graph is
+constrained to a specific Sapling profile.
 Croft also records the current example targets in `build/croft-examples.json`
 and `build/croft-example-targets.txt`.
 Generated WIT bindings now also emit rename/trace manifests under
@@ -167,7 +169,9 @@ Typical targets include:
 - `sapling_core`, `sapling_core_threaded`
 - `sapling_runner_core`, `sapling_runner_core_threaded`, `sapling_runner_host`
 - `sapling_wasi_runtime`, `sapling_wasi_runtime_threaded`, `sapling_wasi_host`, `sapling`
-- `croft_wit_common_core`, `croft_wit_text_runtime`, `croft_wit_store_runtime`, `croft_wit_mailbox_runtime`
+- `croft_editor_document_core`, `croft_editor_document_fs`, `croft_editor_document` (single-thread profile today)
+- `croft_wit_text_runtime`, `croft_wit_store_runtime` (single-thread profile today)
+- `croft_wit_common_core`, `croft_wit_mailbox_runtime`
 - `croft_wit_text_program`
 - `croft_wit_host_fs`, `croft_wit_host_fs_runtime`
 - `croft_wit_host_clock`, `croft_wit_host_clock_runtime`
