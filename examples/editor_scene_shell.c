@@ -16,6 +16,7 @@ static scene_node* g_focused_node = NULL;
 static double g_mouse_x = 0;
 static double g_mouse_y = 0;
 static croft_editor_document* g_document = NULL;
+static int g_needs_redraw = 1;
 
 enum {
     CROFT_EDITOR_WINDOW_PADDING = 16
@@ -42,6 +43,10 @@ static uint64_t monotonic_usec_now(void) {
         return 0u;
     }
     return (uint64_t)(now * 1000000.0);
+}
+
+static void request_redraw(void) {
+    g_needs_redraw = 1;
 }
 
 static void print_editor_profile_summary(const char* variant, const text_editor_node* editor) {
@@ -135,25 +140,30 @@ static void on_ui_event(int32_t type, int32_t arg0, int32_t arg1) {
             if (g_focused_node && g_focused_node->vtbl && g_focused_node->vtbl->on_key_event) {
                 g_focused_node->vtbl->on_key_event(g_focused_node, arg0, arg1);
             }
+            request_redraw();
             return;
         }
         if (arg0 == 256 && arg1 == 1) {
             g_running = 0;
+            request_redraw();
             return;
         }
         if (arg0 == 81 && arg1 == 1
                 && (modifiers & (CROFT_UI_MOD_SUPER | CROFT_UI_MOD_CONTROL)) != 0u) {
             g_running = 0;
+            request_redraw();
             return;
         }
         if (g_focused_node && g_focused_node->vtbl && g_focused_node->vtbl->on_key_event) {
             g_focused_node->vtbl->on_key_event(g_focused_node, arg0, arg1);
         }
+        request_redraw();
     } else if (type == CROFT_UI_EVENT_CHAR) {
         text_editor_node_set_modifiers(&g_editor, host_ui_get_modifiers());
         if (g_focused_node && g_focused_node->vtbl && g_focused_node->vtbl->on_char_event) {
             g_focused_node->vtbl->on_char_event(g_focused_node, (uint32_t)arg0);
         }
+        request_redraw();
     } else if (type == CROFT_UI_EVENT_SCROLL) {
         float dy = (float)arg1 / 1000.0f;
         float dx = (float)arg0 / 1000.0f;
@@ -165,6 +175,7 @@ static void on_ui_event(int32_t type, int32_t arg0, int32_t arg1) {
         if (g_editor.scroll_x > 0.0f) {
             g_editor.scroll_x = 0.0f;
         }
+        request_redraw();
     } else if (type == CROFT_UI_EVENT_ZOOM_GESTURE) {
         float delta = (float)arg0 / 1000000.0f;
         float old_scale = g_root_vp.scale;
@@ -190,6 +201,7 @@ static void on_ui_event(int32_t type, int32_t arg0, int32_t arg1) {
         g_root_vp.scroll_x = cx - (cx - g_root_vp.scroll_x) * scale_ratio;
         g_root_vp.scroll_y = cy - (cy - g_root_vp.scroll_y) * scale_ratio;
         g_root_vp.scale = new_scale;
+        request_redraw();
     } else if (type == CROFT_UI_EVENT_MOUSE) {
         if (arg1 == 1) {
             hit_result hit;
@@ -206,6 +218,7 @@ static void on_ui_event(int32_t type, int32_t arg0, int32_t arg1) {
                 g_focused_node->vtbl->on_mouse_event(g_focused_node, 0, 0, 0);
             }
         }
+        request_redraw();
     } else if (type == CROFT_UI_EVENT_CURSOR_POS) {
         if (g_focused_node && g_focused_node->vtbl && g_focused_node->vtbl->on_mouse_event) {
             float lx;
@@ -221,6 +234,7 @@ static void on_ui_event(int32_t type, int32_t arg0, int32_t arg1) {
             ly -= g_editor.base.y;
             g_focused_node->vtbl->on_mouse_event(g_focused_node, 3, lx, ly);
         }
+        request_redraw();
     }
 }
 
@@ -237,6 +251,9 @@ int main(int argc, char** argv) {
     uint32_t frame_count = 0u;
     int profile_enabled = env_flag_enabled(profile_env);
     render_frame_profile frame_profile = {0};
+    int last_cursor_blink_visible = -1;
+    uint32_t last_fw = 0u;
+    uint32_t last_fh = 0u;
 
     g_document = croft_editor_document_open(argc > 0 ? argv[0] : NULL,
                                             target_file,
@@ -288,6 +305,7 @@ int main(int argc, char** argv) {
     while (g_running && !host_ui_should_close()) {
         uint32_t fw = 0;
         uint32_t fh = 0;
+        int cursor_blink_visible;
 
         if (auto_close_env && auto_close_env[0] != '\0') {
             int auto_close_ms = atoi(auto_close_env);
@@ -298,10 +316,26 @@ int main(int argc, char** argv) {
 
         host_ui_poll_events();
         host_ui_get_framebuffer_size(&fw, &fh);
+        if (fw != last_fw || fh != last_fh) {
+            last_fw = fw;
+            last_fh = fh;
+            request_redraw();
+        }
         g_root_vp.base.sx = (float)fw;
         g_root_vp.base.sy = (float)fh;
         g_editor.base.sx = (float)fw - (float)(CROFT_EDITOR_WINDOW_PADDING * 2);
         g_editor.base.sy = (float)fh - (float)(CROFT_EDITOR_WINDOW_PADDING * 2);
+        cursor_blink_visible = (g_editor.sel_start == g_editor.sel_end)
+            ? (((int)(host_ui_get_time() * 1000.0) / 500) % 2)
+            : 1;
+        if (cursor_blink_visible != last_cursor_blink_visible) {
+            last_cursor_blink_visible = cursor_blink_visible;
+            request_redraw();
+        }
+
+        if (!g_needs_redraw) {
+            continue;
+        }
 
         {
             uint64_t phase_start_usec = profile_enabled ? monotonic_usec_now() : 0u;
@@ -349,6 +383,7 @@ int main(int argc, char** argv) {
                     }
                 }
                 frame_count++;
+                g_needs_redraw = 0;
             }
         }
     }

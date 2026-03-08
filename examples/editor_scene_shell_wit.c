@@ -23,6 +23,7 @@ static scene_node* g_focused_node = NULL;
 static double g_mouse_x = 0.0;
 static double g_mouse_y = 0.0;
 static croft_editor_document* g_document = NULL;
+static int g_needs_redraw = 1;
 
 enum {
     CROFT_EDITOR_WINDOW_PADDING = 16
@@ -43,6 +44,11 @@ static int env_flag_enabled(const char* value)
 static double usec_to_msec(uint64_t usec)
 {
     return (double)usec / 1000.0;
+}
+
+static void request_redraw(void)
+{
+    g_needs_redraw = 1;
 }
 
 static void print_frame_profile_summary(const char* variant, const render_frame_profile* profile)
@@ -556,6 +562,7 @@ static int editor_handle_find_key(const SapWitHostWindowEvent* event)
         g_editor.base.vtbl->on_key_event(&g_editor.base,
                                          event->val.key.key,
                                          event->val.key.action);
+        request_redraw();
         return 1;
     }
 
@@ -572,14 +579,17 @@ static int editor_handle_find_char(const SapWitHostWindowEvent* event)
     }
 
     g_editor.base.vtbl->on_char_event(&g_editor.base, event->val.char_event.codepoint);
+    request_redraw();
     return 1;
 }
 
 static int pump_editor_actions(croft_wit_host_editor_input_runtime* editor_input_runtime,
-                               croft_wit_host_clipboard_runtime* clipboard_runtime)
+                               croft_wit_host_clipboard_runtime* clipboard_runtime,
+                               int* out_did_action)
 {
     SapWitHostEditorInputCommand input_command = {0};
     SapWitHostEditorInputReply input_reply = {0};
+    int did_action = 0;
 
     for (;;) {
         SapWitHostEditorInputEditorAction action = {0};
@@ -596,11 +606,15 @@ static int pump_editor_actions(croft_wit_host_editor_input_runtime* editor_input
             return 0;
         }
         if (status == 0) {
+            if (out_did_action) {
+                *out_did_action = did_action;
+            }
             return 1;
         }
         if (!editor_apply_action(clipboard_runtime, &action)) {
             return 0;
         }
+        did_action = 1;
     }
 }
 
@@ -631,6 +645,9 @@ int main(int argc, char** argv)
     uint32_t frame_count = 0u;
     int profile_enabled = env_flag_enabled(profile_env);
     render_frame_profile frame_profile = {0};
+    int last_cursor_blink_visible = -1;
+    uint32_t last_fw = 0u;
+    uint32_t last_fh = 0u;
     int rc = 1;
 
     if (auto_close_env && auto_close_env[0] != '\0') {
@@ -764,6 +781,7 @@ int main(int argc, char** argv)
                             && !text_editor_node_is_find_active(&g_editor)) {
                         g_running = 0;
                     }
+                    request_redraw();
                     break;
                 }
                 case SAP_WIT_HOST_WINDOW_EVENT_CHAR_EVENT: {
@@ -780,6 +798,7 @@ int main(int argc, char** argv)
                             || !editor_input_expect_status_ok(&input_reply)) {
                         goto cleanup;
                     }
+                    request_redraw();
                     break;
                 }
                 case SAP_WIT_HOST_WINDOW_EVENT_SCROLL:
@@ -787,6 +806,7 @@ int main(int argc, char** argv)
                     g_editor.scroll_x += ((float)event.val.scroll.x_milli / 1000.0f) * 20.0f;
                     if (g_editor.scroll_y > 0.0f) g_editor.scroll_y = 0.0f;
                     if (g_editor.scroll_x > 0.0f) g_editor.scroll_x = 0.0f;
+                    request_redraw();
                     break;
                 case SAP_WIT_HOST_WINDOW_EVENT_ZOOM: {
                     float delta = (float)event.val.zoom.delta_micros / 1000000.0f;
@@ -802,6 +822,7 @@ int main(int argc, char** argv)
                     g_root_vp.scroll_x = cx - (cx - g_root_vp.scroll_x) * ratio;
                     g_root_vp.scroll_y = cy - (cy - g_root_vp.scroll_y) * ratio;
                     g_root_vp.scale = new_scale;
+                    request_redraw();
                     break;
                 }
                 case SAP_WIT_HOST_WINDOW_EVENT_CURSOR:
@@ -817,6 +838,7 @@ int main(int argc, char** argv)
                         ly -= g_editor.base.y;
                         g_focused_node->vtbl->on_mouse_event(g_focused_node, 3, lx, ly);
                     }
+                    request_redraw();
                     break;
                 case SAP_WIT_HOST_WINDOW_EVENT_MOUSE:
                     if (event.val.mouse.action == 1) {
@@ -833,6 +855,7 @@ int main(int argc, char** argv)
                             g_focused_node->vtbl->on_mouse_event(g_focused_node, 0, 0.0f, 0.0f);
                         }
                     }
+                    request_redraw();
                     break;
                 default:
                     break;
@@ -861,14 +884,17 @@ int main(int argc, char** argv)
 
             if (action_id == CROFT_EDITOR_MENU_FIND) {
                 text_editor_node_find_activate(&g_editor);
+                request_redraw();
                 continue;
             }
             if (action_id == CROFT_EDITOR_MENU_FIND_NEXT) {
                 text_editor_node_find_next(&g_editor);
+                request_redraw();
                 continue;
             }
             if (action_id == CROFT_EDITOR_MENU_FIND_PREVIOUS) {
                 text_editor_node_find_previous(&g_editor);
+                request_redraw();
                 continue;
             }
 
@@ -880,10 +906,18 @@ int main(int argc, char** argv)
                     || !editor_input_expect_status_ok(&input_reply)) {
                 goto cleanup;
             }
+            request_redraw();
         }
 
-        if (!pump_editor_actions(editor_input_runtime, clipboard_runtime)) {
-            goto cleanup;
+        {
+            int did_action = 0;
+
+            if (!pump_editor_actions(editor_input_runtime, clipboard_runtime, &did_action)) {
+                goto cleanup;
+            }
+            if (did_action) {
+                request_redraw();
+            }
         }
 
         window_command.case_tag = SAP_WIT_HOST_WINDOW_COMMAND_SHOULD_CLOSE;
@@ -915,6 +949,24 @@ int main(int argc, char** argv)
         g_root_vp.base.sy = (float)fh;
         g_editor.base.sx = (float)fw - (float)(CROFT_EDITOR_WINDOW_PADDING * 2);
         g_editor.base.sy = (float)fh - (float)(CROFT_EDITOR_WINDOW_PADDING * 2);
+        if (fw != last_fw || fh != last_fh) {
+            last_fw = fw;
+            last_fh = fh;
+            request_redraw();
+        }
+        {
+            int cursor_blink_visible = (g_editor.sel_start == g_editor.sel_end)
+                ? (((int)(now_ms / 500u)) % 2)
+                : 1;
+            if (cursor_blink_visible != last_cursor_blink_visible) {
+                last_cursor_blink_visible = cursor_blink_visible;
+                request_redraw();
+            }
+        }
+
+        if (!g_needs_redraw) {
+            continue;
+        }
 
         {
             uint64_t phase_start_usec = 0u;
@@ -962,6 +1014,7 @@ int main(int argc, char** argv)
                     }
                 }
                 frame_count++;
+                g_needs_redraw = 0;
             }
         }
     }
