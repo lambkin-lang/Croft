@@ -28,6 +28,13 @@ enum {
     CROFT_EDITOR_WINDOW_PADDING = 16
 };
 
+typedef struct render_frame_profile {
+    uint64_t begin_frame_total_usec;
+    uint64_t draw_tree_total_usec;
+    uint64_t end_frame_total_usec;
+    uint64_t present_total_usec;
+} render_frame_profile;
+
 static int env_flag_enabled(const char* value)
 {
     return value && value[0] != '\0' && !(value[0] == '0' && value[1] == '\0');
@@ -36,6 +43,20 @@ static int env_flag_enabled(const char* value)
 static double usec_to_msec(uint64_t usec)
 {
     return (double)usec / 1000.0;
+}
+
+static void print_frame_profile_summary(const char* variant, const render_frame_profile* profile)
+{
+    if (!profile) {
+        return;
+    }
+
+    printf("editor-scene-frame variant=%s begin_ms=%.3f draw_tree_ms=%.3f end_frame_ms=%.3f present_ms=%.3f\n",
+           variant,
+           usec_to_msec(profile->begin_frame_total_usec),
+           usec_to_msec(profile->draw_tree_total_usec),
+           usec_to_msec(profile->end_frame_total_usec),
+           usec_to_msec(profile->present_total_usec));
 }
 
 static void print_editor_profile_summary(const char* variant, const text_editor_node* editor)
@@ -158,6 +179,26 @@ static int clock_expect_now(const SapWitHostClockReply* reply, uint64_t* now_out
         return 0;
     }
     *now_out = reply->val.now.val.ok;
+    return 1;
+}
+
+static int clock_now_usec(croft_wit_host_clock_runtime* runtime, uint64_t* now_usec_out)
+{
+    SapWitHostClockCommand command = {0};
+    SapWitHostClockReply reply = {0};
+    uint64_t now_ms = 0u;
+
+    if (!runtime || !now_usec_out) {
+        return 0;
+    }
+
+    command.case_tag = SAP_WIT_HOST_CLOCK_COMMAND_MONOTONIC_NOW;
+    if (croft_wit_host_clock_runtime_dispatch(runtime, &command, &reply) != 0
+            || !clock_expect_now(&reply, &now_ms)) {
+        return 0;
+    }
+
+    *now_usec_out = now_ms * 1000u;
     return 1;
 }
 
@@ -562,6 +603,7 @@ int main(int argc, char** argv)
     uint64_t end_ms = 0u;
     uint32_t frame_count = 0u;
     int profile_enabled = env_flag_enabled(profile_env);
+    render_frame_profile frame_profile = {0};
     int rc = 1;
 
     if (auto_close_env && auto_close_env[0] != '\0') {
@@ -846,15 +888,53 @@ int main(int argc, char** argv)
         g_editor.base.sx = (float)fw - (float)(CROFT_EDITOR_WINDOW_PADDING * 2);
         g_editor.base.sy = (float)fh - (float)(CROFT_EDITOR_WINDOW_PADDING * 2);
 
-        if (host_render_begin_frame(fw, fh) == 0) {
-            render_ctx rcx;
-            host_render_clear(0xF3F4F6FF);
-            rcx.fg_color = 0x111111FF;
-            rcx.bg_color = 0xFAFBFCFF;
-            rcx.time = (double)now_ms / 1000.0;
-            scene_node_draw_tree(&g_root_vp.base, &rcx);
-            host_render_end_frame();
-            frame_count++;
+        {
+            uint64_t phase_start_usec = 0u;
+            uint64_t phase_end_usec = 0u;
+
+            if (profile_enabled && !clock_now_usec(clock_runtime, &phase_start_usec)) {
+                goto cleanup;
+            }
+
+            if (host_render_begin_frame(fw, fh) == 0) {
+                render_ctx rcx;
+
+                if (profile_enabled) {
+                    if (!clock_now_usec(clock_runtime, &phase_end_usec)) {
+                        goto cleanup;
+                    }
+                    if (phase_end_usec >= phase_start_usec) {
+                        frame_profile.begin_frame_total_usec += phase_end_usec - phase_start_usec;
+                    }
+                    phase_start_usec = phase_end_usec;
+                }
+
+                host_render_clear(0xF3F4F6FF);
+                rcx.fg_color = 0x111111FF;
+                rcx.bg_color = 0xFAFBFCFF;
+                rcx.time = (double)now_ms / 1000.0;
+                scene_node_draw_tree(&g_root_vp.base, &rcx);
+                if (profile_enabled) {
+                    if (!clock_now_usec(clock_runtime, &phase_end_usec)) {
+                        goto cleanup;
+                    }
+                    if (phase_end_usec >= phase_start_usec) {
+                        frame_profile.draw_tree_total_usec += phase_end_usec - phase_start_usec;
+                    }
+                    phase_start_usec = phase_end_usec;
+                }
+
+                host_render_end_frame();
+                if (profile_enabled) {
+                    if (!clock_now_usec(clock_runtime, &phase_end_usec)) {
+                        goto cleanup;
+                    }
+                    if (phase_end_usec >= phase_start_usec) {
+                        frame_profile.end_frame_total_usec += phase_end_usec - phase_start_usec;
+                    }
+                }
+                frame_count++;
+            }
         }
     }
 
@@ -866,6 +946,7 @@ int main(int argc, char** argv)
     printf("editor-scene-wit frames=%u wall_ms=%llu\n",
            frame_count,
            (unsigned long long)(end_ms - start_ms));
+    print_frame_profile_summary("scene-wit", &frame_profile);
     print_editor_profile_summary("scene-wit", &g_editor);
     fflush(stdout);
     rc = 0;

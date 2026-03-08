@@ -21,12 +21,27 @@ enum {
     CROFT_EDITOR_WINDOW_PADDING = 16
 };
 
+typedef struct render_frame_profile {
+    uint64_t begin_frame_total_usec;
+    uint64_t draw_tree_total_usec;
+    uint64_t end_frame_total_usec;
+    uint64_t present_total_usec;
+} render_frame_profile;
+
 static int env_flag_enabled(const char* value) {
     return value && value[0] != '\0' && !(value[0] == '0' && value[1] == '\0');
 }
 
 static double usec_to_msec(uint64_t usec) {
     return (double)usec / 1000.0;
+}
+
+static uint64_t monotonic_usec_now(void) {
+    double now = host_ui_get_time();
+    if (now <= 0.0) {
+        return 0u;
+    }
+    return (uint64_t)(now * 1000000.0);
 }
 
 static void print_editor_profile_summary(const char* variant, const text_editor_node* editor) {
@@ -71,6 +86,19 @@ static void print_editor_profile_summary(const char* variant, const text_editor_
            usec_to_msec(profile.search_draw_total_usec),
            (unsigned long long)profile.bracket_draw_calls,
            usec_to_msec(profile.bracket_draw_total_usec));
+}
+
+static void print_frame_profile_summary(const char* variant, const render_frame_profile* profile) {
+    if (!profile) {
+        return;
+    }
+
+    printf("editor-scene-frame variant=%s begin_ms=%.3f draw_tree_ms=%.3f end_frame_ms=%.3f present_ms=%.3f\n",
+           variant,
+           usec_to_msec(profile->begin_frame_total_usec),
+           usec_to_msec(profile->draw_tree_total_usec),
+           usec_to_msec(profile->end_frame_total_usec),
+           usec_to_msec(profile->present_total_usec));
 }
 
 static void on_ui_event(int32_t type, int32_t arg0, int32_t arg1) {
@@ -182,6 +210,7 @@ int main(int argc, char** argv) {
     double end_time = 0.0;
     uint32_t frame_count = 0u;
     int profile_enabled = env_flag_enabled(profile_env);
+    render_frame_profile frame_profile = {0};
 
     g_document = croft_editor_document_open(argc > 0 ? argv[0] : NULL,
                                             target_file,
@@ -247,18 +276,53 @@ int main(int argc, char** argv) {
         g_editor.base.sx = (float)fw - (float)(CROFT_EDITOR_WINDOW_PADDING * 2);
         g_editor.base.sy = (float)fh - (float)(CROFT_EDITOR_WINDOW_PADDING * 2);
 
-        if (host_render_begin_frame(fw, fh) == 0) {
-            render_ctx rc;
-            host_render_clear(0xF3F4F6FF);
+        {
+            uint64_t phase_start_usec = profile_enabled ? monotonic_usec_now() : 0u;
 
-            rc.fg_color = 0x111111FF;
-            rc.bg_color = 0xFAFBFCFF;
-            rc.time = host_ui_get_time();
-            scene_node_draw_tree(&g_root_vp.base, &rc);
+            if (host_render_begin_frame(fw, fh) == 0) {
+                uint64_t phase_end_usec;
+                render_ctx rc;
 
-            host_render_end_frame();
-            host_ui_swap_buffers();
-            frame_count++;
+                if (profile_enabled) {
+                    phase_end_usec = monotonic_usec_now();
+                    if (phase_end_usec >= phase_start_usec) {
+                        frame_profile.begin_frame_total_usec += phase_end_usec - phase_start_usec;
+                    }
+                    phase_start_usec = phase_end_usec;
+                }
+
+                host_render_clear(0xF3F4F6FF);
+
+                rc.fg_color = 0x111111FF;
+                rc.bg_color = 0xFAFBFCFF;
+                rc.time = host_ui_get_time();
+                scene_node_draw_tree(&g_root_vp.base, &rc);
+                if (profile_enabled) {
+                    phase_end_usec = monotonic_usec_now();
+                    if (phase_end_usec >= phase_start_usec) {
+                        frame_profile.draw_tree_total_usec += phase_end_usec - phase_start_usec;
+                    }
+                    phase_start_usec = phase_end_usec;
+                }
+
+                host_render_end_frame();
+                if (profile_enabled) {
+                    phase_end_usec = monotonic_usec_now();
+                    if (phase_end_usec >= phase_start_usec) {
+                        frame_profile.end_frame_total_usec += phase_end_usec - phase_start_usec;
+                    }
+                    phase_start_usec = phase_end_usec;
+                }
+
+                host_ui_swap_buffers();
+                if (profile_enabled) {
+                    phase_end_usec = monotonic_usec_now();
+                    if (phase_end_usec >= phase_start_usec) {
+                        frame_profile.present_total_usec += phase_end_usec - phase_start_usec;
+                    }
+                }
+                frame_count++;
+            }
         }
     }
 
@@ -266,6 +330,7 @@ int main(int argc, char** argv) {
     printf("editor-scene frames=%u wall_ms=%llu\n",
            frame_count,
            (unsigned long long)((end_time - start_time) * 1000.0));
+    print_frame_profile_summary("scene", &frame_profile);
     print_editor_profile_summary("scene", &g_editor);
     fflush(stdout);
 
