@@ -273,7 +273,7 @@ run_iteration() {
     local env_lines=()
     local env_args=()
     local target_args=()
-    local status rc wall_ms frames
+    local status rc wall_ms frames sample_wall_ms
     local profile_lines
     local line
     local timeout_ms
@@ -334,12 +334,17 @@ run_iteration() {
     wall_ms="${wall_ms:-}"
     frames="$(extract_frames "$log_file")"
     frames="${frames:-}"
+    sample_wall_ms="$(extract_wall_ms "$log_file")"
+    sample_wall_ms="${sample_wall_ms:-}"
     profile_lines="$(extract_profile_lines "$log_file")"
 
     echo "-- ${target} run ${iteration} --"
     echo "status=${status}"
     echo "rc=${rc}"
     echo "wall_ms=${wall_ms}"
+    if [[ -n "$sample_wall_ms" ]]; then
+        echo "sample_wall_ms=${sample_wall_ms}"
+    fi
     if [[ -n "$frames" ]]; then
         echo "frames=${frames}"
     fi

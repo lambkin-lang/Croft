@@ -109,23 +109,52 @@ The useful constraints from that probe are:
 
 ## Follow-up Probe
 
-I then added frame-shell timing plus viewport culling for the main text-editor
-passes and reran the same profiled `5,000`-line benchmark. That produced:
+I then added frame-shell timing plus backend timing and reran the same profiled
+`5,000`-line benchmark. For these scene-only probes, the useful wall clock is
+the sample's own `editor-scene ... wall_ms=` telemetry, not the outer
+`runtime_bench_runner` process time, because the runner also includes shutdown
+after the sample loop exits.
 
-| Target | Wall ms | Frames | Begin-frame ms | Draw-tree ms | End-frame ms | Background lines | Text lines | Gutter lines |
+That produced:
+
+| Target | Sample wall ms | Frames | Drawable ms | Submit ms | Draw-tree ms | Background lines | Text lines | Gutter lines |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `example_editor_text` | `5,239` | `32` | `146.876` | `328.227` | `667.059` | `1,184` | `1,184` | `1,184` |
-| `example_editor_text_metal_native` | `5,044` | `70` | `948.000` | `181.000` | `1.000` | `2,590` | `2,590` | `2,590` |
+| `example_editor_text` | `1,202` | `33` | `152.847` | `641.840` | `339.584` | `1,221` | `1,221` | `1,221` |
+| `example_editor_text_metal_native` | `1,205` | `71` | `948.940` | `1.086` | `184.000` | `2,627` | `2,627` | `2,627` |
 
 That follow-up changes the conclusion again:
 
 - Viewport culling worked. The per-pass line counts dropped by roughly two
   orders of magnitude.
-- The end-to-end wall time barely moved. Full-document redraw was real work,
-  but it was not the dominant source of the `5,000`-line cliff.
-- The remaining measured cost now clusters around the render-frame boundary:
-  `host_render_end_frame` in the tgfx/OpenGL path and `host_render_begin_frame`
-  in the native-Metal path.
+- The scene sample itself was already hitting the `~1200 ms` auto-close floor.
+  The misleading `~5 s` number was mostly process teardown outside the sample's
+  own render loop.
+- The remaining scene-side work clustered around the render-frame boundary:
+  `flushAndSubmit` in the tgfx/Metal path and `nextDrawable` in the
+  native-Metal path.
+
+## Idle Redraw Probe
+
+I then changed both scene editor shells to redraw only on invalidation
+(input/scroll/resize/find changes plus caret blink) instead of submitting a new
+frame on every poll iteration. Rerunning the same profiled `5,000`-line
+benchmark produced:
+
+| Target | Sample wall ms | Frames | Drawable ms | Submit ms | Draw-tree ms | Background lines | Text lines | Gutter lines |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `example_editor_text` | `1,200` | `3` | `1.242` | `620.946` | `30.935` | `111` | `111` | `111` |
+| `example_editor_text_metal_native` | `1,200` | `4` | `1.260` | `0.071` | `10.000` | `148` | `148` | `148` |
+
+That final probe changes the conclusion one more time:
+
+- The scene-family benchmark was dominated by unnecessary continuous redraw, not
+  by unavoidable large-document editor work.
+- Once redraw is invalidation-driven, the native-Metal path stops spending
+  meaningful time in drawable acquisition, and the shared scene editor work
+  drops to a few milliseconds over the full run.
+- The tgfx/Metal path still pays a visible submit cost per rendered frame, but
+  with only a few frames per run it no longer dominates the sample's own wall
+  time.
 
 ## What This Shows
 
@@ -145,9 +174,11 @@ That follow-up changes the conclusion again:
 - The first scene-profile probe narrows that further: the immediate hot path is
   full-document redraw every frame, while line-map lookup and hit-testing are
   not part of the idle large-document cliff.
-- The follow-up probe narrows it again: once the editor stops drawing the whole
-  document, the dominant remaining cost is the render backend frame lifecycle,
-  not the editor node itself.
+- The backend-timing probe narrows it again: after culling, the scene work that
+  remained was mostly continuous frame submission and drawable acquisition.
+- The redraw-throttling probe shows the most foundational fix so far: for these
+  editor shells, invalidation policy matters more than any one text-layout or
+  renderer micro-optimization.
 - The remaining comparison work is not just about performance. It is about
   making hidden host services explicit: AppKit currently gives IME,
   accessibility, and undo-manager behavior "for free", while the direct-Metal
@@ -164,11 +195,14 @@ The next useful step is no longer generic runtime comparison either; that data
 now exists. The next useful step is to explain the large-document scene-family
 cliff:
 
-- move the next timing pass into the render backends themselves so
-  `tgfx::Surface::Make`, flush/submit/blit, and `CAMetalLayer` drawable
-  acquisition are measured directly
-- stop recreating or reacquiring expensive per-frame render resources where the
-  backend allows it
+- push the new invalidation-driven redraw policy down into reusable host/scene
+  loop support instead of leaving it duplicated in the example shells
+- decide whether the runtime benchmark history should record both runner wall
+  time and sample-reported wall time so GUI teardown cost stays visible without
+  obscuring in-loop work
+- if tgfx/Metal still matters after redraw throttling, profile `flushAndSubmit`
+  more deeply and see whether that backend can reuse or defer any per-frame
+  submit work
 - isolate input and accessibility concerns the same way `croft_editor_document`
   isolated the data layer
 - decide whether the direct-Metal editor should keep reusing the scene nodes or
