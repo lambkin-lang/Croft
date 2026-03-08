@@ -63,6 +63,23 @@ small-binary end of the spectrum. More importantly, the extra size now buys
 explicit host seams that Lambkin can reason about instead of one collapsed
 editor shell.
 
+## Runtime Results
+
+From the shared-document runtime benchmark on March 8, 2026, using
+`tools/benchmark_editor_runtime_matrix.sh` defaults (`2` runs per target,
+shared generated documents, `1200 ms` auto-close):
+
+| Shared document lines | `example_editor_text` avg wall ms | `example_editor_text_appkit` avg wall ms | `example_editor_text_metal_native` avg wall ms |
+| --- | ---: | ---: | ---: |
+| `200` | `1,390` | `1,364` | `1,383` |
+| `1,200` | `1,597` | `1,405` | `1,602` |
+| `5,000` | `4,769` | `1,480` | `4,798` |
+
+Because the auto-close floor is fixed at `1200 ms`, the useful signal is the
+extra cost above that floor. AppKit stays close to the floor even at `5,000`
+lines, while both scene families climb sharply and stay very close to one
+another.
+
 ## What This Shows
 
 - Sapling text storage and file IO do not force a multi-megabyte editor.
@@ -72,6 +89,12 @@ editor shell.
   differently while still sharing Sapling-backed state.
 - The direct-Metal path can stay close to the AppKit path in size even after
   adding enough text rendering to support the scene editor.
+- On larger documents, the current runtime cliff clusters in the two scene
+  families, not in AppKit.
+- The direct-Metal editor now matches the tgfx/Metal editor much more closely
+  in large-document runtime than it matches AppKit, which suggests the current
+  hot path is the shared scene-text layout/input stack rather than the render
+  backend alone.
 - The remaining comparison work is not just about performance. It is about
   making hidden host services explicit: AppKit currently gives IME,
   accessibility, and undo-manager behavior "for free", while the direct-Metal
@@ -84,9 +107,12 @@ editor shell.
 ## Next Step
 
 The next useful step is no longer "add the third family"; that part is done.
-The next useful step is to deepen the comparison:
+The next useful step is no longer generic runtime comparison either; that data
+now exists. The next useful step is to explain the large-document scene-family
+cliff:
 
-- compare runtime behavior on larger documents
+- isolate or profile the shared scene-text layout/input path on larger
+  documents
 - isolate input and accessibility concerns the same way `croft_editor_document`
   isolated the data layer
 - decide whether the direct-Metal editor should keep reusing the scene nodes or

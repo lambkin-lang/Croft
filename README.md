@@ -117,6 +117,9 @@ bash ./tools/benchmark_editor_families.sh
 # Compare editor-family runtime on a shared larger document
 bash ./tools/benchmark_editor_runtime.sh
 
+# Compare editor-family runtime across several document sizes
+bash ./tools/benchmark_editor_runtime_matrix.sh
+
 # Compare runtime/auto-close behavior across example families
 bash ./tools/benchmark_runtime_perf.sh
 
