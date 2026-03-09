@@ -32,6 +32,12 @@ typedef struct render_frame_profile {
     uint64_t present_total_usec;
 } render_frame_profile;
 
+typedef enum editor_action_result {
+    EDITOR_ACTION_NOOP = 0,
+    EDITOR_ACTION_APPLIED = 1,
+    EDITOR_ACTION_RECOVERABLE_ERROR = 2
+} editor_action_result;
+
 static int env_flag_enabled(const char* value) {
     return value && value[0] != '\0' && !(value[0] == '0' && value[1] == '\0');
 }
@@ -50,6 +56,22 @@ static uint64_t monotonic_usec_now(void) {
 
 static void request_redraw(void) {
     croft_editor_scene_runtime_request_redraw(&g_runtime);
+}
+
+static void log_recoverable_action_message(const char* action, const char* detail) {
+    fprintf(stderr,
+            "example_editor_text: recoverable %s issue%s%s\n",
+            action ? action : "action",
+            detail ? " (" : "",
+            detail ? detail : "");
+    if (detail) {
+        fputc(')', stderr);
+    }
+    fputc('\n', stderr);
+}
+
+static uint8_t editor_has_selection(void) {
+    return g_editor.sel_start != g_editor.sel_end;
 }
 
 static void bind_document_to_editor(croft_editor_document* document) {
@@ -140,50 +162,97 @@ static int paste_from_clipboard(void) {
     return ok;
 }
 
-static int editor_apply_menu_action(int32_t action_id) {
+static editor_action_result editor_apply_menu_action(int32_t action_id) {
     switch (action_id) {
         case CROFT_EDITOR_MENU_OPEN:
-            return open_document_via_dialog();
+            return open_document_via_dialog() ? EDITOR_ACTION_APPLIED : EDITOR_ACTION_RECOVERABLE_ERROR;
         case CROFT_EDITOR_MENU_SAVE:
-            return save_document_via_dialog(0);
+            return save_document_via_dialog(0) ? EDITOR_ACTION_APPLIED : EDITOR_ACTION_RECOVERABLE_ERROR;
         case CROFT_EDITOR_MENU_SAVE_AS:
-            return save_document_via_dialog(1);
+            return save_document_via_dialog(1) ? EDITOR_ACTION_APPLIED : EDITOR_ACTION_RECOVERABLE_ERROR;
         case CROFT_EDITOR_MENU_QUIT:
             g_running = 0;
-            return 1;
+            return EDITOR_ACTION_APPLIED;
         case CROFT_EDITOR_MENU_UNDO:
-            return text_editor_node_undo(&g_editor) == 0;
+            if (!croft_editor_document_can_undo(g_document)) {
+                return EDITOR_ACTION_NOOP;
+            }
+            if (text_editor_node_undo(&g_editor) != 0) {
+                log_recoverable_action_message("undo", "editor command failed");
+                return EDITOR_ACTION_RECOVERABLE_ERROR;
+            }
+            return EDITOR_ACTION_APPLIED;
         case CROFT_EDITOR_MENU_REDO:
-            return text_editor_node_redo(&g_editor) == 0;
+            if (!croft_editor_document_can_redo(g_document)) {
+                return EDITOR_ACTION_NOOP;
+            }
+            if (text_editor_node_redo(&g_editor) != 0) {
+                log_recoverable_action_message("redo", "editor command failed");
+                return EDITOR_ACTION_RECOVERABLE_ERROR;
+            }
+            return EDITOR_ACTION_APPLIED;
         case CROFT_EDITOR_MENU_SELECT_ALL:
             text_editor_node_select_all(&g_editor);
-            return 1;
+            return EDITOR_ACTION_APPLIED;
         case CROFT_EDITOR_MENU_COPY:
-            return set_clipboard_from_selection();
+            if (!set_clipboard_from_selection()) {
+                log_recoverable_action_message("copy", "clipboard unavailable");
+                return EDITOR_ACTION_RECOVERABLE_ERROR;
+            }
+            return EDITOR_ACTION_APPLIED;
         case CROFT_EDITOR_MENU_CUT:
             if (!set_clipboard_from_selection()) {
-                return 0;
+                log_recoverable_action_message("cut", "clipboard unavailable");
+                return EDITOR_ACTION_RECOVERABLE_ERROR;
             }
-            return text_editor_node_delete_selection(&g_editor, 1) == 0;
+            if (text_editor_node_delete_selection(&g_editor, 1) != 0) {
+                log_recoverable_action_message("cut", "delete failed");
+                return EDITOR_ACTION_RECOVERABLE_ERROR;
+            }
+            return EDITOR_ACTION_APPLIED;
         case CROFT_EDITOR_MENU_PASTE:
-            return paste_from_clipboard();
+            if (!paste_from_clipboard()) {
+                log_recoverable_action_message("paste", "clipboard unavailable");
+                return EDITOR_ACTION_RECOVERABLE_ERROR;
+            }
+            return EDITOR_ACTION_APPLIED;
         case CROFT_EDITOR_MENU_FIND:
             text_editor_node_find_activate(&g_editor);
-            return 1;
+            return EDITOR_ACTION_APPLIED;
         case CROFT_EDITOR_MENU_FIND_NEXT:
-            return text_editor_node_find_next(&g_editor) == 0;
+            return text_editor_node_find_next(&g_editor) == 0
+                ? EDITOR_ACTION_APPLIED
+                : EDITOR_ACTION_NOOP;
         case CROFT_EDITOR_MENU_FIND_PREVIOUS:
-            return text_editor_node_find_previous(&g_editor) == 0;
+            return text_editor_node_find_previous(&g_editor) == 0
+                ? EDITOR_ACTION_APPLIED
+                : EDITOR_ACTION_NOOP;
         case CROFT_EDITOR_MENU_INDENT:
-            return text_editor_node_indent(&g_editor) == 0;
+            if (text_editor_node_indent(&g_editor) != 0) {
+                log_recoverable_action_message("indent", "editor command failed");
+                return EDITOR_ACTION_RECOVERABLE_ERROR;
+            }
+            return EDITOR_ACTION_APPLIED;
         case CROFT_EDITOR_MENU_OUTDENT:
-            return text_editor_node_outdent(&g_editor) == 0;
+            if (text_editor_node_outdent(&g_editor) != 0) {
+                log_recoverable_action_message("outdent", "editor command failed");
+                return EDITOR_ACTION_RECOVERABLE_ERROR;
+            }
+            return EDITOR_ACTION_APPLIED;
         case CROFT_EDITOR_MENU_FOLD:
-            return text_editor_node_fold(&g_editor) == 0;
+            if (text_editor_node_fold(&g_editor) != 0) {
+                log_recoverable_action_message("fold", "editor command failed");
+                return EDITOR_ACTION_RECOVERABLE_ERROR;
+            }
+            return EDITOR_ACTION_APPLIED;
         case CROFT_EDITOR_MENU_UNFOLD:
-            return text_editor_node_unfold(&g_editor) == 0;
+            if (text_editor_node_unfold(&g_editor) != 0) {
+                log_recoverable_action_message("unfold", "editor command failed");
+                return EDITOR_ACTION_RECOVERABLE_ERROR;
+            }
+            return EDITOR_ACTION_APPLIED;
         default:
-            return 1;
+            return EDITOR_ACTION_NOOP;
     }
 }
 
@@ -194,11 +263,11 @@ static void show_editor_context_menu(float x, float y) {
         { CROFT_EDITOR_MENU_SAVE, "Save", 1u, 0u },
         { CROFT_EDITOR_MENU_SAVE_AS, "Save As...", 1u, 0u },
         { 0, NULL, 0u, 1u },
-        { CROFT_EDITOR_MENU_UNDO, "Undo", 1u, 0u },
-        { CROFT_EDITOR_MENU_REDO, "Redo", 1u, 0u },
+        { CROFT_EDITOR_MENU_UNDO, "Undo", croft_editor_document_can_undo(g_document) ? 1u : 0u, 0u },
+        { CROFT_EDITOR_MENU_REDO, "Redo", croft_editor_document_can_redo(g_document) ? 1u : 0u, 0u },
         { 0, NULL, 0u, 1u },
-        { CROFT_EDITOR_MENU_CUT, "Cut", 1u, 0u },
-        { CROFT_EDITOR_MENU_COPY, "Copy", 1u, 0u },
+        { CROFT_EDITOR_MENU_CUT, "Cut", editor_has_selection() ? 1u : 0u, 0u },
+        { CROFT_EDITOR_MENU_COPY, "Copy", editor_has_selection() ? 1u : 0u, 0u },
         { CROFT_EDITOR_MENU_PASTE, "Paste", 1u, 0u },
         { CROFT_EDITOR_MENU_SELECT_ALL, "Select All", 1u, 0u },
         { 0, NULL, 0u, 1u },
@@ -211,13 +280,23 @@ static void show_editor_context_menu(float x, float y) {
         { CROFT_EDITOR_MENU_FOLD, "Fold Region", 1u, 0u },
         { CROFT_EDITOR_MENU_UNFOLD, "Unfold Region", 1u, 0u }
     };
-    if (host_popup_menu_show(items,
-                             (uint32_t)(sizeof(items) / sizeof(items[0])),
-                             x,
-                             y,
-                             &action_id) == HOST_POPUP_MENU_RESULT_OK
-            && !editor_apply_menu_action(action_id)) {
-        g_running = 0;
+    switch (host_popup_menu_show(items,
+                                 (uint32_t)(sizeof(items) / sizeof(items[0])),
+                                 x,
+                                 y,
+                                 &action_id)) {
+        case HOST_POPUP_MENU_RESULT_OK:
+            (void)editor_apply_menu_action(action_id);
+            break;
+        case HOST_POPUP_MENU_RESULT_UNAVAILABLE:
+            log_recoverable_action_message("context menu", "popup menu unavailable");
+            break;
+        case HOST_POPUP_MENU_RESULT_INTERNAL:
+            log_recoverable_action_message("context menu", "popup menu internal failure");
+            break;
+        case HOST_POPUP_MENU_RESULT_EMPTY:
+        default:
+            break;
     }
     if (action_id != 0) {
         request_redraw();
@@ -360,13 +439,13 @@ static void on_ui_event(int32_t type, int32_t arg0, int32_t arg1) {
         if (arg1 == 1 && (modifiers & (CROFT_UI_MOD_SUPER | CROFT_UI_MOD_CONTROL)) != 0u) {
             if (arg0 == 79) {
                 if (!open_document_via_dialog()) {
-                    g_running = 0;
+                    log_recoverable_action_message("open", "document open failed");
                 }
                 return;
             }
             if (arg0 == 83) {
                 if (!save_document_via_dialog((modifiers & CROFT_UI_MOD_SHIFT) != 0u)) {
-                    g_running = 0;
+                    log_recoverable_action_message("save", "document save failed");
                 }
                 return;
             }

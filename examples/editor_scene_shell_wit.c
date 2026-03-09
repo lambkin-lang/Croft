@@ -39,6 +39,12 @@ typedef struct render_frame_profile {
     uint64_t present_total_usec;
 } render_frame_profile;
 
+typedef enum editor_action_result {
+    EDITOR_ACTION_NOOP = 0,
+    EDITOR_ACTION_APPLIED = 1,
+    EDITOR_ACTION_RECOVERABLE_ERROR = 2
+} editor_action_result;
+
 static int editor_input_expect_status_ok(const SapWitHostEditorInputReply* reply);
 static int popup_expect_status_ok(const SapWitHostPopupMenuReply* reply);
 static int popup_expect_action(const SapWitHostPopupMenuReply* reply, int32_t* action_id_out);
@@ -83,6 +89,24 @@ static void print_font_probe_summary(const char* variant,
 static void request_redraw(void)
 {
     croft_editor_scene_runtime_request_redraw(&g_runtime);
+}
+
+static void log_recoverable_action_message(const char* action, const char* detail)
+{
+    fprintf(stderr,
+            "example_editor_text_metal_native: recoverable %s issue%s%s\n",
+            action ? action : "action",
+            detail ? " (" : "",
+            detail ? detail : "");
+    if (detail) {
+        fputc(')', stderr);
+    }
+    fputc('\n', stderr);
+}
+
+static uint8_t editor_has_selection(void)
+{
+    return g_editor.sel_start != g_editor.sel_end;
 }
 
 static void bind_document_to_editor(croft_editor_document* document)
@@ -146,28 +170,36 @@ static int save_document_via_dialog(int force_save_as)
     return 1;
 }
 
-static int dispatch_editor_menu_action(croft_wit_host_editor_input_runtime* editor_input_runtime,
-                                       int32_t action_id)
+static editor_action_result dispatch_editor_menu_action(
+    croft_wit_host_editor_input_runtime* editor_input_runtime,
+    int32_t action_id)
 {
     SapWitHostEditorInputCommand input_command = {0};
     SapWitHostEditorInputReply input_reply = {0};
 
     if (action_id == CROFT_EDITOR_MENU_OPEN) {
-        return open_document_via_dialog();
+        return open_document_via_dialog() ? EDITOR_ACTION_APPLIED : EDITOR_ACTION_RECOVERABLE_ERROR;
+    }
+    if (action_id == CROFT_EDITOR_MENU_SAVE) {
+        return save_document_via_dialog(0) ? EDITOR_ACTION_APPLIED : EDITOR_ACTION_RECOVERABLE_ERROR;
     }
     if (action_id == CROFT_EDITOR_MENU_SAVE_AS) {
-        return save_document_via_dialog(1);
+        return save_document_via_dialog(1) ? EDITOR_ACTION_APPLIED : EDITOR_ACTION_RECOVERABLE_ERROR;
     }
     if (action_id == CROFT_EDITOR_MENU_FIND) {
         text_editor_node_find_activate(&g_editor);
         request_redraw();
-        return 1;
+        return EDITOR_ACTION_APPLIED;
     }
     if (action_id == CROFT_EDITOR_MENU_FIND_NEXT) {
-        return text_editor_node_find_next(&g_editor) == 0;
+        return text_editor_node_find_next(&g_editor) == 0
+            ? EDITOR_ACTION_APPLIED
+            : EDITOR_ACTION_NOOP;
     }
     if (action_id == CROFT_EDITOR_MENU_FIND_PREVIOUS) {
-        return text_editor_node_find_previous(&g_editor) == 0;
+        return text_editor_node_find_previous(&g_editor) == 0
+            ? EDITOR_ACTION_APPLIED
+            : EDITOR_ACTION_NOOP;
     }
 
     input_command.case_tag = SAP_WIT_HOST_EDITOR_INPUT_COMMAND_MENU_ACTION;
@@ -176,9 +208,10 @@ static int dispatch_editor_menu_action(croft_wit_host_editor_input_runtime* edit
                                                      &input_command,
                                                      &input_reply) != 0
             || !editor_input_expect_status_ok(&input_reply)) {
-        return 0;
+        log_recoverable_action_message("menu action", "editor input bridge failed");
+        return EDITOR_ACTION_RECOVERABLE_ERROR;
     }
-    return 1;
+    return EDITOR_ACTION_APPLIED;
 }
 
 static int popup_add_item(croft_wit_host_popup_menu_runtime* runtime,
@@ -200,10 +233,10 @@ static int popup_add_item(croft_wit_host_popup_menu_runtime* runtime,
         && popup_expect_status_ok(reply);
 }
 
-static int show_editor_context_menu(croft_wit_host_popup_menu_runtime* popup_runtime,
-                                    croft_wit_host_editor_input_runtime* editor_input_runtime,
-                                    float x,
-                                    float y)
+static void show_editor_context_menu(croft_wit_host_popup_menu_runtime* popup_runtime,
+                                     croft_wit_host_editor_input_runtime* editor_input_runtime,
+                                     float x,
+                                     float y)
 {
     SapWitHostPopupMenuCommand command = {0};
     SapWitHostPopupMenuReply reply = {0};
@@ -213,18 +246,23 @@ static int show_editor_context_menu(croft_wit_host_popup_menu_runtime* popup_run
     command.case_tag = SAP_WIT_HOST_POPUP_MENU_COMMAND_BEGIN_POPUP;
     if (croft_wit_host_popup_menu_runtime_dispatch(popup_runtime, &command, &reply) != 0
             || !popup_expect_status_ok(&reply)) {
-        return 0;
+        log_recoverable_action_message("context menu", "popup menu bridge failed");
+        return;
     }
 
     if (!popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_OPEN, "Open...", 1u, 0u)
             || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_SAVE, "Save", 1u, 0u)
             || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_SAVE_AS, "Save As...", 1u, 0u)
             || !popup_add_item(popup_runtime, &reply, 0, NULL, 0u, 1u)
-            || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_UNDO, "Undo", 1u, 0u)
-            || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_REDO, "Redo", 1u, 0u)
+            || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_UNDO, "Undo",
+                               croft_editor_document_can_undo(g_document) ? 1u : 0u, 0u)
+            || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_REDO, "Redo",
+                               croft_editor_document_can_redo(g_document) ? 1u : 0u, 0u)
             || !popup_add_item(popup_runtime, &reply, 0, NULL, 0u, 1u)
-            || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_CUT, "Cut", 1u, 0u)
-            || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_COPY, "Copy", 1u, 0u)
+            || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_CUT, "Cut",
+                               editor_has_selection() ? 1u : 0u, 0u)
+            || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_COPY, "Copy",
+                               editor_has_selection() ? 1u : 0u, 0u)
             || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_PASTE, "Paste", 1u, 0u)
             || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_SELECT_ALL, "Select All", 1u, 0u)
             || !popup_add_item(popup_runtime, &reply, 0, NULL, 0u, 1u)
@@ -236,31 +274,31 @@ static int show_editor_context_menu(croft_wit_host_popup_menu_runtime* popup_run
             || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_OUTDENT, "Outdent Line", 1u, 0u)
             || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_FOLD, "Fold Region", 1u, 0u)
             || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_UNFOLD, "Unfold Region", 1u, 0u)) {
-        return 0;
+        log_recoverable_action_message("context menu", "popup menu item build failed");
+        return;
     }
 
     command.case_tag = SAP_WIT_HOST_POPUP_MENU_COMMAND_SHOW_AT;
     command.val.show_at.x_milli = (int32_t)(x * 1000.0f);
     command.val.show_at.y_milli = (int32_t)(y * 1000.0f);
     if (croft_wit_host_popup_menu_runtime_dispatch(popup_runtime, &command, &reply) != 0) {
-        return 0;
+        log_recoverable_action_message("context menu", "popup menu show failed");
+        return;
     }
 
     status = popup_expect_action(&reply, &action_id);
     if (status < 0) {
-        return 0;
+        log_recoverable_action_message("context menu", "popup menu reply invalid");
+        return;
     }
     if (status == 0) {
-        return 1;
+        return;
     }
-    if (!dispatch_editor_menu_action(editor_input_runtime, action_id)) {
-        return 0;
-    }
+    (void)dispatch_editor_menu_action(editor_input_runtime, action_id);
 
     if (action_id != 0) {
         request_redraw();
     }
-    return 1;
 }
 
 static void print_frame_profile_summary(const char* variant, const render_frame_profile* profile)
@@ -641,11 +679,11 @@ static int editor_install_menu(croft_wit_host_menu_runtime* runtime)
     return apply_menu_command(runtime, &command, &reply);
 }
 
-static int editor_apply_action(croft_wit_host_clipboard_runtime* clipboard_runtime,
-                               const SapWitHostEditorInputEditorAction* action)
+static editor_action_result editor_apply_action(croft_wit_host_clipboard_runtime* clipboard_runtime,
+                                                const SapWitHostEditorInputEditorAction* action)
 {
     if (!action) {
-        return 0;
+        return EDITOR_ACTION_RECOVERABLE_ERROR;
     }
 
     switch (action->case_tag) {
@@ -659,7 +697,7 @@ static int editor_apply_action(croft_wit_host_clipboard_runtime* clipboard_runti
                     : ((action->val.move_left.flags & SAP_WIT_HOST_EDITOR_INPUT_MOTION_FLAGS_WORD)
                         ? CROFT_UI_MOD_CONTROL : 0u);
             g_editor.base.vtbl->on_key_event(&g_editor.base, 263, 1);
-            return 1;
+            return EDITOR_ACTION_APPLIED;
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_MOVE_RIGHT:
             text_editor_node_set_modifiers(&g_editor,
                 (action->val.move_right.flags & SAP_WIT_HOST_EDITOR_INPUT_MOTION_FLAGS_SELECTING)
@@ -670,31 +708,31 @@ static int editor_apply_action(croft_wit_host_clipboard_runtime* clipboard_runti
                     : ((action->val.move_right.flags & SAP_WIT_HOST_EDITOR_INPUT_MOTION_FLAGS_WORD)
                         ? CROFT_UI_MOD_CONTROL : 0u);
             g_editor.base.vtbl->on_key_event(&g_editor.base, 262, 1);
-            return 1;
+            return EDITOR_ACTION_APPLIED;
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_MOVE_UP:
             text_editor_node_set_modifiers(&g_editor,
                 (action->val.move_up.flags & SAP_WIT_HOST_EDITOR_INPUT_MOTION_FLAGS_SELECTING)
                     ? CROFT_UI_MOD_SHIFT : 0u);
             g_editor.base.vtbl->on_key_event(&g_editor.base, 265, 1);
-            return 1;
+            return EDITOR_ACTION_APPLIED;
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_MOVE_DOWN:
             text_editor_node_set_modifiers(&g_editor,
                 (action->val.move_down.flags & SAP_WIT_HOST_EDITOR_INPUT_MOTION_FLAGS_SELECTING)
                     ? CROFT_UI_MOD_SHIFT : 0u);
             g_editor.base.vtbl->on_key_event(&g_editor.base, 264, 1);
-            return 1;
+            return EDITOR_ACTION_APPLIED;
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_MOVE_HOME:
             text_editor_node_set_modifiers(&g_editor,
                 (action->val.move_home.flags & SAP_WIT_HOST_EDITOR_INPUT_MOTION_FLAGS_SELECTING)
                     ? CROFT_UI_MOD_SHIFT : 0u);
             g_editor.base.vtbl->on_key_event(&g_editor.base, 268, 1);
-            return 1;
+            return EDITOR_ACTION_APPLIED;
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_MOVE_END:
             text_editor_node_set_modifiers(&g_editor,
                 (action->val.move_end.flags & SAP_WIT_HOST_EDITOR_INPUT_MOTION_FLAGS_SELECTING)
                     ? CROFT_UI_MOD_SHIFT : 0u);
             g_editor.base.vtbl->on_key_event(&g_editor.base, 269, 1);
-            return 1;
+            return EDITOR_ACTION_APPLIED;
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_DELETE_LEFT:
             text_editor_node_set_modifiers(&g_editor,
                 (action->val.delete_left.flags & SAP_WIT_HOST_EDITOR_INPUT_DELETE_FLAGS_WORD_PART)
@@ -702,7 +740,7 @@ static int editor_apply_action(croft_wit_host_clipboard_runtime* clipboard_runti
                     : ((action->val.delete_left.flags & SAP_WIT_HOST_EDITOR_INPUT_DELETE_FLAGS_WORD)
                         ? CROFT_UI_MOD_CONTROL : 0u));
             g_editor.base.vtbl->on_key_event(&g_editor.base, 259, 1);
-            return 1;
+            return EDITOR_ACTION_APPLIED;
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_DELETE_RIGHT:
             text_editor_node_set_modifiers(&g_editor,
                 (action->val.delete_right.flags & SAP_WIT_HOST_EDITOR_INPUT_DELETE_FLAGS_WORD_PART)
@@ -710,25 +748,55 @@ static int editor_apply_action(croft_wit_host_clipboard_runtime* clipboard_runti
                     : ((action->val.delete_right.flags & SAP_WIT_HOST_EDITOR_INPUT_DELETE_FLAGS_WORD)
                         ? CROFT_UI_MOD_CONTROL : 0u));
             g_editor.base.vtbl->on_key_event(&g_editor.base, 261, 1);
-            return 1;
+            return EDITOR_ACTION_APPLIED;
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_INDENT:
-            return text_editor_node_indent(&g_editor) == 0;
+            if (text_editor_node_indent(&g_editor) != 0) {
+                log_recoverable_action_message("indent", "editor command failed");
+                return EDITOR_ACTION_RECOVERABLE_ERROR;
+            }
+            return EDITOR_ACTION_APPLIED;
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_OUTDENT:
-            return text_editor_node_outdent(&g_editor) == 0;
+            if (text_editor_node_outdent(&g_editor) != 0) {
+                log_recoverable_action_message("outdent", "editor command failed");
+                return EDITOR_ACTION_RECOVERABLE_ERROR;
+            }
+            return EDITOR_ACTION_APPLIED;
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_FOLD:
-            return text_editor_node_fold(&g_editor) == 0;
+            if (text_editor_node_fold(&g_editor) != 0) {
+                log_recoverable_action_message("fold", "editor command failed");
+                return EDITOR_ACTION_RECOVERABLE_ERROR;
+            }
+            return EDITOR_ACTION_APPLIED;
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_UNFOLD:
-            return text_editor_node_unfold(&g_editor) == 0;
+            if (text_editor_node_unfold(&g_editor) != 0) {
+                log_recoverable_action_message("unfold", "editor command failed");
+                return EDITOR_ACTION_RECOVERABLE_ERROR;
+            }
+            return EDITOR_ACTION_APPLIED;
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_INSERT_CODEPOINT:
             g_editor.base.vtbl->on_char_event(&g_editor.base, action->val.insert_codepoint);
-            return 1;
+            return EDITOR_ACTION_APPLIED;
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_UNDO:
-            return text_editor_node_undo(&g_editor) == 0;
+            if (!croft_editor_document_can_undo(g_document)) {
+                return EDITOR_ACTION_NOOP;
+            }
+            if (text_editor_node_undo(&g_editor) != 0) {
+                log_recoverable_action_message("undo", "editor command failed");
+                return EDITOR_ACTION_RECOVERABLE_ERROR;
+            }
+            return EDITOR_ACTION_APPLIED;
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_REDO:
-            return text_editor_node_redo(&g_editor) == 0;
+            if (!croft_editor_document_can_redo(g_document)) {
+                return EDITOR_ACTION_NOOP;
+            }
+            if (text_editor_node_redo(&g_editor) != 0) {
+                log_recoverable_action_message("redo", "editor command failed");
+                return EDITOR_ACTION_RECOVERABLE_ERROR;
+            }
+            return EDITOR_ACTION_APPLIED;
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_SELECT_ALL:
             text_editor_node_select_all(&g_editor);
-            return 1;
+            return EDITOR_ACTION_APPLIED;
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_COPY:
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_CUT: {
             char* utf8 = NULL;
@@ -737,7 +805,8 @@ static int editor_apply_action(croft_wit_host_clipboard_runtime* clipboard_runti
             SapWitHostClipboardReply reply = {0};
 
             if (text_editor_node_copy_selection_utf8(&g_editor, &utf8, &utf8_len) != 0) {
-                return 0;
+                log_recoverable_action_message("clipboard", "selection export failed");
+                return EDITOR_ACTION_RECOVERABLE_ERROR;
             }
             command.case_tag = SAP_WIT_HOST_CLIPBOARD_COMMAND_SET_TEXT;
             command.val.set_text.utf8_data = (const uint8_t*)utf8;
@@ -746,16 +815,21 @@ static int editor_apply_action(croft_wit_host_clipboard_runtime* clipboard_runti
                     || !clipboard_expect_status_ok(&reply)) {
                 free(utf8);
                 croft_wit_host_clipboard_reply_dispose(&reply);
-                return 0;
+                log_recoverable_action_message("clipboard", "set text failed");
+                return EDITOR_ACTION_RECOVERABLE_ERROR;
             }
             croft_wit_host_clipboard_reply_dispose(&reply);
             if (action->case_tag == SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_CUT) {
                 int ok = text_editor_node_delete_selection(&g_editor, 1) == 0;
                 free(utf8);
-                return ok;
+                if (!ok) {
+                    log_recoverable_action_message("cut", "delete failed");
+                    return EDITOR_ACTION_RECOVERABLE_ERROR;
+                }
+                return EDITOR_ACTION_APPLIED;
             }
             free(utf8);
-            return 1;
+            return EDITOR_ACTION_APPLIED;
         }
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_PASTE: {
             SapWitHostClipboardCommand command = {0};
@@ -766,24 +840,34 @@ static int editor_apply_action(croft_wit_host_clipboard_runtime* clipboard_runti
 
             command.case_tag = SAP_WIT_HOST_CLIPBOARD_COMMAND_GET_TEXT;
             if (croft_wit_host_clipboard_runtime_dispatch(clipboard_runtime, &command, &reply) != 0) {
-                return 0;
+                log_recoverable_action_message("paste", "clipboard get failed");
+                return EDITOR_ACTION_RECOVERABLE_ERROR;
             }
             result = clipboard_expect_text(&reply, &data, &len);
             if (result <= 0) {
                 croft_wit_host_clipboard_reply_dispose(&reply);
-                return result == 0 ? 1 : 0;
+                if (result < 0) {
+                    log_recoverable_action_message("paste", "clipboard text unavailable");
+                    return EDITOR_ACTION_RECOVERABLE_ERROR;
+                }
+                return EDITOR_ACTION_NOOP;
             }
             result = text_editor_node_replace_selection_utf8(&g_editor, data, len) == 0;
             croft_wit_host_clipboard_reply_dispose(&reply);
-            return result;
+            if (!result) {
+                log_recoverable_action_message("paste", "insert failed");
+                return EDITOR_ACTION_RECOVERABLE_ERROR;
+            }
+            return EDITOR_ACTION_APPLIED;
         }
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_SAVE:
-            return croft_editor_document_save(g_document) == 0;
+            return save_document_via_dialog(0) ? EDITOR_ACTION_APPLIED : EDITOR_ACTION_RECOVERABLE_ERROR;
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_QUIT:
             g_running = 0;
-            return 1;
+            return EDITOR_ACTION_APPLIED;
         default:
-            return 0;
+            log_recoverable_action_message("editor action", "unsupported action");
+            return EDITOR_ACTION_RECOVERABLE_ERROR;
     }
 }
 
@@ -837,17 +921,26 @@ static int pump_editor_actions(croft_wit_host_editor_input_runtime* editor_input
 
     for (;;) {
         SapWitHostEditorInputEditorAction action = {0};
+        editor_action_result action_result;
         int status;
 
         input_command.case_tag = SAP_WIT_HOST_EDITOR_INPUT_COMMAND_NEXT_ACTION;
         if (croft_wit_host_editor_input_runtime_dispatch(editor_input_runtime,
                                                          &input_command,
                                                          &input_reply) != 0) {
-            return 0;
+            log_recoverable_action_message("editor action queue", "next-action dispatch failed");
+            if (out_did_action) {
+                *out_did_action = did_action;
+            }
+            return 1;
         }
         status = editor_input_expect_action(&input_reply, &action);
         if (status < 0) {
-            return 0;
+            log_recoverable_action_message("editor action queue", "next-action reply invalid");
+            if (out_did_action) {
+                *out_did_action = did_action;
+            }
+            return 1;
         }
         if (status == 0) {
             if (out_did_action) {
@@ -855,10 +948,10 @@ static int pump_editor_actions(croft_wit_host_editor_input_runtime* editor_input
             }
             return 1;
         }
-        if (!editor_apply_action(clipboard_runtime, &action)) {
-            return 0;
+        action_result = editor_apply_action(clipboard_runtime, &action);
+        if (action_result == EDITOR_ACTION_APPLIED) {
+            did_action = 1;
         }
-        did_action = 1;
     }
 }
 
@@ -1025,7 +1118,8 @@ int main(int argc, char** argv)
                                                                      &input_command,
                                                                      &input_reply) != 0
                             || !editor_input_expect_status_ok(&input_reply)) {
-                        goto cleanup;
+                        log_recoverable_action_message("key event", "editor input bridge failed");
+                        break;
                     }
                     if (event.val.key.key == 256 && event.val.key.action == 1
                             && !text_editor_node_is_find_active(&g_editor)) {
@@ -1046,7 +1140,8 @@ int main(int argc, char** argv)
                                                                      &input_command,
                                                                      &input_reply) != 0
                             || !editor_input_expect_status_ok(&input_reply)) {
-                        goto cleanup;
+                        log_recoverable_action_message("char event", "editor input bridge failed");
+                        break;
                     }
                     request_redraw();
                     break;
@@ -1080,12 +1175,10 @@ int main(int argc, char** argv)
                         hit_result hit;
                         scene_node_hit_test_tree(&g_root_vp.base, (float)g_mouse_x, (float)g_mouse_y, &hit);
                         if (hit.node == &g_editor.base) {
-                            if (!show_editor_context_menu(popup_menu_runtime,
-                                                          editor_input_runtime,
-                                                          (float)g_mouse_x,
-                                                          (float)g_mouse_y)) {
-                                g_running = 0;
-                            }
+                            show_editor_context_menu(popup_menu_runtime,
+                                                     editor_input_runtime,
+                                                     (float)g_mouse_x,
+                                                     (float)g_mouse_y);
                             break;
                         }
                     }
@@ -1114,24 +1207,27 @@ int main(int argc, char** argv)
             SapWitHostMenuCommand menu_command = {0};
             SapWitHostMenuReply menu_reply = {0};
             int32_t action_id = 0;
+            editor_action_result action_result;
             int status;
 
             menu_command.case_tag = SAP_WIT_HOST_MENU_COMMAND_NEXT_ACTION;
             if (croft_wit_host_menu_runtime_dispatch(menu_runtime, &menu_command, &menu_reply) != 0) {
-                goto cleanup;
+                log_recoverable_action_message("menu action queue", "next-action dispatch failed");
+                break;
             }
             status = menu_expect_action(&menu_reply, &action_id);
             if (status < 0) {
-                goto cleanup;
+                log_recoverable_action_message("menu action queue", "next-action reply invalid");
+                break;
             }
             if (status == 0) {
                 break;
             }
 
-            if (!dispatch_editor_menu_action(editor_input_runtime, action_id)) {
-                goto cleanup;
+            action_result = dispatch_editor_menu_action(editor_input_runtime, action_id);
+            if (action_result == EDITOR_ACTION_APPLIED) {
+                request_redraw();
             }
-            request_redraw();
         }
 
         {
