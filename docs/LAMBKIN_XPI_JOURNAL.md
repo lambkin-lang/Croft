@@ -5,6 +5,32 @@ its aspect libraries are still co-evolving. These notes are not intended to
 freeze the design; they are meant to preserve the useful pressure points,
 surprises, and open questions that surfaced while forcing the ideas into code.
 
+## March 9, 2026: Broad Sweeps Beat Local Fixes At The WIT Boundary
+
+Two recent cleanup passes reinforced the same process lesson:
+
+- the `result` / `option` WIT schema modernization reached farther into the
+  example matrix than the first call-site pass,
+- and the recoverable-action cleanup that started in the scene editors also
+  belonged in the smaller WIT textpad shell.
+
+The useful conclusion is not "be more careful." It is more structural:
+
+- generated-interface changes should be treated as repo-wide refactors, not as
+  one-runtime edits,
+- editor interaction fixes should be audited across the whole editor family,
+  not just the flagship shell that first exposed the bug,
+- and the example matrix needs to be part of the normal validation loop rather
+  than an optional afterthought.
+
+That now means:
+
+- WIT/schema/codegen changes should sweep `src/runtime`, `examples`, and
+  `tests` in one pass,
+- `croft_examples` should be built explicitly,
+- and the key example binaries should be smoke-run through
+  `make test-examples`, not left outside the routine test path.
+
 ## March 9, 2026: Popup Menus Became Their Own Host Mix-In
 
 The earlier popup-menu pass was enough to prove that native context menus were
@@ -30,22 +56,18 @@ This follow-up made that difference explicit in code:
   than "all menus": a popup mix-in can be shared without pretending it is just
   another branch of the menu-bar update stream.
 
-### New Pressure Point
+### Pressure Point Closed
 
-The editor scene shells still treat many action-dispatch failures as fatal to
-the whole sample. That made sense while these were tight model programs, but
-it is too coarse for editor behavior:
+The earlier "fatal on action failure" issue was real, and the follow-up now
+clarified its real scope: it was not only a scene-shell problem. Recoverable
+host-service failures belong in a broader editor-family audit, including the
+smaller WIT textpad shell, because editor-like samples should not collapse the
+whole loop for:
 
 - a failed popup dispatch,
-- a failed open/save action,
-- or another recoverable host-service failure
-
-should not necessarily collapse the whole application loop.
-
-That distinction is now more visible because popup menus are no longer just a
-direct native call. Once a host capability is modeled as its own mix-in, it is
-harder to justify conflating "that host action failed" with "the shell itself
-must terminate."
+- a failed clipboard action,
+- a failed open/save path,
+- or another recoverable host-service failure.
 
 ## March 6, 2026: Current Assessment After The First Real World Family Pass
 

@@ -370,17 +370,23 @@ Current implemented editor baseline:
 - bracket matching
 - whitespace markers and indent guides
 - folding
+- syntax highlighting for JavaScript/TypeScript, JSON, YAML, Markdown, Python,
+  Lambkin, WIT/WAT, CSS, HTML, and XML
+- file open/save/save-as plus native context menus in the AppKit and scene
+  editor families
+- recoverable action handling in the scene editor shells and the WIT-facing
+  textpad/editor loops
 
 The next editor capabilities should focus on the hard, high-value portions of a
 VS Code-like document editor that do not require the extension/LSP ecosystem:
 
-1. syntax highlighting and tokenization for JavaScript/TypeScript, JSON, YAML,
-   Markdown, Python, and Lambkin
-2. an incremental line-state/token cache so highlighting and folding do not
+1. an incremental line-state/token cache so highlighting and folding do not
    devolve into full-buffer rescans
-3. replace and replace-all with honest undo/coalescing semantics
-4. wrapped-line layout, viewport mapping, and caret/selection geometry that
+2. replace and replace-all with honest undo/coalescing semantics
+3. wrapped-line layout, viewport mapping, and caret/selection geometry that
    stay correct under proportional host metrics and custom-rendered metrics
+4. line-height, baseline, and inset policy that make the direct-Metal editor
+   converge more honestly toward AppKit where that is appropriate
 5. IME/composition, selection affinity, and text-input correctness for the
    custom-rendered editor families
 6. decoration plumbing for diagnostics, search results, active ranges, and
@@ -453,19 +459,21 @@ The next implementation passes should stay focused on the editor and
 host-boundary pressure points instead of broadening the system indiscriminately.
 
 1. Keep the document-editor line separate from the spatial-workspace line and
-   remove shell-level zoom ownership from the editor roadmap.
-2. Build the editor's syntax-highlighting pipeline around the first target
-   language set: JavaScript/TypeScript, JSON, YAML, Markdown, Python, and
-   Lambkin.
+   keep zoom/camera behavior out of the editor roadmap.
+2. Keep WIT/codegen refactors broad: schema-shape changes should sweep
+   `src/runtime`, `examples`, and `tests`, then build and smoke-check the
+   example matrix instead of stopping at the first green target.
 3. Tighten the direct-Metal editor around text metrics, wrapped layout,
    IME/composition, and accessibility so the hard native-editor seams become
    explicit instead of hiding inside one renderer-centric module.
-4. Keep AppKit as the CPU-native contrast case and tgfx as the scene-rendered
+4. Add the incremental token/line-state cache plus replace/replace-all on top
+   of the current highlighting/search work.
+5. Keep AppKit as the CPU-native contrast case and tgfx as the scene-rendered
    comparison control while favoring direct Metal for the custom-rendered editor
    line.
-5. Refine `tools/wit_codegen.c` around remaining exact-tail helper naming and
+6. Refine `tools/wit_codegen.c` around remaining exact-tail helper naming and
    how much rename metadata Lambkin should consume directly.
-6. Extend the "same logic, different world" proof style with more paired
+7. Extend the "same logic, different world" proof style with more paired
    samples rather than isolated demos.
 
 ## Long-Term Direction
@@ -505,24 +513,22 @@ implementation tasks:
 
 The next concrete implementation work should happen in this order:
 
-1. Remove pinch-to-zoom and other viewport-zoom ownership from the scene editor
-   shells so the editor line stops advertising camera behavior as an editor
-   feature.
-2. Build the first syntax-highlighting/tokenization slice for
-   JavaScript/TypeScript, JSON, YAML, Markdown, Python, and Lambkin.
-3. Add the incremental token/line-state cache that the first highlighting pass
-   will need to stay responsive.
-4. Add replace and replace-all on top of the current search path with honest
+1. Add the incremental token/line-state cache that the current highlighting pass
+   needs to stay responsive as documents grow.
+2. Add replace and replace-all on top of the current search path with honest
    undo/coalescing behavior across the editor families.
-5. Push direct-Metal editor work into wrapped-line layout, caret geometry, IME,
+3. Push direct-Metal editor work into wrapped-line layout, caret geometry,
+   line-height/baseline policy, IME,
    and accessibility seams rather than more shell-level chrome.
-6. Keep AppKit and tgfx alive as contrast cases while treating the native
+4. Keep AppKit and tgfx alive as contrast cases while treating the native
    direct-Metal editor as the main custom-rendered reference path.
-7. Refine `tools/wit_codegen.c` further around remaining exact-tail helpers
+5. Keep `make test-examples` and the example smoke path honest whenever WIT
+   schemas, codegen, or host mix-in signatures change.
+6. Refine `tools/wit_codegen.c` further around remaining exact-tail helpers
    and how rename/trace manifests should feed Lambkin.
-8. Read `docs/LAMBKIN_XPI_JOURNAL.md` before expanding host/editor surface area
+7. Read `docs/LAMBKIN_XPI_JOURNAL.md` before expanding host/editor surface area
    so the current join-point questions remain explicit.
-9. Use `docs/SPATIAL_WORKSPACE_QUESTIONS.md` to define the workspace vision
+8. Use `docs/SPATIAL_WORKSPACE_QUESTIONS.md` to define the workspace vision
    before adding more zoom/canvas implementation work.
 
 ## Resume Checklist For Future Sessions

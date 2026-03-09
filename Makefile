@@ -1,4 +1,4 @@
-.PHONY: clean configure all test test-core test-threaded test-runner test-wasi benchmark
+.PHONY: clean configure all test test-core test-threaded test-runner test-wasi test-examples benchmark
 
 BUILD_DIR := build
 DEPS_CACHE := local_deps/croft-deps.cmake
@@ -20,6 +20,10 @@ all: configure
 
 test: all
 	ctest --test-dir $(BUILD_DIR) --output-on-failure
+	$(MAKE) test-examples
+
+test-examples: configure
+	bash ./tools/validate_examples.sh --build-dir $(BUILD_DIR)
 
 test-core: all
 	ctest --test-dir $(BUILD_DIR) -L sapling-core --output-on-failure

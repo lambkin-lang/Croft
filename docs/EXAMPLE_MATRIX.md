@@ -15,6 +15,12 @@ They are built as a group with:
 cmake --build build --target croft_examples
 ```
 
+The regular validation path for the current example matrix is:
+
+```bash
+make test-examples
+```
+
 ## Current Ladder
 
 ### Common-Core and WIT Ladder
@@ -158,6 +164,9 @@ Notes:
 - Examples are `EXCLUDE_FROM_ALL`. They exist to model subsystem selections and
   to support smoke tests and size benchmarking without forcing every default
   build to link the demo binaries.
+- WIT/schema/codegen refactors should treat the example matrix as part of the
+  normal blast radius: build `croft_examples` and run the example smoke pass,
+  not just the unit-test binaries.
 - The document-centric editor family is intentionally near the top of the
   ladder. It is the current convergence point for UI, rendering, filesystem
   access, host-control seams, and Sapling text, but zoom/camera behavior now

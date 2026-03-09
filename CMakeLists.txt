@@ -1078,6 +1078,7 @@ if(CROFT_GLFW_TARGET)
     target_link_libraries(croft_ui_glfw_opengl PUBLIC croft_host_log ${CROFT_GLFW_TARGET})
     if(APPLE)
         target_compile_definitions(croft_ui_glfw_opengl PRIVATE GL_SILENCE_DEPRECATION)
+        target_link_libraries(croft_ui_glfw_opengl PUBLIC "-framework OpenGL")
     endif()
     croft_register_artifact(croft_ui_glfw_opengl ui
         TAGS tier5 ui glfw opengl

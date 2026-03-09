@@ -25,6 +25,21 @@ typedef struct textpad_state {
     int running;
 } textpad_state;
 
+typedef enum textpad_action_result {
+    TEXTPAD_ACTION_APPLIED = 0,
+    TEXTPAD_ACTION_NOOP = 1,
+    TEXTPAD_ACTION_RECOVERABLE_ERROR = 2
+} textpad_action_result;
+
+static void log_recoverable_action_message(const char* action, const char* detail)
+{
+    fprintf(stderr,
+            "example_wit_textpad_window: recoverable %s issue%s%s\n",
+            action ? action : "action",
+            detail ? ": " : "",
+            detail ? detail : "");
+}
+
 static uint32_t textpad_min_u32(uint32_t a, uint32_t b)
 {
     return a < b ? a : b;
@@ -708,27 +723,36 @@ static int textpad_copy_selection(textpad_state* state,
     return rc;
 }
 
-static int textpad_paste(textpad_state* state, croft_wit_host_clipboard_runtime* clipboard_runtime)
+static textpad_action_result textpad_paste(textpad_state* state,
+                                           croft_wit_host_clipboard_runtime* clipboard_runtime)
 {
     SapWitHostClipboardCommand command = {0};
     SapWitHostClipboardReply reply = {0};
     const uint8_t* data = NULL;
     uint32_t len = 0u;
     int status;
-    int rc = -1;
 
     command.case_tag = SAP_WIT_HOST_CLIPBOARD_COMMAND_GET_TEXT;
     if (croft_wit_host_clipboard_runtime_dispatch(clipboard_runtime, &command, &reply) != 0) {
-        return -1;
+        log_recoverable_action_message("paste", "clipboard get failed");
+        return TEXTPAD_ACTION_RECOVERABLE_ERROR;
     }
     status = expect_clipboard_text(&reply, &data, &len);
     if (status == 0) {
-        rc = 0;
+        croft_wit_host_clipboard_reply_dispose(&reply);
+        return TEXTPAD_ACTION_NOOP;
     } else if (status > 0) {
-        rc = textpad_replace_selection_utf8(state, data, len);
+        if (textpad_replace_selection_utf8(state, data, len) != 0) {
+            croft_wit_host_clipboard_reply_dispose(&reply);
+            log_recoverable_action_message("paste", "insert failed");
+            return TEXTPAD_ACTION_RECOVERABLE_ERROR;
+        }
+        croft_wit_host_clipboard_reply_dispose(&reply);
+        return TEXTPAD_ACTION_APPLIED;
     }
     croft_wit_host_clipboard_reply_dispose(&reply);
-    return rc;
+    log_recoverable_action_message("paste", "clipboard reply invalid");
+    return TEXTPAD_ACTION_RECOVERABLE_ERROR;
 }
 
 static int textpad_measure_text(croft_wit_host_gpu2d_runtime* gpu_runtime,
@@ -816,23 +840,24 @@ static int install_textpad_menu(croft_wit_host_menu_runtime* runtime)
     return apply_menu_command(runtime, &command, &reply);
 }
 
-static int textpad_apply_action(textpad_state* state,
-                                croft_wit_host_clipboard_runtime* clipboard_runtime,
-                                const SapWitHostEditorInputEditorAction* action)
+static textpad_action_result textpad_apply_action(textpad_state* state,
+                                                  croft_wit_host_clipboard_runtime* clipboard_runtime,
+                                                  const SapWitHostEditorInputEditorAction* action)
 {
     croft_wit_owned_bytes exported = {0};
     uint32_t selecting = 0u;
     uint32_t next = 0u;
 
     if (!state || !action) {
-        return 0;
+        return TEXTPAD_ACTION_RECOVERABLE_ERROR;
     }
 
     switch (action->case_tag) {
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_MOVE_LEFT:
             selecting = (action->val.move_left.flags & SAP_WIT_HOST_EDITOR_INPUT_MOTION_FLAGS_SELECTING) != 0u;
             if (textpad_export(state, &exported) != 0) {
-                return 0;
+                log_recoverable_action_message("move-left", "text export failed");
+                return TEXTPAD_ACTION_RECOVERABLE_ERROR;
             }
             next = textpad_prev_boundary(exported.data,
                                          exported.len,
@@ -840,11 +865,12 @@ static int textpad_apply_action(textpad_state* state,
                                          action->val.move_left.flags);
             croft_wit_owned_bytes_dispose(&exported);
             textpad_move_cursor(state, next, selecting);
-            return 1;
+            return TEXTPAD_ACTION_APPLIED;
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_MOVE_RIGHT:
             selecting = (action->val.move_right.flags & SAP_WIT_HOST_EDITOR_INPUT_MOTION_FLAGS_SELECTING) != 0u;
             if (textpad_export(state, &exported) != 0) {
-                return 0;
+                log_recoverable_action_message("move-right", "text export failed");
+                return TEXTPAD_ACTION_RECOVERABLE_ERROR;
             }
             next = textpad_next_boundary(exported.data,
                                          exported.len,
@@ -853,46 +879,69 @@ static int textpad_apply_action(textpad_state* state,
                                          action->val.move_right.flags);
             croft_wit_owned_bytes_dispose(&exported);
             textpad_move_cursor(state, next, selecting);
-            return 1;
+            return TEXTPAD_ACTION_APPLIED;
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_MOVE_HOME:
             selecting = (action->val.move_home.flags & SAP_WIT_HOST_EDITOR_INPUT_MOTION_FLAGS_SELECTING) != 0u;
             textpad_move_cursor(state, 0u, selecting);
-            return 1;
+            return TEXTPAD_ACTION_APPLIED;
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_MOVE_END:
             selecting = (action->val.move_end.flags & SAP_WIT_HOST_EDITOR_INPUT_MOTION_FLAGS_SELECTING) != 0u;
             textpad_move_cursor(state, state->char_count, selecting);
-            return 1;
+            return TEXTPAD_ACTION_APPLIED;
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_MOVE_UP:
             selecting = (action->val.move_up.flags & SAP_WIT_HOST_EDITOR_INPUT_MOTION_FLAGS_SELECTING) != 0u;
             textpad_move_cursor(state, 0u, selecting);
-            return 1;
+            return TEXTPAD_ACTION_APPLIED;
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_MOVE_DOWN:
             selecting = (action->val.move_down.flags & SAP_WIT_HOST_EDITOR_INPUT_MOTION_FLAGS_SELECTING) != 0u;
             textpad_move_cursor(state, state->char_count, selecting);
-            return 1;
+            return TEXTPAD_ACTION_APPLIED;
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_DELETE_LEFT:
             if (textpad_has_selection(state)) {
-                return textpad_delete_range(state,
-                                            textpad_min_u32(state->cursor, state->anchor),
-                                            textpad_max_u32(state->cursor, state->anchor)) == 0;
+                if (textpad_delete_range(state,
+                                         textpad_min_u32(state->cursor, state->anchor),
+                                         textpad_max_u32(state->cursor, state->anchor)) != 0) {
+                    log_recoverable_action_message("delete-left", "delete failed");
+                    return TEXTPAD_ACTION_RECOVERABLE_ERROR;
+                }
+                return TEXTPAD_ACTION_APPLIED;
+            }
+            if (state->cursor == 0u) {
+                return TEXTPAD_ACTION_NOOP;
             }
             if (textpad_export(state, &exported) != 0) {
-                return 0;
+                log_recoverable_action_message("delete-left", "text export failed");
+                return TEXTPAD_ACTION_RECOVERABLE_ERROR;
             }
             next = textpad_prev_boundary(exported.data,
                                          exported.len,
                                          state->cursor,
                                          action->val.delete_left.flags);
             croft_wit_owned_bytes_dispose(&exported);
-            return textpad_delete_range(state, next, state->cursor) == 0;
+            if (next == state->cursor) {
+                return TEXTPAD_ACTION_NOOP;
+            }
+            if (textpad_delete_range(state, next, state->cursor) != 0) {
+                log_recoverable_action_message("delete-left", "delete failed");
+                return TEXTPAD_ACTION_RECOVERABLE_ERROR;
+            }
+            return TEXTPAD_ACTION_APPLIED;
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_DELETE_RIGHT:
             if (textpad_has_selection(state)) {
-                return textpad_delete_range(state,
-                                            textpad_min_u32(state->cursor, state->anchor),
-                                            textpad_max_u32(state->cursor, state->anchor)) == 0;
+                if (textpad_delete_range(state,
+                                         textpad_min_u32(state->cursor, state->anchor),
+                                         textpad_max_u32(state->cursor, state->anchor)) != 0) {
+                    log_recoverable_action_message("delete-right", "delete failed");
+                    return TEXTPAD_ACTION_RECOVERABLE_ERROR;
+                }
+                return TEXTPAD_ACTION_APPLIED;
+            }
+            if (state->cursor >= state->char_count) {
+                return TEXTPAD_ACTION_NOOP;
             }
             if (textpad_export(state, &exported) != 0) {
-                return 0;
+                log_recoverable_action_message("delete-right", "text export failed");
+                return TEXTPAD_ACTION_RECOVERABLE_ERROR;
             }
             next = textpad_next_boundary(exported.data,
                                          exported.len,
@@ -900,37 +949,72 @@ static int textpad_apply_action(textpad_state* state,
                                          state->cursor,
                                          action->val.delete_right.flags);
             croft_wit_owned_bytes_dispose(&exported);
-            return textpad_delete_range(state, state->cursor, next) == 0;
+            if (next == state->cursor) {
+                return TEXTPAD_ACTION_NOOP;
+            }
+            if (textpad_delete_range(state, state->cursor, next) != 0) {
+                log_recoverable_action_message("delete-right", "delete failed");
+                return TEXTPAD_ACTION_RECOVERABLE_ERROR;
+            }
+            return TEXTPAD_ACTION_APPLIED;
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_INDENT:
-            return textpad_apply_indent_action(state, 0);
+            if (!textpad_apply_indent_action(state, 0)) {
+                log_recoverable_action_message("indent", "editor command failed");
+                return TEXTPAD_ACTION_RECOVERABLE_ERROR;
+            }
+            return TEXTPAD_ACTION_APPLIED;
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_OUTDENT:
-            return textpad_apply_indent_action(state, 1);
+            if (!textpad_apply_indent_action(state, 1)) {
+                log_recoverable_action_message("outdent", "editor command failed");
+                return TEXTPAD_ACTION_RECOVERABLE_ERROR;
+            }
+            return TEXTPAD_ACTION_APPLIED;
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_INSERT_CODEPOINT:
-            return textpad_insert_codepoint(state, action->val.insert_codepoint) == 0;
+            if (textpad_insert_codepoint(state, action->val.insert_codepoint) != 0) {
+                log_recoverable_action_message("insert", "insert failed");
+                return TEXTPAD_ACTION_RECOVERABLE_ERROR;
+            }
+            return TEXTPAD_ACTION_APPLIED;
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_SELECT_ALL:
             state->anchor = 0u;
             state->cursor = state->char_count;
-            return 1;
+            return TEXTPAD_ACTION_APPLIED;
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_COPY:
-            return textpad_copy_selection(state, clipboard_runtime) == 0;
-        case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_CUT:
-            if (textpad_copy_selection(state, clipboard_runtime) != 0) {
-                return 0;
+            if (!textpad_has_selection(state)) {
+                return TEXTPAD_ACTION_NOOP;
             }
-            return textpad_delete_range(state,
-                                        textpad_min_u32(state->cursor, state->anchor),
-                                        textpad_max_u32(state->cursor, state->anchor)) == 0;
+            if (textpad_copy_selection(state, clipboard_runtime) != 0) {
+                log_recoverable_action_message("copy", "clipboard unavailable");
+                return TEXTPAD_ACTION_RECOVERABLE_ERROR;
+            }
+            return TEXTPAD_ACTION_APPLIED;
+        case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_CUT:
+            if (!textpad_has_selection(state)) {
+                return TEXTPAD_ACTION_NOOP;
+            }
+            if (textpad_copy_selection(state, clipboard_runtime) != 0) {
+                log_recoverable_action_message("cut", "clipboard unavailable");
+                return TEXTPAD_ACTION_RECOVERABLE_ERROR;
+            }
+            if (textpad_delete_range(state,
+                                     textpad_min_u32(state->cursor, state->anchor),
+                                     textpad_max_u32(state->cursor, state->anchor)) != 0) {
+                log_recoverable_action_message("cut", "delete failed");
+                return TEXTPAD_ACTION_RECOVERABLE_ERROR;
+            }
+            return TEXTPAD_ACTION_APPLIED;
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_PASTE:
-            return textpad_paste(state, clipboard_runtime) == 0;
+            return textpad_paste(state, clipboard_runtime);
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_QUIT:
             state->running = 0;
-            return 1;
+            return TEXTPAD_ACTION_APPLIED;
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_UNDO:
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_REDO:
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_SAVE:
-            return 1;
+            return TEXTPAD_ACTION_NOOP;
         default:
-            return 0;
+            log_recoverable_action_message("editor action", "unsupported action");
+            return TEXTPAD_ACTION_RECOVERABLE_ERROR;
     }
 }
 
@@ -943,23 +1027,27 @@ static int textpad_pump_actions(textpad_state* state,
 
     for (;;) {
         SapWitHostEditorInputEditorAction action = {0};
+        textpad_action_result action_result;
         int status;
 
         input_command.case_tag = SAP_WIT_HOST_EDITOR_INPUT_COMMAND_NEXT_ACTION;
         if (croft_wit_host_editor_input_runtime_dispatch(editor_input_runtime,
                                                          &input_command,
                                                          &input_reply) != 0) {
-            return 0;
+            log_recoverable_action_message("editor action queue", "next-action dispatch failed");
+            return 1;
         }
         status = expect_editor_action(&input_reply, &action);
         if (status < 0) {
-            return 0;
+            log_recoverable_action_message("editor action queue", "next-action reply invalid");
+            return 1;
         }
         if (status == 0) {
             return 1;
         }
-        if (!textpad_apply_action(state, clipboard_runtime, &action)) {
-            return 0;
+        action_result = textpad_apply_action(state, clipboard_runtime, &action);
+        if (action_result == TEXTPAD_ACTION_RECOVERABLE_ERROR) {
+            continue;
         }
     }
 }
@@ -1133,7 +1221,8 @@ int main(void)
                                                                      &input_command,
                                                                      &input_reply) != 0
                             || !expect_editor_status_ok(&input_reply)) {
-                        goto cleanup;
+                        log_recoverable_action_message("key event", "editor input bridge failed");
+                        break;
                     }
                     if (event.val.key.key == 256 && event.val.key.action == 1) {
                         state.running = 0;
@@ -1149,7 +1238,8 @@ int main(void)
                                                                      &input_command,
                                                                      &input_reply) != 0
                             || !expect_editor_status_ok(&input_reply)) {
-                        goto cleanup;
+                        log_recoverable_action_message("char event", "editor input bridge failed");
+                        break;
                     }
                     break;
                 }
@@ -1168,11 +1258,13 @@ int main(void)
 
             menu_command.case_tag = SAP_WIT_HOST_MENU_COMMAND_NEXT_ACTION;
             if (croft_wit_host_menu_runtime_dispatch(menu_runtime, &menu_command, &menu_reply) != 0) {
-                goto cleanup;
+                log_recoverable_action_message("menu action queue", "next-action dispatch failed");
+                break;
             }
             status = expect_menu_action(&menu_reply, &action_id);
             if (status < 0) {
-                goto cleanup;
+                log_recoverable_action_message("menu action queue", "next-action reply invalid");
+                break;
             }
             if (status == 0) {
                 break;
@@ -1184,7 +1276,7 @@ int main(void)
                                                              &input_command,
                                                              &input_reply) != 0
                     || !expect_editor_status_ok(&input_reply)) {
-                goto cleanup;
+                log_recoverable_action_message("menu action", "editor input bridge failed");
             }
         }
 

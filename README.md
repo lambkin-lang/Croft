@@ -34,6 +34,18 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
+The top-level `Makefile` wraps the same flow and now also has first-class
+example validation:
+
+```bash
+make test
+make test-examples
+```
+
+`make test-examples` builds `croft_examples` and smoke-runs the main example
+families, including the windowed editor variants, with short auto-close
+timeouts where supported.
+
 Profile-targeted slices are available through CTest labels:
 
 ```bash
@@ -212,6 +224,12 @@ as a group:
 cmake --build build --target croft_examples
 ```
 
+The regular example-validation path is:
+
+```bash
+make test-examples
+```
+
 Representative examples include:
 
 - `example_foundation_threads`
@@ -253,9 +271,8 @@ Two current GUI product lines matter most in that ladder:
   `example_editor_text_metal_native` are document-centric editor families
 - `example_zoom_canvas` is the separate spatial/zoomable workspace probe
 
-The current scene-editor shells may still carry transitional gesture plumbing,
-but pinch-to-zoom and camera behavior should now be treated as workspace-scope
-concerns rather than as editor requirements.
+The current scene-editor shells no longer own pinch-to-zoom or camera
+behavior. Those now belong to the workspace line rather than the editor line.
 The workspace-planning questions for that separate line live in
 [`docs/SPATIAL_WORKSPACE_QUESTIONS.md`](docs/SPATIAL_WORKSPACE_QUESTIONS.md).
 
