@@ -1,7 +1,9 @@
 #include "croft/editor_document.h"
 #include "croft/editor_document_fs.h"
+#include "croft/editor_menu_ids.h"
 #include "croft/editor_scene_runtime.h"
 #include "croft/host_file_dialog.h"
+#include "croft/host_popup_menu.h"
 #include "croft/host_render.h"
 #include "croft/host_ui.h"
 #include "croft/scene.h"
@@ -106,6 +108,119 @@ static int save_document_via_dialog(int force_save_as) {
 
     request_redraw();
     return 1;
+}
+
+static int set_clipboard_from_selection(void) {
+    char* utf8 = NULL;
+    size_t utf8_len = 0u;
+    int ok;
+
+    if (text_editor_node_copy_selection_utf8(&g_editor, &utf8, &utf8_len) != 0) {
+        return 0;
+    }
+    ok = host_ui_set_clipboard_text(utf8 ? utf8 : "", utf8_len) == 0;
+    free(utf8);
+    return ok;
+}
+
+static int paste_from_clipboard(void) {
+    char* utf8 = NULL;
+    size_t utf8_len = 0u;
+    int ok;
+
+    if (host_ui_get_clipboard_text(&utf8, &utf8_len) != 0) {
+        return 0;
+    }
+    if (!utf8 || utf8_len == 0u) {
+        free(utf8);
+        return 1;
+    }
+    ok = text_editor_node_replace_selection_utf8(&g_editor, (const uint8_t*)utf8, utf8_len) == 0;
+    free(utf8);
+    return ok;
+}
+
+static int editor_apply_menu_action(int32_t action_id) {
+    switch (action_id) {
+        case CROFT_EDITOR_MENU_OPEN:
+            return open_document_via_dialog();
+        case CROFT_EDITOR_MENU_SAVE:
+            return save_document_via_dialog(0);
+        case CROFT_EDITOR_MENU_SAVE_AS:
+            return save_document_via_dialog(1);
+        case CROFT_EDITOR_MENU_QUIT:
+            g_running = 0;
+            return 1;
+        case CROFT_EDITOR_MENU_UNDO:
+            return text_editor_node_undo(&g_editor) == 0;
+        case CROFT_EDITOR_MENU_REDO:
+            return text_editor_node_redo(&g_editor) == 0;
+        case CROFT_EDITOR_MENU_SELECT_ALL:
+            text_editor_node_select_all(&g_editor);
+            return 1;
+        case CROFT_EDITOR_MENU_COPY:
+            return set_clipboard_from_selection();
+        case CROFT_EDITOR_MENU_CUT:
+            if (!set_clipboard_from_selection()) {
+                return 0;
+            }
+            return text_editor_node_delete_selection(&g_editor, 1) == 0;
+        case CROFT_EDITOR_MENU_PASTE:
+            return paste_from_clipboard();
+        case CROFT_EDITOR_MENU_FIND:
+            text_editor_node_find_activate(&g_editor);
+            return 1;
+        case CROFT_EDITOR_MENU_FIND_NEXT:
+            return text_editor_node_find_next(&g_editor) == 0;
+        case CROFT_EDITOR_MENU_FIND_PREVIOUS:
+            return text_editor_node_find_previous(&g_editor) == 0;
+        case CROFT_EDITOR_MENU_INDENT:
+            return text_editor_node_indent(&g_editor) == 0;
+        case CROFT_EDITOR_MENU_OUTDENT:
+            return text_editor_node_outdent(&g_editor) == 0;
+        case CROFT_EDITOR_MENU_FOLD:
+            return text_editor_node_fold(&g_editor) == 0;
+        case CROFT_EDITOR_MENU_UNFOLD:
+            return text_editor_node_unfold(&g_editor) == 0;
+        default:
+            return 1;
+    }
+}
+
+static void show_editor_context_menu(float x, float y) {
+    host_popup_menu_item items[] = {
+        { CROFT_EDITOR_MENU_OPEN, "Open...", 1u, 0u },
+        { CROFT_EDITOR_MENU_SAVE, "Save", 1u, 0u },
+        { CROFT_EDITOR_MENU_SAVE_AS, "Save As...", 1u, 0u },
+        { 0, NULL, 0u, 1u },
+        { CROFT_EDITOR_MENU_UNDO, "Undo", 1u, 0u },
+        { CROFT_EDITOR_MENU_REDO, "Redo", 1u, 0u },
+        { 0, NULL, 0u, 1u },
+        { CROFT_EDITOR_MENU_CUT, "Cut", 1u, 0u },
+        { CROFT_EDITOR_MENU_COPY, "Copy", 1u, 0u },
+        { CROFT_EDITOR_MENU_PASTE, "Paste", 1u, 0u },
+        { CROFT_EDITOR_MENU_SELECT_ALL, "Select All", 1u, 0u },
+        { 0, NULL, 0u, 1u },
+        { CROFT_EDITOR_MENU_FIND, "Find...", 1u, 0u },
+        { CROFT_EDITOR_MENU_FIND_NEXT, "Find Next", 1u, 0u },
+        { CROFT_EDITOR_MENU_FIND_PREVIOUS, "Find Previous", 1u, 0u },
+        { 0, NULL, 0u, 1u },
+        { CROFT_EDITOR_MENU_INDENT, "Indent Line", 1u, 0u },
+        { CROFT_EDITOR_MENU_OUTDENT, "Outdent Line", 1u, 0u },
+        { CROFT_EDITOR_MENU_FOLD, "Fold Region", 1u, 0u },
+        { CROFT_EDITOR_MENU_UNFOLD, "Unfold Region", 1u, 0u }
+    };
+    int32_t action_id = host_popup_menu_show(items,
+                                             (uint32_t)(sizeof(items) / sizeof(items[0])),
+                                             x,
+                                             y);
+
+    if (action_id != 0 && !editor_apply_menu_action(action_id)) {
+        g_running = 0;
+    }
+    if (action_id != 0) {
+        request_redraw();
+    }
 }
 
 static void print_font_probe_summary(const char* variant,
@@ -278,6 +393,15 @@ static void on_ui_event(int32_t type, int32_t arg0, int32_t arg1) {
         }
         request_redraw();
     } else if (type == CROFT_UI_EVENT_MOUSE) {
+        if (arg1 == 1 && arg0 == 1) {
+            hit_result hit;
+            host_ui_get_mouse_pos(&g_mouse_x, &g_mouse_y);
+            scene_node_hit_test_tree(&g_root_vp.base, (float)g_mouse_x, (float)g_mouse_y, &hit);
+            if (hit.node == &g_editor.base) {
+                show_editor_context_menu((float)g_mouse_x, (float)g_mouse_y);
+                return;
+            }
+        }
         if (arg1 == 1) {
             hit_result hit;
             host_ui_get_mouse_pos(&g_mouse_x, &g_mouse_y);
