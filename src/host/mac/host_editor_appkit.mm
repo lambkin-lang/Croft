@@ -685,12 +685,14 @@ static NSColor* croft_editor_appkit_color_for_syntax_token(croft_editor_syntax_t
                 CroftEditorIndentHandling,
                 CroftEditorFoldingHandling>
 - (instancetype)initWithDocument:(croft_editor_document*)document
+                    documentSlot:(croft_editor_document**)documentSlot
                            title:(NSString*)title
                  autoCloseMillis:(NSInteger)autoCloseMillis;
 @end
 
 @implementation CroftEditorController {
     croft_editor_document* _document;
+    croft_editor_document** _documentSlot;
     NSString* _windowTitle;
     NSWindow* _window;
     CroftEditorTextView* _textView;
@@ -705,11 +707,13 @@ static NSColor* croft_editor_appkit_color_for_syntax_token(croft_editor_syntax_t
 }
 
 - (instancetype)initWithDocument:(croft_editor_document*)document
+                    documentSlot:(croft_editor_document**)documentSlot
                            title:(NSString*)title
                  autoCloseMillis:(NSInteger)autoCloseMillis {
     self = [super init];
     if (self) {
         _document = document;
+        _documentSlot = documentSlot;
         _windowTitle = title;
         _autoCloseMillis = autoCloseMillis;
         _selectionOccurrenceRanges = [[NSMutableArray alloc] init];
@@ -739,12 +743,23 @@ static NSColor* croft_editor_appkit_color_for_syntax_token(croft_editor_syntax_t
     [menuBar addItem:fileMenuItem];
 
     NSMenu* fileMenu = [[NSMenu alloc] initWithTitle:@"File"];
+    NSMenuItem* openItem = [[NSMenuItem alloc] initWithTitle:@"Open..."
+                                                      action:@selector(openDocument:)
+                                               keyEquivalent:@"o"];
+    [openItem setTarget:self];
+    [fileMenu addItem:openItem];
+
     NSMenuItem* saveItem = [[NSMenuItem alloc] initWithTitle:@"Save"
                                                       action:@selector(saveDocument:)
                                                keyEquivalent:@"s"];
     [saveItem setTarget:self];
-    [saveItem setEnabled:(croft_editor_document_path(_document) != NULL)];
     [fileMenu addItem:saveItem];
+
+    NSMenuItem* saveAsItem = [[NSMenuItem alloc] initWithTitle:@"Save As..."
+                                                        action:@selector(saveDocumentAs:)
+                                                 keyEquivalent:@"S"];
+    [saveAsItem setTarget:self];
+    [fileMenu addItem:saveAsItem];
     [fileMenuItem setSubmenu:fileMenu];
 
     NSMenuItem* editMenuItem = [[NSMenuItem alloc] initWithTitle:@"Edit" action:nil keyEquivalent:@""];
@@ -851,6 +866,76 @@ static NSColor* croft_editor_appkit_color_for_syntax_token(croft_editor_syntax_t
     [editMenuItem setSubmenu:editMenu];
 
     [NSApp setMainMenu:menuBar];
+}
+
+- (NSMenu*)buildContextMenu {
+    NSMenu* menu = [[NSMenu alloc] initWithTitle:@"Context"];
+    NSMenuItem* openItem = [[NSMenuItem alloc] initWithTitle:@"Open..."
+                                                      action:@selector(openDocument:)
+                                               keyEquivalent:@""];
+    NSMenuItem* saveItem = [[NSMenuItem alloc] initWithTitle:@"Save"
+                                                      action:@selector(saveDocument:)
+                                               keyEquivalent:@""];
+    NSMenuItem* saveAsItem = [[NSMenuItem alloc] initWithTitle:@"Save As..."
+                                                        action:@selector(saveDocumentAs:)
+                                                 keyEquivalent:@""];
+    NSMenuItem* cutItem = [[NSMenuItem alloc] initWithTitle:@"Cut"
+                                                     action:@selector(cut:)
+                                              keyEquivalent:@""];
+    NSMenuItem* copyItem = [[NSMenuItem alloc] initWithTitle:@"Copy"
+                                                      action:@selector(copy:)
+                                               keyEquivalent:@""];
+    NSMenuItem* pasteItem = [[NSMenuItem alloc] initWithTitle:@"Paste"
+                                                       action:@selector(paste:)
+                                                keyEquivalent:@""];
+    NSMenuItem* selectAllItem = [[NSMenuItem alloc] initWithTitle:@"Select All"
+                                                           action:@selector(selectAll:)
+                                                    keyEquivalent:@""];
+    NSMenuItem* findItem = [[NSMenuItem alloc] initWithTitle:@"Find..."
+                                                      action:@selector(performTextFinderAction:)
+                                               keyEquivalent:@""];
+    NSMenuItem* indentItem = [[NSMenuItem alloc] initWithTitle:@"Indent Line"
+                                                        action:@selector(indentSelection:)
+                                                 keyEquivalent:@""];
+    NSMenuItem* outdentItem = [[NSMenuItem alloc] initWithTitle:@"Outdent Line"
+                                                         action:@selector(outdentSelection:)
+                                                  keyEquivalent:@""];
+    NSMenuItem* foldItem = [[NSMenuItem alloc] initWithTitle:@"Fold Region"
+                                                      action:@selector(foldSelection:)
+                                               keyEquivalent:@""];
+    NSMenuItem* unfoldItem = [[NSMenuItem alloc] initWithTitle:@"Unfold Region"
+                                                        action:@selector(unfoldSelection:)
+                                                 keyEquivalent:@""];
+
+    [openItem setTarget:self];
+    [saveItem setTarget:self];
+    [saveAsItem setTarget:self];
+    [cutItem setTarget:_textView];
+    [copyItem setTarget:_textView];
+    [pasteItem setTarget:_textView];
+    [selectAllItem setTarget:_textView];
+    [findItem setTarget:_textView];
+    [findItem setTag:NSTextFinderActionShowFindInterface];
+    [indentItem setTarget:self];
+    [outdentItem setTarget:self];
+    [foldItem setTarget:self];
+    [unfoldItem setTarget:self];
+
+    [menu addItem:openItem];
+    [menu addItem:saveItem];
+    [menu addItem:saveAsItem];
+    [menu addItem:[NSMenuItem separatorItem]];
+    [menu addItem:cutItem];
+    [menu addItem:copyItem];
+    [menu addItem:pasteItem];
+    [menu addItem:selectAllItem];
+    [menu addItem:[NSMenuItem separatorItem]];
+    [menu addItem:findItem];
+    [menu addItem:indentItem];
+    [menu addItem:outdentItem];
+    [menu addItem:foldItem];
+    [menu addItem:unfoldItem];
+    return menu;
 }
 
 - (void)updateWindowTitle {
@@ -1477,6 +1562,49 @@ cleanup:
     [self refreshEditorChrome];
 }
 
+- (BOOL)replaceCurrentDocumentWithDocument:(croft_editor_document*)document {
+    croft_editor_document* previous;
+
+    if (!document) {
+        return NO;
+    }
+
+    previous = _document;
+    _document = document;
+    if (_documentSlot) {
+        *_documentSlot = document;
+    }
+    [self loadDocumentIntoView];
+    if (previous && previous != document) {
+        croft_editor_document_destroy(previous);
+    }
+    return YES;
+}
+
+- (NSString*)runOpenPanel {
+    NSOpenPanel* panel = [NSOpenPanel openPanel];
+
+    [panel setCanChooseFiles:YES];
+    [panel setCanChooseDirectories:NO];
+    [panel setAllowsMultipleSelection:NO];
+    return [panel runModal] == NSModalResponseOK ? panel.URL.path : nil;
+}
+
+- (NSString*)runSavePanel {
+    NSSavePanel* panel = [NSSavePanel savePanel];
+    const char* path = croft_editor_document_path(_document);
+
+    if (path && path[0] != '\0') {
+        NSString* currentPath = [NSString stringWithUTF8String:path];
+        if (currentPath) {
+            panel.directoryURL = [NSURL fileURLWithPath:[currentPath stringByDeletingLastPathComponent]];
+            panel.nameFieldStringValue = currentPath.lastPathComponent ?: @"";
+        }
+    }
+
+    return [panel runModal] == NSModalResponseOK ? panel.URL.path : nil;
+}
+
 - (void)syncTextViewToDocument {
     NSData* utf8 = [[_textView string] dataUsingEncoding:NSUTF8StringEncoding allowLossyConversion:NO];
     const void* bytes = utf8 ? utf8.bytes : "";
@@ -1580,6 +1708,7 @@ cleanup:
     [contentView addSubview:statusBar];
 
     _textView = textView;
+    [_textView setMenu:[self buildContextMenu]];
     _lineNumberRuler = lineNumberRuler;
     _statusLabel = statusLabel;
     [self buildMenuBar];
@@ -1644,6 +1773,11 @@ cleanup:
 
 - (IBAction)saveDocument:(id)sender {
     (void)sender;
+    if (!croft_editor_document_path(_document)) {
+        [self saveDocumentAs:nil];
+        return;
+    }
+
     int32_t rc = croft_editor_document_save(_document);
     if (rc != 0) {
         std::printf("croft_editor_appkit: save failed (%d)\n", rc);
@@ -1652,6 +1786,64 @@ cleanup:
     }
 
     [self refreshEditorChrome];
+}
+
+- (IBAction)openDocument:(id)sender {
+    (void)sender;
+    NSString* path = [self runOpenPanel];
+    croft_editor_document* opened;
+
+    if (!path) {
+        return;
+    }
+
+    opened = croft_editor_document_open(NULL,
+                                        path.fileSystemRepresentation,
+                                        NULL,
+                                        0u);
+    if (!opened) {
+        std::printf("croft_editor_appkit: open failed for %s\n", path.fileSystemRepresentation);
+        NSBeep();
+        return;
+    }
+
+    [self replaceCurrentDocumentWithDocument:opened];
+}
+
+- (IBAction)saveDocumentAs:(id)sender {
+    (void)sender;
+    NSString* path = [self runSavePanel];
+    int32_t rc;
+
+    if (!path) {
+        return;
+    }
+
+    rc = croft_editor_document_save_as(_document, path.fileSystemRepresentation);
+    if (rc != 0) {
+        std::printf("croft_editor_appkit: save-as failed (%d)\n", rc);
+        NSBeep();
+        return;
+    }
+
+    [self refreshEditorChrome];
+}
+
+- (BOOL)validateMenuItem:(NSMenuItem*)menuItem {
+    SEL action = menuItem.action;
+
+    if (action == @selector(saveDocument:)) {
+        return croft_editor_document_path(_document) != NULL;
+    }
+    if (action == @selector(saveDocumentAs:)
+            || action == @selector(openDocument:)
+            || action == @selector(indentSelection:)
+            || action == @selector(outdentSelection:)
+            || action == @selector(foldSelection:)
+            || action == @selector(unfoldSelection:)) {
+        return YES;
+    }
+    return YES;
 }
 
 - (void)terminateLater {
@@ -1718,13 +1910,13 @@ cleanup:
 
 @end
 
-extern "C" int32_t croft_editor_appkit_run(croft_editor_document* document,
+extern "C" int32_t croft_editor_appkit_run(croft_editor_document** document_io,
                                            const croft_editor_appkit_options* options) {
     @autoreleasepool {
         NSString* title = @"Croft AppKit Editor";
         NSInteger autoCloseMillis = 0;
 
-        if (!document) {
+        if (!document_io || !*document_io) {
             return -1;
         }
 
@@ -1739,7 +1931,8 @@ extern "C" int32_t croft_editor_appkit_run(croft_editor_document* document,
         [NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
 
         CroftEditorController* controller =
-            [[CroftEditorController alloc] initWithDocument:document
+            [[CroftEditorController alloc] initWithDocument:*document_io
+                                               documentSlot:document_io
                                                       title:title
                                             autoCloseMillis:autoCloseMillis];
         [NSApp setDelegate:controller];

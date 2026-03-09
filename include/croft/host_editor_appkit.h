@@ -14,7 +14,7 @@ typedef struct croft_editor_appkit_options {
     int32_t auto_close_millis;
 } croft_editor_appkit_options;
 
-int32_t croft_editor_appkit_run(struct croft_editor_document* document,
+int32_t croft_editor_appkit_run(struct croft_editor_document** document_io,
                                 const croft_editor_appkit_options* options);
 
 #ifdef __cplusplus

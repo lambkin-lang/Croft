@@ -61,7 +61,7 @@ int main(int argc, char** argv) {
     }
 
     {
-        int rc = croft_editor_appkit_run(document, &options);
+        int rc = croft_editor_appkit_run(&document, &options);
         croft_editor_document_destroy(document);
         return rc == 0 ? 0 : 1;
     }
