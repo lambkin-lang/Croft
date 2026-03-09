@@ -485,6 +485,11 @@ Why it matters:
   upload surface, or a macOS menu/window workflow.
 - the join-point is not only "when command runs", but also "how command becomes
   present in a target world".
+- native popup/context menus appear to want a different host shape than menu
+  bars: the current menu-bar surface is streamed and callback-oriented, while
+  popup menus are more naturally synchronous and anchored to a window-local
+  point. Treating popup menus as "just another menu-bar update" would have
+  flattened a real architectural difference.
 
 ### Editor Interaction XPI
 
@@ -587,9 +592,11 @@ solves them.
 14. Which editor host concerns should be standardized as reusable mix-ins
     (`clipboard`, `menu`, `accessibility`, `input-method`) versus kept as
     family-specific collapsed integrations?
-15. At what point should Lambkin deliberately choose a collapsed native world
+15. Should popup/context menus become a distinct host mix-in from menu bars,
+    or are they still one capability with two presentation modes?
+16. At what point should Lambkin deliberately choose a collapsed native world
     over a reusable mix-in world, even when that reduces portability?
-16. How should performance benchmarking and responsiveness join the existing
+17. How should performance benchmarking and responsiveness join the existing
     size-based decision process for world selection?
 
 ## Near-Term Follow-Through
@@ -599,6 +606,9 @@ The next high-value steps look like this:
 - reuse the newer `host-menu`, `host-clipboard`, `host-editor-input`, and
   `host-a11y` mix-ins in more than one family so they stop being editor-only
   experiments
+- decide whether popup/context menus should be folded into `host-menu` or kept
+  as a separate host seam after the scene editors have exercised the native
+  popup path for a while
 - use the now-stable GUI runtime automation to compare editor and WIT window
   families on honest shared workloads instead of only on launch survival
 - move more of the direct-Metal/editor host interaction onto WIT-facing
