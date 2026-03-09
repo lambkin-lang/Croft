@@ -4,6 +4,7 @@
 #include "croft/editor_document_fs.h"
 #include "croft/editor_folding.h"
 #include "croft/editor_status.h"
+#include "croft/editor_syntax.h"
 #include "croft/editor_text_model.h"
 #include "croft/editor_typography_macos.h"
 #include "croft/editor_whitespace.h"
@@ -204,6 +205,25 @@ static void croft_editor_appkit_draw_whitespace_marker(NSRect markerRect,
         [path lineToPoint:NSMakePoint(endX, midY)];
         [path lineToPoint:NSMakePoint(endX - 3.0, midY + 2.0)];
         [path stroke];
+    }
+}
+
+static NSColor* croft_editor_appkit_color_for_syntax_token(croft_editor_syntax_token_kind kind) {
+    switch (kind) {
+        case CROFT_EDITOR_SYNTAX_TOKEN_PROPERTY:
+            return [NSColor colorWithCalibratedRed:0.12 green:0.37 blue:0.60 alpha:1.0];
+        case CROFT_EDITOR_SYNTAX_TOKEN_STRING:
+            return [NSColor colorWithCalibratedRed:0.60 green:0.20 blue:0.07 alpha:1.0];
+        case CROFT_EDITOR_SYNTAX_TOKEN_NUMBER:
+            return [NSColor colorWithCalibratedRed:0.06 green:0.46 blue:0.43 alpha:1.0];
+        case CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD:
+            return [NSColor colorWithCalibratedRed:0.49 green:0.23 blue:0.93 alpha:1.0];
+        case CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION:
+            return [NSColor colorWithCalibratedWhite:0.36 alpha:1.0];
+        case CROFT_EDITOR_SYNTAX_TOKEN_INVALID:
+            return [NSColor colorWithCalibratedRed:0.76 green:0.25 blue:0.05 alpha:1.0];
+        default:
+            return nil;
     }
 }
 
@@ -923,6 +943,81 @@ static void croft_editor_appkit_draw_whitespace_marker(NSRect markerRect,
     [_bracketMatchRanges removeAllObjects];
 }
 
+- (void)clearSyntaxHighlights {
+    NSLayoutManager* layoutManager = _textView.layoutManager;
+    NSString* text = _textView.string ?: @"";
+
+    if (!layoutManager) {
+        return;
+    }
+
+    [layoutManager removeTemporaryAttribute:NSForegroundColorAttributeName
+                          forCharacterRange:NSMakeRange(0u, text.length)];
+}
+
+- (void)updateSyntaxHighlights {
+    NSString* text;
+    NSData* utf8;
+    croft_editor_text_model model;
+    croft_editor_syntax_language language;
+    uint32_t length;
+    uint32_t offset;
+    NSLayoutManager* layoutManager = _textView.layoutManager;
+
+    [self clearSyntaxHighlights];
+
+    if (!_textView || !layoutManager) {
+        return;
+    }
+
+    language = croft_editor_syntax_language_from_path(croft_editor_document_path(_document));
+    if (language == CROFT_EDITOR_SYNTAX_LANGUAGE_PLAIN_TEXT) {
+        return;
+    }
+
+    text = _textView.string ?: @"";
+    utf8 = [text dataUsingEncoding:NSUTF8StringEncoding allowLossyConversion:NO];
+    croft_editor_text_model_init(&model);
+    if (croft_editor_text_model_set_text(&model,
+                                         (const char*)utf8.bytes,
+                                         utf8 ? (size_t)utf8.length : 0u) != CROFT_EDITOR_OK) {
+        croft_editor_text_model_dispose(&model);
+        return;
+    }
+
+    length = croft_editor_text_model_codepoint_length(&model);
+    offset = 0u;
+    while (offset < length) {
+        croft_editor_syntax_token token = {0};
+        NSColor* color;
+
+        if (croft_editor_syntax_next_token(&model,
+                                           language,
+                                           offset,
+                                           length,
+                                           &token) != CROFT_EDITOR_OK
+                || token.end_offset <= token.start_offset) {
+            break;
+        }
+
+        color = croft_editor_appkit_color_for_syntax_token(token.kind);
+        if (color) {
+            NSUInteger start =
+                croft_editor_appkit_utf16_index_for_codepoint_offset(text, &model, token.start_offset);
+            NSUInteger end =
+                croft_editor_appkit_utf16_index_for_codepoint_offset(text, &model, token.end_offset);
+            if (end > start) {
+                [layoutManager addTemporaryAttribute:NSForegroundColorAttributeName
+                                               value:color
+                                   forCharacterRange:NSMakeRange(start, end - start)];
+            }
+        }
+        offset = token.end_offset;
+    }
+
+    croft_editor_text_model_dispose(&model);
+}
+
 - (void)updateSelectionOccurrences {
     NSString* text;
     NSRange selection;
@@ -1028,6 +1123,7 @@ static void croft_editor_appkit_draw_whitespace_marker(NSRect markerRect,
 - (void)refreshEditorChrome {
     [self updateWindowTitle];
     [self updateStatusBar];
+    [self updateSyntaxHighlights];
     [self updateBracketMatches];
     [self updateSelectionOccurrences];
     [_textView setNeedsDisplay:YES];

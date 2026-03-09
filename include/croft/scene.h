@@ -2,6 +2,7 @@
 #define CROFT_SCENE_H
 
 #include "croft/platform.h"
+#include "croft/editor_syntax.h"
 #include "croft/editor_text_model.h"
 #include "croft/scene_a11y_bridge.h"
 
@@ -156,6 +157,7 @@ typedef struct text_editor_node {
     } folded_regions[64];
     croft_editor_text_model text_model;
     croft_editor_selection selection;
+    croft_editor_syntax_language syntax_language;
     uint32_t profiling_enabled;
     croft_text_editor_profile_snapshot profile_stats;
 } text_editor_node;

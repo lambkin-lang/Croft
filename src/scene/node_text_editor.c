@@ -5,6 +5,7 @@
 #include "croft/editor_folding.h"
 #include "croft/editor_search.h"
 #include "croft/editor_status.h"
+#include "croft/editor_syntax.h"
 #include "croft/editor_whitespace.h"
 #include "croft/host_ui.h"
 #include "croft/host_render.h"
@@ -241,6 +242,143 @@ static croft_editor_status_snapshot text_editor_status_snapshot_from_node(const 
     }
     snapshot.is_dirty = (te && te->document) ? croft_editor_document_is_dirty(te->document) : 0;
     return snapshot;
+}
+
+static void text_editor_refresh_syntax_language(text_editor_node* te) {
+    const char* path = NULL;
+
+    if (!te) {
+        return;
+    }
+
+    if (te->document) {
+        path = croft_editor_document_path(te->document);
+    }
+    te->syntax_language = croft_editor_syntax_language_from_path(path);
+}
+
+static uint32_t text_editor_syntax_color(croft_editor_syntax_token_kind kind, uint32_t default_color) {
+    switch (kind) {
+        case CROFT_EDITOR_SYNTAX_TOKEN_PROPERTY:
+            return 0x1F5F99FF;
+        case CROFT_EDITOR_SYNTAX_TOKEN_STRING:
+            return 0x9A3412FF;
+        case CROFT_EDITOR_SYNTAX_TOKEN_NUMBER:
+            return 0x0F766EFF;
+        case CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD:
+            return 0x7C3AEDFF;
+        case CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION:
+            return 0x52606DFF;
+        case CROFT_EDITOR_SYNTAX_TOKEN_INVALID:
+            return 0xC2410CFF;
+        default:
+            return default_color;
+    }
+}
+
+static void text_editor_draw_text_segment(const text_editor_node* te,
+                                          const text_editor_layout* layout,
+                                          const char* line_text,
+                                          uint32_t line_start_byte,
+                                          uint32_t segment_start_offset,
+                                          uint32_t segment_end_offset,
+                                          float current_y,
+                                          uint32_t color_rgba) {
+    uint32_t segment_start_byte;
+    uint32_t segment_end_byte;
+    float x;
+
+    if (!te || !layout || !line_text || segment_end_offset <= segment_start_offset) {
+        return;
+    }
+
+    segment_start_byte =
+        croft_editor_text_model_byte_offset_at(&te->text_model, segment_start_offset) - line_start_byte;
+    segment_end_byte =
+        croft_editor_text_model_byte_offset_at(&te->text_model, segment_end_offset) - line_start_byte;
+    if (segment_end_byte <= segment_start_byte) {
+        return;
+    }
+
+    x = layout->text_inset_x
+        + text_editor_measure_text(te, line_text, segment_start_byte, te->font_size);
+    host_render_draw_text(x,
+                          current_y,
+                          line_text + segment_start_byte,
+                          segment_end_byte - segment_start_byte,
+                          te->font_size,
+                          color_rgba);
+}
+
+static void text_editor_draw_line_text(const text_editor_node* te,
+                                       const text_editor_layout* layout,
+                                       const char* line_text,
+                                       uint32_t line_start_offset,
+                                       uint32_t line_end_offset,
+                                       uint32_t line_start_byte,
+                                       float current_y,
+                                       uint32_t default_color) {
+    uint32_t draw_offset = line_start_offset;
+
+    if (!te || !layout || !line_text || line_end_offset <= line_start_offset) {
+        return;
+    }
+
+    if (te->syntax_language == CROFT_EDITOR_SYNTAX_LANGUAGE_PLAIN_TEXT) {
+        text_editor_draw_text_segment(te,
+                                      layout,
+                                      line_text,
+                                      line_start_byte,
+                                      line_start_offset,
+                                      line_end_offset,
+                                      current_y,
+                                      default_color);
+        return;
+    }
+
+    while (draw_offset < line_end_offset) {
+        croft_editor_syntax_token token = {0};
+
+        if (croft_editor_syntax_next_token(&te->text_model,
+                                           te->syntax_language,
+                                           draw_offset,
+                                           line_end_offset,
+                                           &token) != CROFT_EDITOR_OK
+                || token.end_offset <= token.start_offset) {
+            break;
+        }
+
+        if (token.start_offset > draw_offset) {
+            text_editor_draw_text_segment(te,
+                                          layout,
+                                          line_text,
+                                          line_start_byte,
+                                          draw_offset,
+                                          token.start_offset,
+                                          current_y,
+                                          default_color);
+        }
+        text_editor_draw_text_segment(te,
+                                      layout,
+                                      line_text,
+                                      line_start_byte,
+                                      token.start_offset,
+                                      token.end_offset,
+                                      current_y,
+                                      text_editor_syntax_color(token.kind, default_color));
+        draw_offset = token.end_offset;
+    }
+
+    if (draw_offset < line_end_offset) {
+        text_editor_draw_text_segment(te,
+                                      layout,
+                                      line_text,
+                                      line_start_byte,
+                                      draw_offset,
+                                      line_end_offset,
+                                      current_y,
+                                      default_color);
+    }
 }
 
 static uint32_t text_editor_clamp_u32(uint32_t value, uint32_t min_value, uint32_t max_value) {
@@ -594,6 +732,7 @@ static void text_editor_refresh_cache(text_editor_node *te) {
 
 static void text_editor_sync_cache(text_editor_node *te) {
     te->text_tree = text_editor_live_text(te);
+    text_editor_refresh_syntax_language(te);
     text_editor_clear_folds(te);
 
     if (!te->text_tree) {
@@ -1751,12 +1890,14 @@ static void text_editor_draw(scene_node *n, render_ctx *rc) {
             }
 
             if (line_len_bytes > 0u) {
-                host_render_draw_text(layout.text_inset_x,
-                                      current_y,
-                                      line_text,
-                                      line_len_bytes,
-                                      te->font_size,
-                                      rc->fg_color);
+                text_editor_draw_line_text(te,
+                                           &layout,
+                                           line_text,
+                                           line_start_offset,
+                                           line_end_offset,
+                                           line_start_byte,
+                                           current_y,
+                                           rc->fg_color);
             }
             if (is_folded) {
                 float line_width =
@@ -2343,6 +2484,7 @@ void text_editor_node_init(text_editor_node *n, struct SapEnv *env, float x, flo
         croft_editor_position_create(1, 1),
         croft_editor_position_create(1, 1)
     );
+    n->syntax_language = CROFT_EDITOR_SYNTAX_LANGUAGE_PLAIN_TEXT;
     
     text_editor_sync_cache(n);
     
