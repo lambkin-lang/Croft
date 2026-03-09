@@ -286,6 +286,47 @@ int test_editor_syntax_yaml_tokens(void) {
     return 0;
 }
 
+int test_editor_syntax_yaml_refinements(void) {
+    const char* source =
+        "defaults: &defaults\n"
+        "  mode: !read-only\n"
+        "copy: *defaults\n"
+        "body: |\n";
+    croft_editor_text_model model;
+    uint32_t offset = 0u;
+
+    croft_editor_text_model_init(&model);
+    ASSERT_SYNTAX(croft_editor_text_model_set_text(&model, source, strlen(source)) == CROFT_EDITOR_OK);
+
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_YAML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PROPERTY, "defaults") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_YAML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ":") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_YAML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PROPERTY, "&defaults") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_YAML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PROPERTY, "mode") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_YAML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ":") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_YAML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_TYPE, "!read-only") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_YAML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PROPERTY, "copy") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_YAML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ":") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_YAML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PROPERTY, "*defaults") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_YAML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PROPERTY, "body") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_YAML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ":") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_YAML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "|") == 0);
+
+    croft_editor_text_model_dispose(&model);
+    return 0;
+}
+
 int test_editor_syntax_javascript_tokens(void) {
     const char* source =
         "import { useState } from \"react\";\n"
@@ -373,6 +414,52 @@ int test_editor_syntax_javascript_tokens(void) {
                                     CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ";") == 0);
     ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
                                     CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "}") == 0);
+
+    croft_editor_text_model_dispose(&model);
+    return 0;
+}
+
+int test_editor_syntax_javascript_refinements(void) {
+    const char* source =
+        "@sealed\n"
+        "class Box {\n"
+        "  #count = 0;\n"
+        "}\n"
+        "const re = /hi+/gi;\n";
+    croft_editor_text_model model;
+    uint32_t offset = 0u;
+
+    croft_editor_text_model_init(&model);
+    ASSERT_SYNTAX(croft_editor_text_model_set_text(&model, source, strlen(source)) == CROFT_EDITOR_OK);
+
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PROPERTY, "@sealed") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "class") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PLAIN, "Box") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "{") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PROPERTY, "#count") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "=") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_NUMBER, "0") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ";") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "}") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "const") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PLAIN, "re") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "=") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_STRING, "/hi+/gi") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ";") == 0);
 
     croft_editor_text_model_dispose(&model);
     return 0;
