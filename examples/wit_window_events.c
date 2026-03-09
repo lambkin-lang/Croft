@@ -12,10 +12,10 @@ static int expect_window_ok(const SapWitHostWindowReply* reply, SapWitHostWindow
         return 0;
     }
     if (reply->case_tag != SAP_WIT_HOST_WINDOW_REPLY_WINDOW
-            || reply->val.window.case_tag != SAP_WIT_HOST_WINDOW_OP_RESULT_OK) {
+            || !reply->val.window.is_v_ok) {
         return 0;
     }
-    *handle_out = reply->val.window.val.ok;
+    *handle_out = reply->val.window.v_val.ok.v;
     return 1;
 }
 
@@ -23,7 +23,7 @@ static int expect_status_ok(const SapWitHostWindowReply* reply)
 {
     return reply
         && reply->case_tag == SAP_WIT_HOST_WINDOW_REPLY_STATUS
-        && reply->val.status.case_tag == SAP_WIT_HOST_WINDOW_STATUS_OK;
+        && reply->val.status.is_v_ok;
 }
 
 static int expect_clock_now(const SapWitHostClockReply* reply, uint64_t* now_out)
@@ -32,10 +32,57 @@ static int expect_clock_now(const SapWitHostClockReply* reply, uint64_t* now_out
         return 0;
     }
     if (reply->case_tag != SAP_WIT_HOST_CLOCK_REPLY_NOW
-            || reply->val.now.case_tag != SAP_WIT_HOST_CLOCK_NOW_RESULT_OK) {
+            || !reply->val.now.is_v_ok) {
         return 0;
     }
-    *now_out = reply->val.now.val.ok;
+    *now_out = reply->val.now.v_val.ok.v;
+    return 1;
+}
+
+static int expect_window_event(const SapWitHostWindowReply* reply, SapWitHostWindowEvent* event_out)
+{
+    if (!reply || !event_out) {
+        return -1;
+    }
+    if (reply->case_tag != SAP_WIT_HOST_WINDOW_REPLY_EVENT) {
+        return -1;
+    }
+    if (!reply->val.event.is_v_ok) {
+        return -1;
+    }
+    if (!reply->val.event.v_val.ok.has_v) {
+        return 0;
+    }
+    *event_out = reply->val.event.v_val.ok.v;
+    return 1;
+}
+
+static int expect_window_bool(const SapWitHostWindowReply* reply, uint8_t* value_out)
+{
+    if (!reply || !value_out) {
+        return 0;
+    }
+    if (reply->case_tag != SAP_WIT_HOST_WINDOW_REPLY_SHOULD_CLOSE
+            || !reply->val.should_close.is_v_ok) {
+        return 0;
+    }
+    *value_out = reply->val.should_close.v_val.ok.v;
+    return 1;
+}
+
+static int expect_window_size(const SapWitHostWindowReply* reply,
+                              uint32_t* width_out,
+                              uint32_t* height_out)
+{
+    if (!reply || !width_out || !height_out) {
+        return 0;
+    }
+    if (reply->case_tag != SAP_WIT_HOST_WINDOW_REPLY_SIZE
+            || !reply->val.size.is_v_ok) {
+        return 0;
+    }
+    *width_out = reply->val.size.v_val.ok.v.width;
+    *height_out = reply->val.size.v_val.ok.v.height;
     return 1;
 }
 
@@ -86,6 +133,9 @@ int main(void)
     }
 
     for (;;) {
+        SapWitHostWindowEvent event = {0};
+        uint8_t should_close = 0u;
+
         window_cmd.case_tag = SAP_WIT_HOST_WINDOW_COMMAND_POLL;
         window_cmd.val.poll.window = window;
         if (croft_wit_host_window_runtime_dispatch(window_runtime, &window_cmd, &window_reply) != 0
@@ -99,22 +149,20 @@ int main(void)
         window_cmd.case_tag = SAP_WIT_HOST_WINDOW_COMMAND_NEXT_EVENT;
         window_cmd.val.next_event.window = window;
         while (croft_wit_host_window_runtime_dispatch(window_runtime, &window_cmd, &window_reply) == 0
-                && window_reply.case_tag == SAP_WIT_HOST_WINDOW_REPLY_EVENT
-                && window_reply.val.event.case_tag == SAP_WIT_HOST_WINDOW_EVENT_RESULT_OK) {
+                && expect_window_event(&window_reply, &event) > 0) {
             event_count++;
         }
 
         window_cmd.case_tag = SAP_WIT_HOST_WINDOW_COMMAND_SHOULD_CLOSE;
         window_cmd.val.should_close.window = window;
         if (croft_wit_host_window_runtime_dispatch(window_runtime, &window_cmd, &window_reply) != 0
-                || window_reply.case_tag != SAP_WIT_HOST_WINDOW_REPLY_SHOULD_CLOSE
-                || window_reply.val.should_close.case_tag != SAP_WIT_HOST_WINDOW_BOOL_RESULT_OK) {
+                || !expect_window_bool(&window_reply, &should_close)) {
             fprintf(stderr, "example_wit_window_events: should-close failed\n");
             croft_wit_host_window_runtime_destroy(window_runtime);
             croft_wit_host_clock_runtime_destroy(clock_runtime);
             return 1;
         }
-        if (window_reply.val.should_close.val.ok) {
+        if (should_close) {
             break;
         }
 
@@ -133,15 +181,12 @@ int main(void)
     window_cmd.case_tag = SAP_WIT_HOST_WINDOW_COMMAND_FRAMEBUFFER_SIZE;
     window_cmd.val.framebuffer_size.window = window;
     if (croft_wit_host_window_runtime_dispatch(window_runtime, &window_cmd, &window_reply) != 0
-            || window_reply.case_tag != SAP_WIT_HOST_WINDOW_REPLY_SIZE
-            || window_reply.val.size.case_tag != SAP_WIT_HOST_WINDOW_SIZE_RESULT_OK) {
+            || !expect_window_size(&window_reply, &width, &height)) {
         fprintf(stderr, "example_wit_window_events: size failed\n");
         croft_wit_host_window_runtime_destroy(window_runtime);
         croft_wit_host_clock_runtime_destroy(clock_runtime);
         return 1;
     }
-    width = window_reply.val.size.val.ok.width;
-    height = window_reply.val.size.val.ok.height;
 
     printf("window=%ux%u events=%" PRIu32 " wall_ms=%llu\n",
            width,

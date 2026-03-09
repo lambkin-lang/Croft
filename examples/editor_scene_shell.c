@@ -22,7 +22,7 @@ static croft_editor_document* g_document = NULL;
 static croft_editor_scene_runtime_state g_runtime;
 
 enum {
-    CROFT_EDITOR_WINDOW_PADDING = 16
+    CROFT_EDITOR_WINDOW_PADDING = 0
 };
 
 typedef struct render_frame_profile {

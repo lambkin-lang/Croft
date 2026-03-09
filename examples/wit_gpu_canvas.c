@@ -14,10 +14,10 @@ static int expect_window_ok(const SapWitHostWindowReply* reply,
         return 0;
     }
     if (reply->case_tag != SAP_WIT_HOST_WINDOW_REPLY_WINDOW
-            || reply->val.window.case_tag != SAP_WIT_HOST_WINDOW_OP_RESULT_OK) {
+            || !reply->val.window.is_v_ok) {
         return 0;
     }
-    *handle_out = reply->val.window.val.ok;
+    *handle_out = reply->val.window.v_val.ok.v;
     return 1;
 }
 
@@ -28,10 +28,10 @@ static int expect_surface_ok(const SapWitHostGpu2dReply* reply,
         return 0;
     }
     if (reply->case_tag != SAP_WIT_HOST_GPU2D_REPLY_SURFACE
-            || reply->val.surface.case_tag != SAP_WIT_HOST_GPU2D_SURFACE_RESULT_OK) {
+            || !reply->val.surface.is_v_ok) {
         return 0;
     }
-    *handle_out = reply->val.surface.val.ok;
+    *handle_out = reply->val.surface.v_val.ok.v;
     return 1;
 }
 
@@ -39,7 +39,7 @@ static int expect_gpu_status_ok(const SapWitHostGpu2dReply* reply)
 {
     return reply
         && reply->case_tag == SAP_WIT_HOST_GPU2D_REPLY_STATUS
-        && reply->val.status.case_tag == SAP_WIT_HOST_GPU2D_STATUS_OK;
+        && reply->val.status.is_v_ok;
 }
 
 static int expect_gpu_caps_ok(const SapWitHostGpu2dReply* reply, uint32_t* caps_out)
@@ -48,10 +48,10 @@ static int expect_gpu_caps_ok(const SapWitHostGpu2dReply* reply, uint32_t* caps_
         return 0;
     }
     if (reply->case_tag != SAP_WIT_HOST_GPU2D_REPLY_CAPABILITIES
-            || reply->val.capabilities.case_tag != SAP_WIT_HOST_GPU2D_CAPABILITIES_RESULT_OK) {
+            || !reply->val.capabilities.is_v_ok) {
         return 0;
     }
-    *caps_out = reply->val.capabilities.val.ok;
+    *caps_out = reply->val.capabilities.v_val.ok.v;
     return 1;
 }
 
@@ -61,10 +61,10 @@ static int expect_measure_ok(const SapWitHostGpu2dReply* reply, float* width_out
         return 0;
     }
     if (reply->case_tag != SAP_WIT_HOST_GPU2D_REPLY_MEASURE
-            || reply->val.measure.case_tag != SAP_WIT_HOST_GPU2D_MEASURE_RESULT_OK) {
+            || !reply->val.measure.is_v_ok) {
         return 0;
     }
-    *width_out = reply->val.measure.val.ok;
+    *width_out = reply->val.measure.v_val.ok.v;
     return 1;
 }
 
@@ -74,10 +74,39 @@ static int expect_clock_now(const SapWitHostClockReply* reply, uint64_t* now_out
         return 0;
     }
     if (reply->case_tag != SAP_WIT_HOST_CLOCK_REPLY_NOW
-            || reply->val.now.case_tag != SAP_WIT_HOST_CLOCK_NOW_RESULT_OK) {
+            || !reply->val.now.is_v_ok) {
         return 0;
     }
-    *now_out = reply->val.now.val.ok;
+    *now_out = reply->val.now.v_val.ok.v;
+    return 1;
+}
+
+static int expect_window_bool(const SapWitHostWindowReply* reply, uint8_t* value_out)
+{
+    if (!reply || !value_out) {
+        return 0;
+    }
+    if (reply->case_tag != SAP_WIT_HOST_WINDOW_REPLY_SHOULD_CLOSE
+            || !reply->val.should_close.is_v_ok) {
+        return 0;
+    }
+    *value_out = reply->val.should_close.v_val.ok.v;
+    return 1;
+}
+
+static int expect_window_size(const SapWitHostWindowReply* reply,
+                              uint32_t* width_out,
+                              uint32_t* height_out)
+{
+    if (!reply || !width_out || !height_out) {
+        return 0;
+    }
+    if (reply->case_tag != SAP_WIT_HOST_WINDOW_REPLY_SIZE
+            || !reply->val.size.is_v_ok) {
+        return 0;
+    }
+    *width_out = reply->val.size.v_val.ok.v.width;
+    *height_out = reply->val.size.v_val.ok.v.height;
     return 1;
 }
 
@@ -182,6 +211,7 @@ int main(void)
 
     while (1) {
         uint64_t now_ms = 0u;
+        uint8_t should_close = 0u;
         uint32_t width = 0u;
         uint32_t height = 0u;
         float pulse = (float)(frame_count % 60u) / 59.0f;
@@ -198,9 +228,7 @@ int main(void)
         if (croft_wit_host_window_runtime_dispatch(window_runtime, &window_cmd, &window_reply) != 0) {
             break;
         }
-        if (window_reply.case_tag == SAP_WIT_HOST_WINDOW_REPLY_SHOULD_CLOSE
-                && window_reply.val.should_close.case_tag == SAP_WIT_HOST_WINDOW_BOOL_RESULT_OK
-                && window_reply.val.should_close.val.ok) {
+        if (expect_window_bool(&window_reply, &should_close) && should_close) {
             break;
         }
 
@@ -216,12 +244,9 @@ int main(void)
         window_cmd.case_tag = SAP_WIT_HOST_WINDOW_COMMAND_FRAMEBUFFER_SIZE;
         window_cmd.val.framebuffer_size.window = window;
         if (croft_wit_host_window_runtime_dispatch(window_runtime, &window_cmd, &window_reply) != 0
-                || window_reply.case_tag != SAP_WIT_HOST_WINDOW_REPLY_SIZE
-                || window_reply.val.size.case_tag != SAP_WIT_HOST_WINDOW_SIZE_RESULT_OK) {
+                || !expect_window_size(&window_reply, &width, &height)) {
             break;
         }
-        width = window_reply.val.size.val.ok.width;
-        height = window_reply.val.size.val.ok.height;
 
         gpu_cmd.case_tag = SAP_WIT_HOST_GPU2D_COMMAND_BEGIN_FRAME;
         gpu_cmd.val.begin_frame.surface = surface;

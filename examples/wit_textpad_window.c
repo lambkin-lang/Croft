@@ -47,10 +47,10 @@ static int expect_window_ok(const SapWitHostWindowReply* reply,
         return 0;
     }
     if (reply->case_tag != SAP_WIT_HOST_WINDOW_REPLY_WINDOW
-            || reply->val.window.case_tag != SAP_WIT_HOST_WINDOW_OP_RESULT_OK) {
+            || !reply->val.window.is_v_ok) {
         return 0;
     }
-    *handle_out = reply->val.window.val.ok;
+    *handle_out = reply->val.window.v_val.ok.v;
     return 1;
 }
 
@@ -58,7 +58,7 @@ static int expect_window_status_ok(const SapWitHostWindowReply* reply)
 {
     return reply
         && reply->case_tag == SAP_WIT_HOST_WINDOW_REPLY_STATUS
-        && reply->val.status.case_tag == SAP_WIT_HOST_WINDOW_STATUS_OK;
+        && reply->val.status.is_v_ok;
 }
 
 static int expect_window_event(const SapWitHostWindowReply* reply,
@@ -70,13 +70,13 @@ static int expect_window_event(const SapWitHostWindowReply* reply,
     if (reply->case_tag != SAP_WIT_HOST_WINDOW_REPLY_EVENT) {
         return -1;
     }
-    if (reply->val.event.case_tag == SAP_WIT_HOST_WINDOW_EVENT_RESULT_EMPTY) {
-        return 0;
-    }
-    if (reply->val.event.case_tag != SAP_WIT_HOST_WINDOW_EVENT_RESULT_OK) {
+    if (!reply->val.event.is_v_ok) {
         return -1;
     }
-    *event_out = reply->val.event.val.ok;
+    if (!reply->val.event.v_val.ok.has_v) {
+        return 0;
+    }
+    *event_out = reply->val.event.v_val.ok.v;
     return 1;
 }
 
@@ -86,10 +86,10 @@ static int expect_window_bool(const SapWitHostWindowReply* reply, uint8_t* value
         return 0;
     }
     if (reply->case_tag != SAP_WIT_HOST_WINDOW_REPLY_SHOULD_CLOSE
-            || reply->val.should_close.case_tag != SAP_WIT_HOST_WINDOW_BOOL_RESULT_OK) {
+            || !reply->val.should_close.is_v_ok) {
         return 0;
     }
-    *value_out = reply->val.should_close.val.ok;
+    *value_out = reply->val.should_close.v_val.ok.v;
     return 1;
 }
 
@@ -101,11 +101,11 @@ static int expect_window_size(const SapWitHostWindowReply* reply,
         return 0;
     }
     if (reply->case_tag != SAP_WIT_HOST_WINDOW_REPLY_SIZE
-            || reply->val.size.case_tag != SAP_WIT_HOST_WINDOW_SIZE_RESULT_OK) {
+            || !reply->val.size.is_v_ok) {
         return 0;
     }
-    *width_out = reply->val.size.val.ok.width;
-    *height_out = reply->val.size.val.ok.height;
+    *width_out = reply->val.size.v_val.ok.v.width;
+    *height_out = reply->val.size.v_val.ok.v.height;
     return 1;
 }
 
@@ -113,7 +113,7 @@ static int expect_gpu_status_ok(const SapWitHostGpu2dReply* reply)
 {
     return reply
         && reply->case_tag == SAP_WIT_HOST_GPU2D_REPLY_STATUS
-        && reply->val.status.case_tag == SAP_WIT_HOST_GPU2D_STATUS_OK;
+        && reply->val.status.is_v_ok;
 }
 
 static int expect_surface_ok(const SapWitHostGpu2dReply* reply,
@@ -123,10 +123,10 @@ static int expect_surface_ok(const SapWitHostGpu2dReply* reply,
         return 0;
     }
     if (reply->case_tag != SAP_WIT_HOST_GPU2D_REPLY_SURFACE
-            || reply->val.surface.case_tag != SAP_WIT_HOST_GPU2D_SURFACE_RESULT_OK) {
+            || !reply->val.surface.is_v_ok) {
         return 0;
     }
-    *handle_out = reply->val.surface.val.ok;
+    *handle_out = reply->val.surface.v_val.ok.v;
     return 1;
 }
 
@@ -136,10 +136,10 @@ static int expect_gpu_caps_ok(const SapWitHostGpu2dReply* reply, uint32_t* caps_
         return 0;
     }
     if (reply->case_tag != SAP_WIT_HOST_GPU2D_REPLY_CAPABILITIES
-            || reply->val.capabilities.case_tag != SAP_WIT_HOST_GPU2D_CAPABILITIES_RESULT_OK) {
+            || !reply->val.capabilities.is_v_ok) {
         return 0;
     }
-    *caps_out = reply->val.capabilities.val.ok;
+    *caps_out = reply->val.capabilities.v_val.ok.v;
     return 1;
 }
 
@@ -149,10 +149,10 @@ static int expect_measure_ok(const SapWitHostGpu2dReply* reply, float* width_out
         return 0;
     }
     if (reply->case_tag != SAP_WIT_HOST_GPU2D_REPLY_MEASURE
-            || reply->val.measure.case_tag != SAP_WIT_HOST_GPU2D_MEASURE_RESULT_OK) {
+            || !reply->val.measure.is_v_ok) {
         return 0;
     }
-    *width_out = reply->val.measure.val.ok;
+    *width_out = reply->val.measure.v_val.ok.v;
     return 1;
 }
 
@@ -162,10 +162,10 @@ static int expect_clock_now(const SapWitHostClockReply* reply, uint64_t* now_out
         return 0;
     }
     if (reply->case_tag != SAP_WIT_HOST_CLOCK_REPLY_NOW
-            || reply->val.now.case_tag != SAP_WIT_HOST_CLOCK_NOW_RESULT_OK) {
+            || !reply->val.now.is_v_ok) {
         return 0;
     }
-    *now_out = reply->val.now.val.ok;
+    *now_out = reply->val.now.v_val.ok.v;
     return 1;
 }
 
@@ -173,7 +173,7 @@ static int expect_menu_status_ok(const SapWitHostMenuReply* reply)
 {
     return reply
         && reply->case_tag == SAP_WIT_HOST_MENU_REPLY_STATUS
-        && reply->val.status.case_tag == SAP_WIT_HOST_MENU_STATUS_OK;
+        && reply->val.status.is_v_ok;
 }
 
 static int expect_menu_action(const SapWitHostMenuReply* reply, int32_t* action_id_out)
@@ -184,13 +184,13 @@ static int expect_menu_action(const SapWitHostMenuReply* reply, int32_t* action_
     if (reply->case_tag != SAP_WIT_HOST_MENU_REPLY_ACTION) {
         return -1;
     }
-    if (reply->val.action.case_tag == SAP_WIT_HOST_MENU_ACTION_RESULT_EMPTY) {
-        return 0;
-    }
-    if (reply->val.action.case_tag != SAP_WIT_HOST_MENU_ACTION_RESULT_OK) {
+    if (!reply->val.action.is_v_ok) {
         return -1;
     }
-    *action_id_out = reply->val.action.val.ok;
+    if (!reply->val.action.v_val.ok.has_v) {
+        return 0;
+    }
+    *action_id_out = reply->val.action.v_val.ok.v;
     return 1;
 }
 
@@ -198,7 +198,7 @@ static int expect_editor_status_ok(const SapWitHostEditorInputReply* reply)
 {
     return reply
         && reply->case_tag == SAP_WIT_HOST_EDITOR_INPUT_REPLY_STATUS
-        && reply->val.status.case_tag == SAP_WIT_HOST_EDITOR_INPUT_STATUS_OK;
+        && reply->val.status.is_v_ok;
 }
 
 static int expect_editor_action(const SapWitHostEditorInputReply* reply,
@@ -210,13 +210,13 @@ static int expect_editor_action(const SapWitHostEditorInputReply* reply,
     if (reply->case_tag != SAP_WIT_HOST_EDITOR_INPUT_REPLY_ACTION) {
         return -1;
     }
-    if (reply->val.action.case_tag == SAP_WIT_HOST_EDITOR_INPUT_ACTION_RESULT_EMPTY) {
-        return 0;
-    }
-    if (reply->val.action.case_tag != SAP_WIT_HOST_EDITOR_INPUT_ACTION_RESULT_OK) {
+    if (!reply->val.action.is_v_ok) {
         return -1;
     }
-    *action_out = reply->val.action.val.ok;
+    if (!reply->val.action.v_val.ok.has_v) {
+        return 0;
+    }
+    *action_out = reply->val.action.v_val.ok.v;
     return 1;
 }
 
@@ -224,7 +224,7 @@ static int expect_clipboard_status_ok(const SapWitHostClipboardReply* reply)
 {
     return reply
         && reply->case_tag == SAP_WIT_HOST_CLIPBOARD_REPLY_STATUS
-        && reply->val.status.case_tag == SAP_WIT_HOST_CLIPBOARD_STATUS_OK;
+        && reply->val.status.is_v_ok;
 }
 
 static int expect_clipboard_text(const SapWitHostClipboardReply* reply,
@@ -237,14 +237,14 @@ static int expect_clipboard_text(const SapWitHostClipboardReply* reply,
     if (reply->case_tag != SAP_WIT_HOST_CLIPBOARD_REPLY_TEXT) {
         return -1;
     }
-    if (reply->val.text.case_tag == SAP_WIT_HOST_CLIPBOARD_TEXT_RESULT_EMPTY) {
-        return 0;
-    }
-    if (reply->val.text.case_tag != SAP_WIT_HOST_CLIPBOARD_TEXT_RESULT_OK) {
+    if (!reply->val.text.is_v_ok) {
         return -1;
     }
-    *data_out = reply->val.text.val.ok.data;
-    *len_out = reply->val.text.val.ok.len;
+    if (!reply->val.text.v_val.ok.has_v) {
+        return 0;
+    }
+    *data_out = reply->val.text.v_val.ok.v_data;
+    *len_out = reply->val.text.v_val.ok.v_len;
     return 1;
 }
 
@@ -255,10 +255,10 @@ static int expect_text_handle(const SapWitCommonCoreTextReply* reply,
         return 0;
     }
     if (reply->case_tag != SAP_WIT_COMMON_CORE_TEXT_REPLY_TEXT
-            || reply->val.text.case_tag != SAP_WIT_COMMON_CORE_TEXT_OP_RESULT_OK) {
+            || !reply->val.text.is_v_ok) {
         return 0;
     }
-    *text_out = reply->val.text.val.ok;
+    *text_out = reply->val.text.v_val.ok.v;
     return 1;
 }
 
@@ -266,7 +266,7 @@ static int expect_text_status_ok(const SapWitCommonCoreTextReply* reply)
 {
     return reply
         && reply->case_tag == SAP_WIT_COMMON_CORE_TEXT_REPLY_STATUS
-        && reply->val.status.case_tag == SAP_WIT_COMMON_CORE_STATUS_OK;
+        && reply->val.status.is_v_ok;
 }
 
 static int expect_text_export_ok(const SapWitCommonCoreTextReply* reply,
@@ -277,11 +277,11 @@ static int expect_text_export_ok(const SapWitCommonCoreTextReply* reply,
         return 0;
     }
     if (reply->case_tag != SAP_WIT_COMMON_CORE_TEXT_REPLY_EXPORT
-            || reply->val.export.case_tag != SAP_WIT_COMMON_CORE_TEXT_EXPORT_RESULT_OK) {
+            || !reply->val.export.is_v_ok) {
         return 0;
     }
-    *data_out = reply->val.export.val.ok.data;
-    *len_out = reply->val.export.val.ok.len;
+    *data_out = reply->val.export.v_val.ok.v_data;
+    *len_out = reply->val.export.v_val.ok.v_len;
     return 1;
 }
 

@@ -1471,6 +1471,7 @@ static void text_editor_draw_whitespace_marker(const text_editor_node* te,
                                                float current_y,
                                                croft_editor_visible_whitespace_kind kind)
 {
+    float line_top;
     float width = x2 - x1;
     float marker_y;
     uint32_t color = 0x99A3AFCC;
@@ -1479,7 +1480,8 @@ static void text_editor_draw_whitespace_marker(const text_editor_node* te,
         return;
     }
 
-    marker_y = current_y - te->font_size + (te->line_height * 0.58f);
+    line_top = current_y - te->font_size;
+    marker_y = line_top + (te->line_height * 0.5f);
     if (kind == CROFT_EDITOR_VISIBLE_WHITESPACE_SPACE) {
         float dot_x = x1 + (width * 0.5f) - 1.0f;
         host_render_draw_rect(dot_x, marker_y - 1.0f, 2.0f, 2.0f, color);
