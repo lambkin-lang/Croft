@@ -1,6 +1,7 @@
 #include "croft/editor_document.h"
 #include "croft/editor_document_fs.h"
 #include "croft/editor_scene_runtime.h"
+#include "croft/host_file_dialog.h"
 #include "croft/host_render.h"
 #include "croft/host_ui.h"
 #include "croft/scene.h"
@@ -47,6 +48,64 @@ static uint64_t monotonic_usec_now(void) {
 
 static void request_redraw(void) {
     croft_editor_scene_runtime_request_redraw(&g_runtime);
+}
+
+static void bind_document_to_editor(croft_editor_document* document) {
+    g_document = document;
+    text_editor_node_bind_document(&g_editor, g_document);
+    g_editor.scroll_x = 0.0f;
+    g_editor.scroll_y = 0.0f;
+    g_editor.sel_start = 0u;
+    g_editor.sel_end = 0u;
+    g_editor.preferred_column = 1u;
+    g_editor.selection = croft_editor_selection_create(croft_editor_position_create(1u, 1u),
+                                                       croft_editor_position_create(1u, 1u));
+    text_editor_node_find_close(&g_editor);
+}
+
+static int open_document_via_dialog(void) {
+    char* path = host_file_dialog_open_path();
+    croft_editor_document* document;
+
+    if (!path) {
+        return 1;
+    }
+
+    document = croft_editor_document_open(NULL, path, NULL, 0u);
+    if (!document) {
+        fprintf(stderr, "example_editor_text: failed to open %s\n", path);
+        host_file_dialog_free_path(path);
+        return 0;
+    }
+
+    host_file_dialog_free_path(path);
+    croft_editor_document_destroy(g_document);
+    bind_document_to_editor(document);
+    request_redraw();
+    return 1;
+}
+
+static int save_document_via_dialog(int force_save_as) {
+    int32_t rc;
+
+    if (!force_save_as && croft_editor_document_path(g_document)) {
+        rc = croft_editor_document_save(g_document);
+    } else {
+        char* path = host_file_dialog_save_path(croft_editor_document_path(g_document));
+        if (!path) {
+            return 1;
+        }
+        rc = croft_editor_document_save_as(g_document, path);
+        host_file_dialog_free_path(path);
+    }
+
+    if (rc != 0) {
+        fprintf(stderr, "example_editor_text: save failed (%d)\n", rc);
+        return 0;
+    }
+
+    request_redraw();
+    return 1;
 }
 
 static void print_font_probe_summary(const char* variant,
@@ -182,6 +241,20 @@ static void on_ui_event(int32_t type, int32_t arg0, int32_t arg1) {
             request_redraw();
             return;
         }
+        if (arg1 == 1 && (modifiers & (CROFT_UI_MOD_SUPER | CROFT_UI_MOD_CONTROL)) != 0u) {
+            if (arg0 == 79) {
+                if (!open_document_via_dialog()) {
+                    g_running = 0;
+                }
+                return;
+            }
+            if (arg0 == 83) {
+                if (!save_document_via_dialog((modifiers & CROFT_UI_MOD_SHIFT) != 0u)) {
+                    g_running = 0;
+                }
+                return;
+            }
+        }
         if (g_focused_node && g_focused_node->vtbl && g_focused_node->vtbl->on_key_event) {
             g_focused_node->vtbl->on_key_event(g_focused_node, arg0, arg1);
         }
@@ -303,7 +376,7 @@ int main(int argc, char** argv) {
                               (float)fw - (float)(CROFT_EDITOR_WINDOW_PADDING * 2),
                               (float)fh - (float)(CROFT_EDITOR_WINDOW_PADDING * 2),
                               croft_editor_document_text(g_document));
-        text_editor_node_bind_document(&g_editor, g_document);
+        bind_document_to_editor(g_document);
         text_editor_node_set_profiling(&g_editor, profile_enabled);
         scene_node_add_child(&g_root_vp.base, &g_editor.base);
         if (font_probe_enabled) {

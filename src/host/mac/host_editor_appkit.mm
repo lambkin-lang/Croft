@@ -8,6 +8,7 @@
 #include "croft/editor_text_model.h"
 #include "croft/editor_typography_macos.h"
 #include "croft/editor_whitespace.h"
+#include "croft/host_file_dialog.h"
 #include "croft/host_editor_appkit.h"
 
 #import <AppKit/AppKit.h>
@@ -1581,30 +1582,6 @@ cleanup:
     return YES;
 }
 
-- (NSString*)runOpenPanel {
-    NSOpenPanel* panel = [NSOpenPanel openPanel];
-
-    [panel setCanChooseFiles:YES];
-    [panel setCanChooseDirectories:NO];
-    [panel setAllowsMultipleSelection:NO];
-    return [panel runModal] == NSModalResponseOK ? panel.URL.path : nil;
-}
-
-- (NSString*)runSavePanel {
-    NSSavePanel* panel = [NSSavePanel savePanel];
-    const char* path = croft_editor_document_path(_document);
-
-    if (path && path[0] != '\0') {
-        NSString* currentPath = [NSString stringWithUTF8String:path];
-        if (currentPath) {
-            panel.directoryURL = [NSURL fileURLWithPath:[currentPath stringByDeletingLastPathComponent]];
-            panel.nameFieldStringValue = currentPath.lastPathComponent ?: @"";
-        }
-    }
-
-    return [panel runModal] == NSModalResponseOK ? panel.URL.path : nil;
-}
-
 - (void)syncTextViewToDocument {
     NSData* utf8 = [[_textView string] dataUsingEncoding:NSUTF8StringEncoding allowLossyConversion:NO];
     const void* bytes = utf8 ? utf8.bytes : "";
@@ -1790,7 +1767,7 @@ cleanup:
 
 - (IBAction)openDocument:(id)sender {
     (void)sender;
-    NSString* path = [self runOpenPanel];
+    char* path = host_file_dialog_open_path();
     croft_editor_document* opened;
 
     if (!path) {
@@ -1798,28 +1775,31 @@ cleanup:
     }
 
     opened = croft_editor_document_open(NULL,
-                                        path.fileSystemRepresentation,
+                                        path,
                                         NULL,
                                         0u);
     if (!opened) {
-        std::printf("croft_editor_appkit: open failed for %s\n", path.fileSystemRepresentation);
+        std::printf("croft_editor_appkit: open failed for %s\n", path);
+        host_file_dialog_free_path(path);
         NSBeep();
         return;
     }
 
+    host_file_dialog_free_path(path);
     [self replaceCurrentDocumentWithDocument:opened];
 }
 
 - (IBAction)saveDocumentAs:(id)sender {
     (void)sender;
-    NSString* path = [self runSavePanel];
+    char* path = host_file_dialog_save_path(croft_editor_document_path(_document));
     int32_t rc;
 
     if (!path) {
         return;
     }
 
-    rc = croft_editor_document_save_as(_document, path.fileSystemRepresentation);
+    rc = croft_editor_document_save_as(_document, path);
+    host_file_dialog_free_path(path);
     if (rc != 0) {
         std::printf("croft_editor_appkit: save-as failed (%d)\n", rc);
         NSBeep();

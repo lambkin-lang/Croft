@@ -1248,11 +1248,28 @@ if(APPLE AND TARGET croft_ui_glfw_metal)
 endif()
 
 if(APPLE)
+    add_library(croft_file_dialog_macos STATIC src/host/mac/host_file_dialog.m)
+    croft_apply_public_includes(croft_file_dialog_macos)
+    set_source_files_properties(src/host/mac/host_file_dialog.m PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+    target_link_libraries(croft_file_dialog_macos PUBLIC "-framework AppKit")
+    croft_register_artifact(croft_file_dialog_macos host
+        TAGS macos native file-dialog
+    )
+else()
+    add_library(croft_file_dialog_macos STATIC src/host/host_file_dialog_stub.c)
+    croft_apply_public_includes(croft_file_dialog_macos)
+    croft_register_artifact(croft_file_dialog_macos host
+        TAGS file-dialog stub
+    )
+endif()
+
+if(APPLE)
     add_library(croft_editor_appkit STATIC src/host/mac/host_editor_appkit.mm)
     croft_apply_public_includes(croft_editor_appkit)
     set_source_files_properties(src/host/mac/host_editor_appkit.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
     target_link_libraries(croft_editor_appkit
         PUBLIC
+            croft_file_dialog_macos
             croft_editor_commands
             croft_editor_document_core
             croft_editor_document_fs
@@ -1701,6 +1718,10 @@ endif()
 if(CROFT_EXAMPLE_EDITOR_TARGET)
     set(CROFT_EDITOR_EXAMPLE_LINKS ${CROFT_EXAMPLE_EDITOR_TARGET} croft_a11y_stub croft_editor_document_fs croft_editor_scene_runtime)
     set(CROFT_EDITOR_EXAMPLE_REQUIRES ${CROFT_EXAMPLE_EDITOR_TARGET} croft_editor_document_core croft_editor_document_fs croft_editor_scene_runtime)
+    if(TARGET croft_file_dialog_macos)
+        list(APPEND CROFT_EDITOR_EXAMPLE_LINKS croft_file_dialog_macos)
+        list(APPEND CROFT_EDITOR_EXAMPLE_REQUIRES croft_file_dialog_macos)
+    endif()
     croft_add_example(example_editor_text
         SOURCES examples/editor_scene_shell.c
         LINKS ${CROFT_EDITOR_EXAMPLE_LINKS}
@@ -1716,12 +1737,14 @@ if(TARGET croft_scene_text_editor_metal_native
         AND TARGET croft_wit_host_menu_runtime
         AND TARGET croft_wit_host_clipboard_runtime
         AND TARGET croft_wit_host_editor_input_runtime
-        AND TARGET croft_wit_host_a11y_runtime)
+        AND TARGET croft_wit_host_a11y_runtime
+        AND TARGET croft_file_dialog_macos)
     croft_add_example(example_editor_text_metal_native
         SOURCES examples/editor_scene_shell_wit.c
         LINKS croft_scene_text_editor_metal_native
               croft_editor_document_fs
               croft_editor_scene_runtime
+              croft_file_dialog_macos
               croft_wit_host_window_runtime
               croft_wit_host_clock_runtime
               croft_wit_host_menu_runtime
@@ -1732,6 +1755,7 @@ if(TARGET croft_scene_text_editor_metal_native
                  croft_editor_document_core
                  croft_editor_document_fs
                  croft_editor_scene_runtime
+                 croft_file_dialog_macos
                  croft_wit_host_window_runtime
                  croft_wit_host_clock_runtime
                  croft_wit_host_menu_runtime

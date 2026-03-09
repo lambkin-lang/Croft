@@ -2,6 +2,7 @@
 #include "croft/editor_document_fs.h"
 #include "croft/editor_menu_ids.h"
 #include "croft/editor_scene_runtime.h"
+#include "croft/host_file_dialog.h"
 #include "croft/host_render.h"
 #include "croft/host_ui.h"
 #include "croft/scene.h"
@@ -77,6 +78,67 @@ static void print_font_probe_summary(const char* variant,
 static void request_redraw(void)
 {
     croft_editor_scene_runtime_request_redraw(&g_runtime);
+}
+
+static void bind_document_to_editor(croft_editor_document* document)
+{
+    g_document = document;
+    text_editor_node_bind_document(&g_editor, g_document);
+    g_editor.scroll_x = 0.0f;
+    g_editor.scroll_y = 0.0f;
+    g_editor.sel_start = 0u;
+    g_editor.sel_end = 0u;
+    g_editor.preferred_column = 1u;
+    g_editor.selection = croft_editor_selection_create(croft_editor_position_create(1u, 1u),
+                                                       croft_editor_position_create(1u, 1u));
+    text_editor_node_find_close(&g_editor);
+}
+
+static int open_document_via_dialog(void)
+{
+    char* path = host_file_dialog_open_path();
+    croft_editor_document* document;
+
+    if (!path) {
+        return 1;
+    }
+
+    document = croft_editor_document_open(NULL, path, NULL, 0u);
+    if (!document) {
+        fprintf(stderr, "example_editor_text_metal_native: failed to open %s\n", path);
+        host_file_dialog_free_path(path);
+        return 0;
+    }
+
+    host_file_dialog_free_path(path);
+    croft_editor_document_destroy(g_document);
+    bind_document_to_editor(document);
+    request_redraw();
+    return 1;
+}
+
+static int save_document_via_dialog(int force_save_as)
+{
+    int32_t rc;
+
+    if (!force_save_as && croft_editor_document_path(g_document)) {
+        rc = croft_editor_document_save(g_document);
+    } else {
+        char* path = host_file_dialog_save_path(croft_editor_document_path(g_document));
+        if (!path) {
+            return 1;
+        }
+        rc = croft_editor_document_save_as(g_document, path);
+        host_file_dialog_free_path(path);
+    }
+
+    if (rc != 0) {
+        fprintf(stderr, "example_editor_text_metal_native: save failed (%d)\n", rc);
+        return 0;
+    }
+
+    request_redraw();
+    return 1;
 }
 
 static void print_frame_profile_summary(const char* variant, const render_frame_profile* profile)
@@ -387,8 +449,13 @@ static int editor_install_menu(croft_wit_host_menu_runtime* runtime)
     if (!menu_add_item(runtime, &reply, CROFT_EDITOR_MENU_APP_ROOT, -1, "App", NULL, 0u)
             || !menu_add_item(runtime, &reply, CROFT_EDITOR_MENU_FILE_ROOT, -1, "File", NULL, 0u)
             || !menu_add_item(runtime, &reply, CROFT_EDITOR_MENU_EDIT_ROOT, -1, "Edit", NULL, 0u)
+            || !menu_add_item(runtime, &reply, CROFT_EDITOR_MENU_OPEN, CROFT_EDITOR_MENU_FILE_ROOT,
+                              "Open...", "o", SAP_WIT_HOST_MENU_MODIFIERS_CMD)
             || !menu_add_item(runtime, &reply, CROFT_EDITOR_MENU_SAVE, CROFT_EDITOR_MENU_FILE_ROOT,
                               "Save", "s", SAP_WIT_HOST_MENU_MODIFIERS_CMD)
+            || !menu_add_item(runtime, &reply, CROFT_EDITOR_MENU_SAVE_AS, CROFT_EDITOR_MENU_FILE_ROOT,
+                              "Save As...", "s",
+                              SAP_WIT_HOST_MENU_MODIFIERS_CMD | SAP_WIT_HOST_MENU_MODIFIERS_SHIFT)
             || !menu_add_item(runtime, &reply, CROFT_EDITOR_MENU_QUIT, CROFT_EDITOR_MENU_APP_ROOT,
                               "Quit Croft", "q", SAP_WIT_HOST_MENU_MODIFIERS_CMD)
             || !menu_add_item(runtime, &reply, CROFT_EDITOR_MENU_UNDO, CROFT_EDITOR_MENU_EDIT_ROOT,
@@ -750,7 +817,7 @@ int main(int argc, char** argv)
                               (float)fw - (float)(CROFT_EDITOR_WINDOW_PADDING * 2),
                               (float)fh - (float)(CROFT_EDITOR_WINDOW_PADDING * 2),
                               croft_editor_document_text(g_document));
-        text_editor_node_bind_document(&g_editor, g_document);
+        bind_document_to_editor(g_document);
         text_editor_node_set_profiling(&g_editor, profile_enabled);
         scene_node_add_child(&g_root_vp.base, &g_editor.base);
         if (font_probe_enabled) {
@@ -901,6 +968,18 @@ int main(int argc, char** argv)
                 break;
             }
 
+            if (action_id == CROFT_EDITOR_MENU_OPEN) {
+                if (!open_document_via_dialog()) {
+                    goto cleanup;
+                }
+                continue;
+            }
+            if (action_id == CROFT_EDITOR_MENU_SAVE_AS) {
+                if (!save_document_via_dialog(1)) {
+                    goto cleanup;
+                }
+                continue;
+            }
             if (action_id == CROFT_EDITOR_MENU_FIND) {
                 text_editor_node_find_activate(&g_editor);
                 request_redraw();
