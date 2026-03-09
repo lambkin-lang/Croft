@@ -5,6 +5,48 @@ its aspect libraries are still co-evolving. These notes are not intended to
 freeze the design; they are meant to preserve the useful pressure points,
 surprises, and open questions that surfaced while forcing the ideas into code.
 
+## March 9, 2026: Popup Menus Became Their Own Host Mix-In
+
+The earlier popup-menu pass was enough to prove that native context menus were
+useful in the scene editors, but not enough to prove they belonged to the same
+host shape as the menu bar.
+
+This follow-up made that difference explicit in code:
+
+- `host-popup-menu` now exists as its own WIT host mix-in.
+- `example_editor_text_metal_native` now routes right-click popup menus
+  through that mix-in instead of calling the native seam directly.
+- The shape is deliberately not a copy of `host-menu`: popup menus are
+  synchronous and coordinate-anchored, while menu bars are long-lived and
+  queue/callback-oriented.
+
+### What This Clarified
+
+- "Menu" is not one seam. Main menus and popup/context menus have different
+  temporal and spatial contracts.
+- Trying to flatten both into one host service would make the interface less
+  honest, not more reusable.
+- The useful reusable boundary is higher-level than AppKit, but lower-level
+  than "all menus": a popup mix-in can be shared without pretending it is just
+  another branch of the menu-bar update stream.
+
+### New Pressure Point
+
+The editor scene shells still treat many action-dispatch failures as fatal to
+the whole sample. That made sense while these were tight model programs, but
+it is too coarse for editor behavior:
+
+- a failed popup dispatch,
+- a failed open/save action,
+- or another recoverable host-service failure
+
+should not necessarily collapse the whole application loop.
+
+That distinction is now more visible because popup menus are no longer just a
+direct native call. Once a host capability is modeled as its own mix-in, it is
+harder to justify conflating "that host action failed" with "the shell itself
+must terminate."
+
 ## March 6, 2026: Current Assessment After The First Real World Family Pass
 
 The repository now supports several conclusions strongly enough that they
