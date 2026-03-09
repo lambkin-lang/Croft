@@ -259,6 +259,8 @@ static void text_editor_refresh_syntax_language(text_editor_node* te) {
 
 static uint32_t text_editor_syntax_color(croft_editor_syntax_token_kind kind, uint32_t default_color) {
     switch (kind) {
+        case CROFT_EDITOR_SYNTAX_TOKEN_COMMENT:
+            return 0x3F6212FF;
         case CROFT_EDITOR_SYNTAX_TOKEN_PROPERTY:
             return 0x1F5F99FF;
         case CROFT_EDITOR_SYNTAX_TOKEN_STRING:
@@ -267,6 +269,8 @@ static uint32_t text_editor_syntax_color(croft_editor_syntax_token_kind kind, ui
             return 0x0F766EFF;
         case CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD:
             return 0x7C3AEDFF;
+        case CROFT_EDITOR_SYNTAX_TOKEN_TYPE:
+            return 0x1D4ED8FF;
         case CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION:
             return 0x52606DFF;
         case CROFT_EDITOR_SYNTAX_TOKEN_INVALID:

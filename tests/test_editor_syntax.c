@@ -50,6 +50,16 @@ int test_editor_syntax_language_from_path(void) {
                   == CROFT_EDITOR_SYNTAX_LANGUAGE_JSON);
     ASSERT_SYNTAX(croft_editor_syntax_language_from_path("/tmp/SETTINGS.JSON")
                   == CROFT_EDITOR_SYNTAX_LANGUAGE_JSON);
+    ASSERT_SYNTAX(croft_editor_syntax_language_from_path("/tmp/prelude.lamb")
+                  == CROFT_EDITOR_SYNTAX_LANGUAGE_LAMBKIN);
+    ASSERT_SYNTAX(croft_editor_syntax_language_from_path("/tmp/PRELUDE.LAMBKIN")
+                  == CROFT_EDITOR_SYNTAX_LANGUAGE_LAMBKIN);
+    ASSERT_SYNTAX(croft_editor_syntax_language_from_path("/tmp/common-core.wit")
+                  == CROFT_EDITOR_SYNTAX_LANGUAGE_WIT);
+    ASSERT_SYNTAX(croft_editor_syntax_language_from_path("/tmp/dummy_guest.wat")
+                  == CROFT_EDITOR_SYNTAX_LANGUAGE_WAT);
+    ASSERT_SYNTAX(croft_editor_syntax_language_from_path("/tmp/dummy_guest.wast")
+                  == CROFT_EDITOR_SYNTAX_LANGUAGE_WAT);
     return 0;
 }
 
@@ -95,6 +105,190 @@ int test_editor_syntax_json_tokens(void) {
                                     CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "null") == 0);
     ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JSON, &offset,
                                     CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "}") == 0);
+
+    croft_editor_text_model_dispose(&model);
+    return 0;
+}
+
+int test_editor_syntax_lambkin_tokens(void) {
+    const char* source = "-- comment\nfunc (main) -> integer {\n  let value = -42_i64\n  claim true\n}\n";
+    croft_editor_text_model model;
+    uint32_t offset = 0u;
+
+    croft_editor_text_model_init(&model);
+    ASSERT_SYNTAX(croft_editor_text_model_set_text(&model, source, strlen(source)) == CROFT_EDITOR_OK);
+
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_LAMBKIN, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_COMMENT, "-- comment") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_LAMBKIN, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "func") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_LAMBKIN, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "(") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_LAMBKIN, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PLAIN, "main") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_LAMBKIN, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ")") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_LAMBKIN, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "->") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_LAMBKIN, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_TYPE, "integer") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_LAMBKIN, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "{") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_LAMBKIN, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "let") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_LAMBKIN, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PLAIN, "value") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_LAMBKIN, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "=") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_LAMBKIN, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_NUMBER, "-42_i64") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_LAMBKIN, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "claim") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_LAMBKIN, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "true") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_LAMBKIN, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "}") == 0);
+
+    croft_editor_text_model_dispose(&model);
+    return 0;
+}
+
+int test_editor_syntax_wit_tokens(void) {
+    const char* source =
+        "package lambkin:common-core@0.1.0;\n"
+        "interface types {\n"
+        "  record text-open {\n"
+        "    initial: list<u8>,\n"
+        "  }\n"
+        "}\n";
+    croft_editor_text_model model;
+    uint32_t offset = 0u;
+
+    croft_editor_text_model_init(&model);
+    ASSERT_SYNTAX(croft_editor_text_model_set_text(&model, source, strlen(source)) == CROFT_EDITOR_OK);
+
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WIT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "package") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WIT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PROPERTY, "lambkin") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WIT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ":") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WIT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PLAIN, "common-core") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WIT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "@") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WIT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_NUMBER, "0.1") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WIT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ".") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WIT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_NUMBER, "0") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WIT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ";") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WIT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "interface") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WIT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PLAIN, "types") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WIT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "{") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WIT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "record") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WIT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PLAIN, "text-open") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WIT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "{") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WIT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PROPERTY, "initial") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WIT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ":") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WIT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_TYPE, "list") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WIT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "<") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WIT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_TYPE, "u8") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WIT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ">") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WIT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ",") == 0);
+
+    croft_editor_text_model_dispose(&model);
+    return 0;
+}
+
+int test_editor_syntax_wat_tokens(void) {
+    const char* source =
+        "(module\n"
+        "  (import \"env\" \"host_log\" (func $host_log (param i32 i32) (result i32)))\n"
+        "  ;; hello\n"
+        "  (i32.add (local.get $arg) (i32.const 42))\n"
+        ")\n";
+    croft_editor_text_model model;
+    uint32_t offset = 0u;
+
+    croft_editor_text_model_init(&model);
+    ASSERT_SYNTAX(croft_editor_text_model_set_text(&model, source, strlen(source)) == CROFT_EDITOR_OK);
+
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WAT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "(") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WAT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "module") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WAT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "(") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WAT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "import") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WAT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_STRING, "\"env\"") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WAT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_STRING, "\"host_log\"") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WAT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "(") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WAT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "func") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WAT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PROPERTY, "$host_log") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WAT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "(") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WAT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "param") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WAT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_TYPE, "i32") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WAT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_TYPE, "i32") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WAT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ")") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WAT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "(") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WAT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "result") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WAT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_TYPE, "i32") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WAT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ")") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WAT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ")") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WAT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ")") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WAT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_COMMENT, ";; hello") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WAT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "(") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WAT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "i32.add") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WAT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "(") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WAT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "local.get") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WAT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PROPERTY, "$arg") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WAT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ")") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WAT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "(") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WAT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "i32.const") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_WAT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_NUMBER, "42") == 0);
 
     croft_editor_text_model_dispose(&model);
     return 0;

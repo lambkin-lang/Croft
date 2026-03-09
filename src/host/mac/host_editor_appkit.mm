@@ -210,6 +210,8 @@ static void croft_editor_appkit_draw_whitespace_marker(NSRect markerRect,
 
 static NSColor* croft_editor_appkit_color_for_syntax_token(croft_editor_syntax_token_kind kind) {
     switch (kind) {
+        case CROFT_EDITOR_SYNTAX_TOKEN_COMMENT:
+            return [NSColor colorWithCalibratedRed:0.25 green:0.38 blue:0.07 alpha:1.0];
         case CROFT_EDITOR_SYNTAX_TOKEN_PROPERTY:
             return [NSColor colorWithCalibratedRed:0.12 green:0.37 blue:0.60 alpha:1.0];
         case CROFT_EDITOR_SYNTAX_TOKEN_STRING:
@@ -218,6 +220,8 @@ static NSColor* croft_editor_appkit_color_for_syntax_token(croft_editor_syntax_t
             return [NSColor colorWithCalibratedRed:0.06 green:0.46 blue:0.43 alpha:1.0];
         case CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD:
             return [NSColor colorWithCalibratedRed:0.49 green:0.23 blue:0.93 alpha:1.0];
+        case CROFT_EDITOR_SYNTAX_TOKEN_TYPE:
+            return [NSColor colorWithCalibratedRed:0.11 green:0.31 blue:0.85 alpha:1.0];
         case CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION:
             return [NSColor colorWithCalibratedWhite:0.36 alpha:1.0];
         case CROFT_EDITOR_SYNTAX_TOKEN_INVALID:
