@@ -221,6 +221,7 @@ extern int test_editor_syntax_json_tokens(void);
 extern int test_editor_syntax_markdown_tokens(void);
 extern int test_editor_syntax_python_tokens(void);
 extern int test_editor_syntax_yaml_tokens(void);
+extern int test_editor_syntax_javascript_tokens(void);
 extern int test_editor_syntax_lambkin_tokens(void);
 extern int test_editor_syntax_wit_tokens(void);
 extern int test_editor_syntax_wat_tokens(void);
@@ -333,6 +334,7 @@ int main(void)
     RUN_TEST(test_editor_syntax_markdown_tokens);
     RUN_TEST(test_editor_syntax_python_tokens);
     RUN_TEST(test_editor_syntax_yaml_tokens);
+    RUN_TEST(test_editor_syntax_javascript_tokens);
     RUN_TEST(test_editor_syntax_lambkin_tokens);
     RUN_TEST(test_editor_syntax_wit_tokens);
     RUN_TEST(test_editor_syntax_wat_tokens);

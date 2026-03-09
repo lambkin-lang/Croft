@@ -60,6 +60,12 @@ int test_editor_syntax_language_from_path(void) {
                   == CROFT_EDITOR_SYNTAX_LANGUAGE_YAML);
     ASSERT_SYNTAX(croft_editor_syntax_language_from_path("/tmp/CONFIG.YML")
                   == CROFT_EDITOR_SYNTAX_LANGUAGE_YAML);
+    ASSERT_SYNTAX(croft_editor_syntax_language_from_path("/tmp/app.ts")
+                  == CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT);
+    ASSERT_SYNTAX(croft_editor_syntax_language_from_path("/tmp/APP.TSX")
+                  == CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT);
+    ASSERT_SYNTAX(croft_editor_syntax_language_from_path("/tmp/app.jsx")
+                  == CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT);
     ASSERT_SYNTAX(croft_editor_syntax_language_from_path("/tmp/prelude.lamb")
                   == CROFT_EDITOR_SYNTAX_LANGUAGE_LAMBKIN);
     ASSERT_SYNTAX(croft_editor_syntax_language_from_path("/tmp/PRELUDE.LAMBKIN")
@@ -275,6 +281,98 @@ int test_editor_syntax_yaml_tokens(void) {
                                     CROFT_EDITOR_SYNTAX_TOKEN_COMMENT, "# note") == 0);
     ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_YAML, &offset,
                                     CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "...") == 0);
+
+    croft_editor_text_model_dispose(&model);
+    return 0;
+}
+
+int test_editor_syntax_javascript_tokens(void) {
+    const char* source =
+        "import { useState } from \"react\";\n"
+        "/* note */\n"
+        "type Greeter = { name: string, count: number };\n"
+        "const answer = 42;\n"
+        "function greet(name) {\n"
+        "  return `hi ${name}`;\n"
+        "}\n";
+    croft_editor_text_model model;
+    uint32_t offset = 0u;
+
+    croft_editor_text_model_init(&model);
+    ASSERT_SYNTAX(croft_editor_text_model_set_text(&model, source, strlen(source)) == CROFT_EDITOR_OK);
+
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "import") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "{") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PLAIN, "useState") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "}") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "from") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_STRING, "\"react\"") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ";") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_COMMENT, "/* note */") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "type") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PLAIN, "Greeter") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "=") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "{") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PROPERTY, "name") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ":") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_TYPE, "string") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ",") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PROPERTY, "count") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ":") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_TYPE, "number") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "}") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ";") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "const") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PLAIN, "answer") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "=") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_NUMBER, "42") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ";") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "function") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PLAIN, "greet") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "(") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PLAIN, "name") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ")") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "{") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "return") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_STRING, "`hi ${name}`") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ";") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "}") == 0);
 
     croft_editor_text_model_dispose(&model);
     return 0;
