@@ -1150,6 +1150,297 @@ static int32_t croft_editor_syntax_markdown_next_token(const croft_editor_text_m
     return CROFT_EDITOR_OK;
 }
 
+static int croft_editor_syntax_python_is_identifier_start(uint32_t codepoint) {
+    return croft_editor_syntax_is_ascii_alpha(codepoint) || codepoint == '_';
+}
+
+static int croft_editor_syntax_python_is_identifier_continue(uint32_t codepoint) {
+    return croft_editor_syntax_python_is_identifier_start(codepoint)
+        || croft_editor_syntax_is_digit(codepoint);
+}
+
+static int croft_editor_syntax_python_is_delimiter(uint32_t codepoint) {
+    return codepoint == '('
+        || codepoint == ')'
+        || codepoint == '['
+        || codepoint == ']'
+        || codepoint == '{'
+        || codepoint == '}'
+        || codepoint == ','
+        || codepoint == '.'
+        || codepoint == ';';
+}
+
+static int croft_editor_syntax_python_is_operator_char(uint32_t codepoint) {
+    return codepoint == ':'
+        || codepoint == '='
+        || codepoint == '+'
+        || codepoint == '-'
+        || codepoint == '*'
+        || codepoint == '/'
+        || codepoint == '%'
+        || codepoint == '<'
+        || codepoint == '>'
+        || codepoint == '!'
+        || codepoint == '&'
+        || codepoint == '|'
+        || codepoint == '^';
+}
+
+static int croft_editor_syntax_python_is_boundary(uint32_t codepoint) {
+    return croft_editor_syntax_python_is_delimiter(codepoint)
+        || croft_editor_syntax_python_is_operator_char(codepoint)
+        || codepoint == '@'
+        || codepoint == '#'
+        || codepoint == '\''
+        || codepoint == '"'
+        || croft_editor_syntax_is_whitespace(codepoint);
+}
+
+static uint32_t croft_editor_syntax_scan_python_identifier(const croft_editor_text_model* model,
+                                                           uint32_t start_offset,
+                                                           uint32_t limit_offset) {
+    uint32_t offset = start_offset;
+    uint32_t codepoint = 0u;
+
+    while (offset < limit_offset && croft_editor_syntax_codepoint_at(model, offset, &codepoint)) {
+        if (!croft_editor_syntax_python_is_identifier_continue(codepoint)) {
+            break;
+        }
+        offset++;
+    }
+    return offset;
+}
+
+static uint32_t croft_editor_syntax_scan_python_decorator(const croft_editor_text_model* model,
+                                                          uint32_t start_offset,
+                                                          uint32_t limit_offset) {
+    uint32_t offset = start_offset + 1u;
+    uint32_t codepoint = 0u;
+
+    while (offset < limit_offset && croft_editor_syntax_codepoint_at(model, offset, &codepoint)) {
+        if (codepoint == '.') {
+            offset++;
+            continue;
+        }
+        if (!croft_editor_syntax_python_is_identifier_continue(codepoint)) {
+            break;
+        }
+        offset++;
+    }
+    return offset;
+}
+
+static int croft_editor_syntax_python_is_string_prefix_char(uint32_t codepoint) {
+    return codepoint == 'r' || codepoint == 'R'
+        || codepoint == 'u' || codepoint == 'U'
+        || codepoint == 'b' || codepoint == 'B'
+        || codepoint == 'f' || codepoint == 'F';
+}
+
+static uint32_t croft_editor_syntax_scan_python_string(const croft_editor_text_model* model,
+                                                       uint32_t start_offset,
+                                                       uint32_t limit_offset,
+                                                       int* out_closed,
+                                                       int* out_triple_quoted) {
+    uint32_t quote = 0u;
+    uint32_t second_quote = 0u;
+    uint32_t third_quote = 0u;
+
+    if (out_closed) {
+        *out_closed = 0;
+    }
+    if (out_triple_quoted) {
+        *out_triple_quoted = 0;
+    }
+
+    if (!croft_editor_syntax_codepoint_at(model, start_offset, &quote)) {
+        return start_offset;
+    }
+
+    if (start_offset + 2u < limit_offset
+            && croft_editor_syntax_codepoint_at(model, start_offset + 1u, &second_quote)
+            && croft_editor_syntax_codepoint_at(model, start_offset + 2u, &third_quote)
+            && second_quote == quote
+            && third_quote == quote) {
+        uint32_t offset = start_offset + 3u;
+        uint32_t a = 0u;
+        uint32_t b = 0u;
+        uint32_t c = 0u;
+
+        if (out_triple_quoted) {
+            *out_triple_quoted = 1;
+        }
+
+        while (offset + 2u < limit_offset
+                && croft_editor_syntax_codepoint_at(model, offset, &a)
+                && croft_editor_syntax_codepoint_at(model, offset + 1u, &b)
+                && croft_editor_syntax_codepoint_at(model, offset + 2u, &c)) {
+            if (a == quote && b == quote && c == quote) {
+                if (out_closed) {
+                    *out_closed = 1;
+                }
+                return offset + 3u;
+            }
+            offset++;
+        }
+        return limit_offset;
+    }
+
+    return croft_editor_syntax_scan_string(model, start_offset, limit_offset, quote, out_closed);
+}
+
+static int croft_editor_syntax_python_prefixed_string_start(const croft_editor_text_model* model,
+                                                            uint32_t start_offset,
+                                                            uint32_t limit_offset,
+                                                            uint32_t* out_quote_offset) {
+    uint32_t first = 0u;
+    uint32_t second = 0u;
+    uint32_t third = 0u;
+
+    if (!croft_editor_syntax_codepoint_at(model, start_offset, &first)
+            || !croft_editor_syntax_python_is_string_prefix_char(first)) {
+        return 0;
+    }
+
+    if (start_offset + 1u < limit_offset && croft_editor_syntax_codepoint_at(model, start_offset + 1u, &second)) {
+        if (second == '\'' || second == '"') {
+            if (out_quote_offset) {
+                *out_quote_offset = start_offset + 1u;
+            }
+            return 1;
+        }
+        if (croft_editor_syntax_python_is_string_prefix_char(second)
+                && start_offset + 2u < limit_offset
+                && croft_editor_syntax_codepoint_at(model, start_offset + 2u, &third)
+                && (third == '\'' || third == '"')) {
+            if (out_quote_offset) {
+                *out_quote_offset = start_offset + 2u;
+            }
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int32_t croft_editor_syntax_python_next_token(const croft_editor_text_model* model,
+                                                     uint32_t search_offset,
+                                                     uint32_t limit_offset,
+                                                     croft_editor_syntax_token* out_token) {
+    static const char* const python_keywords[] = {
+        "False", "None", "True", "and", "as", "assert", "async", "await", "break",
+        "case", "class", "continue", "def", "del", "elif", "else", "except", "finally",
+        "for", "from", "global", "if", "import", "in", "is", "lambda", "match", "nonlocal",
+        "not", "or", "pass", "raise", "return", "try", "while", "with", "yield"
+    };
+    static const char* const python_types[] = {
+        "bool", "bytes", "dict", "float", "int", "list", "object", "set", "str",
+        "tuple", "type"
+    };
+    uint32_t offset;
+    uint32_t codepoint = 0u;
+    uint32_t quote_offset = 0u;
+
+    if (!model || !out_token || search_offset >= limit_offset) {
+        return CROFT_EDITOR_ERR_INVALID;
+    }
+
+    offset = croft_editor_syntax_skip_whitespace(model, search_offset, limit_offset);
+    if (offset >= limit_offset || !croft_editor_syntax_codepoint_at(model, offset, &codepoint)) {
+        return CROFT_EDITOR_ERR_INVALID;
+    }
+
+    out_token->start_offset = offset;
+    out_token->end_offset = offset + 1u;
+    out_token->kind = CROFT_EDITOR_SYNTAX_TOKEN_PLAIN;
+
+    if (codepoint == '#') {
+        out_token->end_offset = croft_editor_syntax_scan_line_comment(model, offset, limit_offset);
+        out_token->kind = CROFT_EDITOR_SYNTAX_TOKEN_COMMENT;
+        return CROFT_EDITOR_OK;
+    }
+
+    if (codepoint == '@') {
+        out_token->end_offset = croft_editor_syntax_scan_python_decorator(model, offset, limit_offset);
+        out_token->kind = out_token->end_offset > offset + 1u
+            ? CROFT_EDITOR_SYNTAX_TOKEN_PROPERTY
+            : CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION;
+        return CROFT_EDITOR_OK;
+    }
+
+    if (codepoint == '\'' || codepoint == '"') {
+        int closed = 0;
+        int triple_quoted = 0;
+        out_token->end_offset =
+            croft_editor_syntax_scan_python_string(model, offset, limit_offset, &closed, &triple_quoted);
+        out_token->kind = (closed || triple_quoted)
+            ? CROFT_EDITOR_SYNTAX_TOKEN_STRING
+            : CROFT_EDITOR_SYNTAX_TOKEN_INVALID;
+        return CROFT_EDITOR_OK;
+    }
+
+    if (croft_editor_syntax_python_prefixed_string_start(model, offset, limit_offset, &quote_offset)) {
+        int closed = 0;
+        int triple_quoted = 0;
+        uint32_t string_end =
+            croft_editor_syntax_scan_python_string(model, quote_offset, limit_offset, &closed, &triple_quoted);
+        out_token->end_offset = string_end;
+        out_token->kind = (closed || triple_quoted)
+            ? CROFT_EDITOR_SYNTAX_TOKEN_STRING
+            : CROFT_EDITOR_SYNTAX_TOKEN_INVALID;
+        return CROFT_EDITOR_OK;
+    }
+
+    if (codepoint == '-' || croft_editor_syntax_is_digit(codepoint)) {
+        uint32_t number_end = croft_editor_syntax_scan_number(model, offset, limit_offset);
+        if (number_end > offset) {
+            out_token->end_offset = number_end;
+            out_token->kind = CROFT_EDITOR_SYNTAX_TOKEN_NUMBER;
+            return CROFT_EDITOR_OK;
+        }
+    }
+
+    if (croft_editor_syntax_python_is_delimiter(codepoint)) {
+        out_token->kind = CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION;
+        return CROFT_EDITOR_OK;
+    }
+
+    if (croft_editor_syntax_python_is_operator_char(codepoint)) {
+        while (out_token->end_offset < limit_offset
+                && croft_editor_syntax_codepoint_at(model, out_token->end_offset, &codepoint)
+                && croft_editor_syntax_python_is_operator_char(codepoint)) {
+            out_token->end_offset++;
+        }
+        out_token->kind = CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION;
+        return CROFT_EDITOR_OK;
+    }
+
+    if (croft_editor_syntax_python_is_identifier_start(codepoint)) {
+        out_token->end_offset = croft_editor_syntax_scan_python_identifier(model, offset, limit_offset);
+        if (croft_editor_syntax_token_in_list(model,
+                                              out_token->start_offset,
+                                              out_token->end_offset,
+                                              python_keywords,
+                                              sizeof(python_keywords) / sizeof(python_keywords[0]))) {
+            out_token->kind = CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD;
+        } else if (croft_editor_syntax_token_in_list(model,
+                                                     out_token->start_offset,
+                                                     out_token->end_offset,
+                                                     python_types,
+                                                     sizeof(python_types) / sizeof(python_types[0]))) {
+            out_token->kind = CROFT_EDITOR_SYNTAX_TOKEN_TYPE;
+        } else {
+            out_token->kind = CROFT_EDITOR_SYNTAX_TOKEN_PLAIN;
+        }
+        return CROFT_EDITOR_OK;
+    }
+
+    out_token->end_offset =
+        croft_editor_syntax_scan_invalid(model, offset, limit_offset, croft_editor_syntax_python_is_boundary);
+    out_token->kind = CROFT_EDITOR_SYNTAX_TOKEN_INVALID;
+    return CROFT_EDITOR_OK;
+}
+
 croft_editor_syntax_language croft_editor_syntax_language_from_path(const char* path) {
     if (croft_editor_syntax_path_has_suffix(path, ".json")) {
         return CROFT_EDITOR_SYNTAX_LANGUAGE_JSON;
@@ -1157,6 +1448,9 @@ croft_editor_syntax_language croft_editor_syntax_language_from_path(const char* 
     if (croft_editor_syntax_path_has_suffix(path, ".md")
             || croft_editor_syntax_path_has_suffix(path, ".markdown")) {
         return CROFT_EDITOR_SYNTAX_LANGUAGE_MARKDOWN;
+    }
+    if (croft_editor_syntax_path_has_suffix(path, ".py")) {
+        return CROFT_EDITOR_SYNTAX_LANGUAGE_PYTHON;
     }
     if (croft_editor_syntax_path_has_suffix(path, ".lamb")
             || croft_editor_syntax_path_has_suffix(path, ".lambkin")) {
@@ -1195,6 +1489,8 @@ int32_t croft_editor_syntax_next_token(const croft_editor_text_model* model,
             return croft_editor_syntax_wat_next_token(model, search_offset, limit_offset, out_token);
         case CROFT_EDITOR_SYNTAX_LANGUAGE_MARKDOWN:
             return croft_editor_syntax_markdown_next_token(model, search_offset, limit_offset, out_token);
+        case CROFT_EDITOR_SYNTAX_LANGUAGE_PYTHON:
+            return croft_editor_syntax_python_next_token(model, search_offset, limit_offset, out_token);
         default:
             break;
     }

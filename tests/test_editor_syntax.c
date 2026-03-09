@@ -54,6 +54,8 @@ int test_editor_syntax_language_from_path(void) {
                   == CROFT_EDITOR_SYNTAX_LANGUAGE_MARKDOWN);
     ASSERT_SYNTAX(croft_editor_syntax_language_from_path("/tmp/NOTES.MARKDOWN")
                   == CROFT_EDITOR_SYNTAX_LANGUAGE_MARKDOWN);
+    ASSERT_SYNTAX(croft_editor_syntax_language_from_path("/tmp/tool.py")
+                  == CROFT_EDITOR_SYNTAX_LANGUAGE_PYTHON);
     ASSERT_SYNTAX(croft_editor_syntax_language_from_path("/tmp/prelude.lamb")
                   == CROFT_EDITOR_SYNTAX_LANGUAGE_LAMBKIN);
     ASSERT_SYNTAX(croft_editor_syntax_language_from_path("/tmp/PRELUDE.LAMBKIN")
@@ -147,6 +149,70 @@ int test_editor_syntax_markdown_tokens(void) {
                                     CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ")") == 0);
     ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_MARKDOWN, &offset,
                                     CROFT_EDITOR_SYNTAX_TOKEN_COMMENT, "> quote") == 0);
+
+    croft_editor_text_model_dispose(&model);
+    return 0;
+}
+
+int test_editor_syntax_python_tokens(void) {
+    const char* source =
+        "@cache\n"
+        "class Greeter:\n"
+        "    def greet(self, name: str) -> None:\n"
+        "        # hi\n"
+        "        return \"hello\" if name else None\n";
+    croft_editor_text_model model;
+    uint32_t offset = 0u;
+
+    croft_editor_text_model_init(&model);
+    ASSERT_SYNTAX(croft_editor_text_model_set_text(&model, source, strlen(source)) == CROFT_EDITOR_OK);
+
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_PYTHON, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PROPERTY, "@cache") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_PYTHON, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "class") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_PYTHON, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PLAIN, "Greeter") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_PYTHON, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ":") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_PYTHON, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "def") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_PYTHON, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PLAIN, "greet") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_PYTHON, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "(") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_PYTHON, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PLAIN, "self") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_PYTHON, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ",") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_PYTHON, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PLAIN, "name") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_PYTHON, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ":") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_PYTHON, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_TYPE, "str") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_PYTHON, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ")") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_PYTHON, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "->") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_PYTHON, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "None") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_PYTHON, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ":") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_PYTHON, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_COMMENT, "# hi") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_PYTHON, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "return") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_PYTHON, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_STRING, "\"hello\"") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_PYTHON, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "if") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_PYTHON, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PLAIN, "name") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_PYTHON, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "else") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_PYTHON, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "None") == 0);
 
     croft_editor_text_model_dispose(&model);
     return 0;
