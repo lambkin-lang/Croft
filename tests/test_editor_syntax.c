@@ -68,6 +68,14 @@ int test_editor_syntax_language_from_path(void) {
                   == CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT);
     ASSERT_SYNTAX(croft_editor_syntax_language_from_path("/tmp/site.css")
                   == CROFT_EDITOR_SYNTAX_LANGUAGE_CSS);
+    ASSERT_SYNTAX(croft_editor_syntax_language_from_path("/tmp/page.html")
+                  == CROFT_EDITOR_SYNTAX_LANGUAGE_HTML);
+    ASSERT_SYNTAX(croft_editor_syntax_language_from_path("/tmp/PAGE.XHTML")
+                  == CROFT_EDITOR_SYNTAX_LANGUAGE_HTML);
+    ASSERT_SYNTAX(croft_editor_syntax_language_from_path("/tmp/feed.xml")
+                  == CROFT_EDITOR_SYNTAX_LANGUAGE_XML);
+    ASSERT_SYNTAX(croft_editor_syntax_language_from_path("/tmp/ICON.SVG")
+                  == CROFT_EDITOR_SYNTAX_LANGUAGE_XML);
     ASSERT_SYNTAX(croft_editor_syntax_language_from_path("/tmp/prelude.lamb")
                   == CROFT_EDITOR_SYNTAX_LANGUAGE_LAMBKIN);
     ASSERT_SYNTAX(croft_editor_syntax_language_from_path("/tmp/PRELUDE.LAMBKIN")
@@ -520,6 +528,117 @@ int test_editor_syntax_css_tokens(void) {
                                     CROFT_EDITOR_SYNTAX_TOKEN_COMMENT, "/* note */") == 0);
     ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_CSS, &offset,
                                     CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "}") == 0);
+
+    croft_editor_text_model_dispose(&model);
+    return 0;
+}
+
+int test_editor_syntax_html_tokens(void) {
+    const char* source =
+        "<!DOCTYPE html>\n"
+        "<div class=\"card\" data-id=\"42\">Hello</div>\n"
+        "<!-- note -->\n";
+    croft_editor_text_model model;
+    uint32_t offset = 0u;
+
+    croft_editor_text_model_init(&model);
+    ASSERT_SYNTAX(croft_editor_text_model_set_text(&model, source, strlen(source)) == CROFT_EDITOR_OK);
+
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_HTML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "<!") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_HTML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "DOCTYPE") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_HTML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PLAIN, "html") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_HTML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ">") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_HTML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "<") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_HTML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "div") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_HTML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PROPERTY, "class") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_HTML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "=") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_HTML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_STRING, "\"card\"") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_HTML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PROPERTY, "data-id") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_HTML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "=") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_HTML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_STRING, "\"42\"") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_HTML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ">") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_HTML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PLAIN, "Hello") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_HTML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "</") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_HTML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "div") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_HTML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ">") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_HTML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_COMMENT, "<!-- note -->") == 0);
+
+    croft_editor_text_model_dispose(&model);
+    return 0;
+}
+
+int test_editor_syntax_xml_tokens(void) {
+    const char* source =
+        "<?xml version=\"1.0\"?>\n"
+        "<note id=\"a\"><to>User</to></note>\n";
+    croft_editor_text_model model;
+    uint32_t offset = 0u;
+
+    croft_editor_text_model_init(&model);
+    ASSERT_SYNTAX(croft_editor_text_model_set_text(&model, source, strlen(source)) == CROFT_EDITOR_OK);
+
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_XML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "<?") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_XML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "xml") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_XML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PROPERTY, "version") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_XML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "=") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_XML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_STRING, "\"1.0\"") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_XML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "?>") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_XML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "<") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_XML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "note") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_XML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PROPERTY, "id") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_XML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "=") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_XML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_STRING, "\"a\"") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_XML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ">") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_XML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "<") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_XML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "to") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_XML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ">") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_XML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PLAIN, "User") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_XML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "</") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_XML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "to") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_XML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ">") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_XML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "</") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_XML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "note") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_XML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ">") == 0);
 
     croft_editor_text_model_dispose(&model);
     return 0;

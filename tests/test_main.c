@@ -225,6 +225,8 @@ extern int test_editor_syntax_yaml_refinements(void);
 extern int test_editor_syntax_javascript_tokens(void);
 extern int test_editor_syntax_javascript_refinements(void);
 extern int test_editor_syntax_css_tokens(void);
+extern int test_editor_syntax_html_tokens(void);
+extern int test_editor_syntax_xml_tokens(void);
 extern int test_editor_syntax_lambkin_tokens(void);
 extern int test_editor_syntax_wit_tokens(void);
 extern int test_editor_syntax_wat_tokens(void);
@@ -341,6 +343,8 @@ int main(void)
     RUN_TEST(test_editor_syntax_javascript_tokens);
     RUN_TEST(test_editor_syntax_javascript_refinements);
     RUN_TEST(test_editor_syntax_css_tokens);
+    RUN_TEST(test_editor_syntax_html_tokens);
+    RUN_TEST(test_editor_syntax_xml_tokens);
     RUN_TEST(test_editor_syntax_lambkin_tokens);
     RUN_TEST(test_editor_syntax_wit_tokens);
     RUN_TEST(test_editor_syntax_wat_tokens);
