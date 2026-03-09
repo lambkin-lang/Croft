@@ -167,6 +167,14 @@ static NSRect croft_editor_appkit_marker_rect(NSLayoutManager* layoutManager,
     return [layoutManager boundingRectForGlyphRange:glyphRange inTextContainer:textContainer];
 }
 
+static NSRect croft_editor_appkit_offset_text_rect(NSRect rect, NSTextView* textView) {
+    if (NSIsEmptyRect(rect) || !textView) {
+        return rect;
+    }
+
+    return NSOffsetRect(rect, textView.textContainerOrigin.x, textView.textContainerOrigin.y);
+}
+
 static void croft_editor_appkit_draw_whitespace_marker(NSRect markerRect,
                                                        croft_editor_visible_whitespace_kind kind) {
     NSColor* color = [NSColor colorWithCalibratedWhite:0.63 alpha:0.78];
@@ -288,6 +296,8 @@ static NSColor* croft_editor_appkit_color_for_syntax_token(croft_editor_syntax_t
         croft_editor_visible_whitespace marker = {0};
         uint32_t searchOffset;
 
+        lineRect = croft_editor_appkit_offset_text_rect(lineRect, self);
+
         if (croft_editor_whitespace_describe_line(&model, lineNumber, &settings, &line)
                 != CROFT_EDITOR_OK) {
             glyphIndex = NSMaxRange(lineGlyphRange);
@@ -314,6 +324,7 @@ static NSColor* croft_editor_appkit_color_for_syntax_token(croft_editor_syntax_t
             markerRect = croft_editor_appkit_marker_rect(layoutManager,
                                                          textContainer,
                                                          NSMakeRange(start, end - start));
+            markerRect = croft_editor_appkit_offset_text_rect(markerRect, self);
             if (!NSIntersectsRect(markerRect, visibleRect)) {
                 searchOffset = marker.offset + 1u;
                 continue;
@@ -347,6 +358,7 @@ static NSColor* croft_editor_appkit_color_for_syntax_token(croft_editor_syntax_t
     NSUInteger lineStart = 0;
     NSUInteger lineEnd = 0;
     NSRect lineRect = NSZeroRect;
+    BOOL haveLayoutRect = NO;
 
     if (!layoutManager) {
         return NSZeroRect;
@@ -366,23 +378,28 @@ static NSColor* croft_editor_appkit_color_for_syntax_token(croft_editor_syntax_t
             && text.length > 0
             && [text characterAtIndex:text.length - 1] == '\n') {
         lineRect = layoutManager.extraLineFragmentRect;
+        haveLayoutRect = !NSIsEmptyRect(lineRect);
     } else if (text.length > 0) {
         NSRange glyphRange =
             [layoutManager glyphRangeForCharacterRange:NSMakeRange(lineStart, 0)
                                   actualCharacterRange:NULL];
         if (glyphRange.location < layoutManager.numberOfGlyphs) {
             lineRect = [layoutManager lineFragmentRectForGlyphAtIndex:glyphRange.location effectiveRange:NULL];
+            haveLayoutRect = !NSIsEmptyRect(lineRect);
         }
     } else {
         lineRect = layoutManager.extraLineFragmentRect;
+        haveLayoutRect = !NSIsEmptyRect(lineRect);
     }
 
     if (NSIsEmptyRect(lineRect)) {
         CGFloat fallbackHeight = self.font ? self.font.ascender - self.font.descender + 6.0 : 18.0;
         lineRect = NSMakeRect(0.0,
-                              self.textContainerInset.height,
+                              self.textContainerOrigin.y,
                               self.bounds.size.width,
                               fallbackHeight);
+    } else if (haveLayoutRect) {
+        lineRect = croft_editor_appkit_offset_text_rect(lineRect, self);
     }
 
     lineRect.origin.x = 0.0;
@@ -562,6 +579,7 @@ static NSColor* croft_editor_appkit_color_for_syntax_token(croft_editor_syntax_t
                                                           effectiveRange:&lineGlyphRange];
         NSUInteger characterIndex = [layoutManager characterIndexForGlyphAtIndex:glyphIndex];
         NSUInteger lineNumber = [self lineNumberForCharacterIndex:characterIndex];
+        lineRect = croft_editor_appkit_offset_text_rect(lineRect, _textView);
         BOOL isFolded =
             self.croftFoldingHandler ? [self.croftFoldingHandler croftLineNumberIsFolded:lineNumber] : NO;
         BOOL isFoldable = isFolded;
@@ -598,10 +616,12 @@ static NSColor* croft_editor_appkit_color_for_syntax_token(croft_editor_syntax_t
             && !NSIsEmptyRect(layoutManager.extraLineFragmentRect)) {
         NSString* lineLabel = [NSString stringWithFormat:@"%lu", (unsigned long)[self lineCount]];
         NSDictionary* attributes = ([self lineCount] == currentLine) ? activeAttributes : inactiveAttributes;
+        NSRect extraLineRect = croft_editor_appkit_offset_text_rect(layoutManager.extraLineFragmentRect,
+                                                                    _textView);
         NSRect labelRect = NSMakeRect(18.0,
-                                      NSMinY(layoutManager.extraLineFragmentRect) + 1.0,
+                                      NSMinY(extraLineRect) + 1.0,
                                       self.ruleThickness - 24.0,
-                                      NSHeight(layoutManager.extraLineFragmentRect));
+                                      NSHeight(extraLineRect));
         [lineLabel drawInRect:labelRect withAttributes:attributes];
     }
 
@@ -639,6 +659,8 @@ static NSColor* croft_editor_appkit_color_for_syntax_token(croft_editor_syntax_t
             NSUInteger characterIndex = [layoutManager characterIndexForGlyphAtIndex:glyphIndex];
             NSUInteger lineNumber = [self lineNumberForCharacterIndex:characterIndex];
 
+            lineRect = croft_editor_appkit_offset_text_rect(lineRect, _textView);
+
             if (point.y >= NSMinY(lineRect) && point.y <= NSMaxY(lineRect)) {
                 if ([self.croftFoldingHandler croftToggleFoldAtLineNumber:lineNumber]) {
                     return;
@@ -650,11 +672,16 @@ static NSColor* croft_editor_appkit_color_for_syntax_token(croft_editor_syntax_t
         }
     }
 
-    if (!NSIsEmptyRect(layoutManager.extraLineFragmentRect)
-            && point.y >= NSMinY(layoutManager.extraLineFragmentRect)
-            && point.y <= NSMaxY(layoutManager.extraLineFragmentRect)
+    {
+        NSRect extraLineRect = croft_editor_appkit_offset_text_rect(layoutManager.extraLineFragmentRect,
+                                                                    _textView);
+
+        if (!NSIsEmptyRect(extraLineRect)
+                && point.y >= NSMinY(extraLineRect)
+                && point.y <= NSMaxY(extraLineRect)
             && [self.croftFoldingHandler croftToggleFoldAtLineNumber:[self lineCount]]) {
-        return;
+            return;
+        }
     }
 
     [super mouseDown:event];
