@@ -1698,21 +1698,15 @@ if(CROFT_EXAMPLE_SCENE_TARGET)
 endif()
 
 if(CROFT_EXAMPLE_EDITOR_TARGET)
-    if(NOT APPLE OR CROFT_EXAMPLE_GESTURE_TARGET)
-        set(CROFT_EDITOR_EXAMPLE_LINKS ${CROFT_EXAMPLE_EDITOR_TARGET} croft_a11y_stub croft_editor_document_fs croft_editor_scene_runtime)
-        set(CROFT_EDITOR_EXAMPLE_REQUIRES ${CROFT_EXAMPLE_EDITOR_TARGET} croft_editor_document_core croft_editor_document_fs croft_editor_scene_runtime)
-        if(CROFT_EXAMPLE_GESTURE_TARGET)
-            list(APPEND CROFT_EDITOR_EXAMPLE_LINKS ${CROFT_EXAMPLE_GESTURE_TARGET})
-            list(APPEND CROFT_EDITOR_EXAMPLE_REQUIRES ${CROFT_EXAMPLE_GESTURE_TARGET})
-        endif()
-        croft_add_example(example_editor_text
-            SOURCES examples/editor_scene_shell.c
-            LINKS ${CROFT_EDITOR_EXAMPLE_LINKS}
-            REQUIRES ${CROFT_EDITOR_EXAMPLE_REQUIRES}
-            TAGS editor text sapling gui
-            FOCUS "Text-editor shell built on Sapling text, scene, and host IO."
-        )
-    endif()
+    set(CROFT_EDITOR_EXAMPLE_LINKS ${CROFT_EXAMPLE_EDITOR_TARGET} croft_a11y_stub croft_editor_document_fs croft_editor_scene_runtime)
+    set(CROFT_EDITOR_EXAMPLE_REQUIRES ${CROFT_EXAMPLE_EDITOR_TARGET} croft_editor_document_core croft_editor_document_fs croft_editor_scene_runtime)
+    croft_add_example(example_editor_text
+        SOURCES examples/editor_scene_shell.c
+        LINKS ${CROFT_EDITOR_EXAMPLE_LINKS}
+        REQUIRES ${CROFT_EDITOR_EXAMPLE_REQUIRES}
+        TAGS editor text sapling gui
+        FOCUS "Text-editor shell built on Sapling text, scene, and host IO."
+    )
 endif()
 
 if(TARGET croft_scene_text_editor_metal_native
@@ -1871,9 +1865,6 @@ if(CROFT_BUILD_TESTS)
             croft_a11y_stub
             croft_fs
         )
-        if(CROFT_EXAMPLE_GESTURE_TARGET)
-            target_link_libraries(test_editor_standalone PRIVATE ${CROFT_EXAMPLE_GESTURE_TARGET})
-        endif()
     endif()
 
     if(TARGET croft_a11y_macos AND CROFT_EXAMPLE_SCENE_TARGET)

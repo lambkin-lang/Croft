@@ -1,7 +1,6 @@
 #include "croft/host_ui.h"
 #include "croft/host_render.h"
 #include "croft/scene.h"
-#include "croft/host_gesture.h"
 #include "croft/host_fs.h"
 #include <sapling/sapling.h>
 #include <sapling/txn.h>
@@ -51,24 +50,6 @@ static void on_ui_event(int32_t type, int32_t arg0, int32_t arg1) {
         if (g_editor.scroll_x > 0) g_editor.scroll_x = 0;
 
         printf("Editor Scroll Offset: (%.1f, %.1f)\n", g_editor.scroll_x, g_editor.scroll_y);
-    }
-    else if (type == CROFT_UI_EVENT_ZOOM_GESTURE) {
-        float delta = (float)arg0 / 1000000.0f;
-        float old_scale = g_root_vp.scale;
-        float new_scale = old_scale * (1.0f + delta); 
-        
-        if (new_scale < 0.1f) new_scale = 0.1f;
-        if (new_scale > 10.0f) new_scale = 10.0f;
-        
-        uint32_t fw, fh;
-        host_ui_get_framebuffer_size(&fw, &fh);
-        float cx = (float)fw / 2.0f;
-        float cy = (float)fh / 2.0f;
-        
-        float scale_ratio = new_scale / old_scale;
-        g_root_vp.scroll_x = cx - (cx - g_root_vp.scroll_x) * scale_ratio;
-        g_root_vp.scroll_y = cy - (cy - g_root_vp.scroll_y) * scale_ratio;
-        g_root_vp.scale = new_scale;
     }
     else if (type == CROFT_UI_EVENT_MOUSE) {
         if (arg1 == 1) { // press
@@ -144,9 +125,6 @@ int main(int argc, char **argv) {
     if (host_ui_create_window(1000, 800, "Text Editor Core MVP") != 0) return 1;
     if (host_render_init() != 0) return 1;
     
-#ifdef __APPLE__
-    host_gesture_mac_init(host_ui_get_native_window(), (void *)on_ui_event);
-#endif
     host_ui_set_event_callback(on_ui_event);
     
     // Setup Scene Graph

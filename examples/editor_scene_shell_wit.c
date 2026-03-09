@@ -842,23 +842,8 @@ int main(int argc, char** argv)
                     if (g_editor.scroll_x > 0.0f) g_editor.scroll_x = 0.0f;
                     request_redraw();
                     break;
-                case SAP_WIT_HOST_WINDOW_EVENT_ZOOM: {
-                    float delta = (float)event.val.zoom.delta_micros / 1000000.0f;
-                    float old_scale = g_root_vp.scale;
-                    float new_scale = old_scale * (1.0f + delta);
-                    float cx = g_editor.base.sx * 0.5f;
-                    float cy = g_editor.base.sy * 0.5f;
-                    float ratio;
-
-                    if (new_scale < 0.1f) new_scale = 0.1f;
-                    if (new_scale > 10.0f) new_scale = 10.0f;
-                    ratio = new_scale / old_scale;
-                    g_root_vp.scroll_x = cx - (cx - g_root_vp.scroll_x) * ratio;
-                    g_root_vp.scroll_y = cy - (cy - g_root_vp.scroll_y) * ratio;
-                    g_root_vp.scale = new_scale;
-                    request_redraw();
+                case SAP_WIT_HOST_WINDOW_EVENT_ZOOM:
                     break;
-                }
                 case SAP_WIT_HOST_WINDOW_EVENT_CURSOR:
                     g_mouse_x = (double)event.val.cursor.x_milli / 1000.0;
                     g_mouse_y = (double)event.val.cursor.y_milli / 1000.0;

@@ -1,7 +1,6 @@
 #include "croft/editor_document.h"
 #include "croft/editor_document_fs.h"
 #include "croft/editor_scene_runtime.h"
-#include "croft/host_gesture.h"
 #include "croft/host_render.h"
 #include "croft/host_ui.h"
 #include "croft/scene.h"
@@ -205,32 +204,6 @@ static void on_ui_event(int32_t type, int32_t arg0, int32_t arg1) {
             g_editor.scroll_x = 0.0f;
         }
         request_redraw();
-    } else if (type == CROFT_UI_EVENT_ZOOM_GESTURE) {
-        float delta = (float)arg0 / 1000000.0f;
-        float old_scale = g_root_vp.scale;
-        float new_scale = old_scale * (1.0f + delta);
-        uint32_t fw = 0;
-        uint32_t fh = 0;
-        float cx;
-        float cy;
-        float scale_ratio;
-
-        if (new_scale < 0.1f) {
-            new_scale = 0.1f;
-        }
-        if (new_scale > 10.0f) {
-            new_scale = 10.0f;
-        }
-
-        host_ui_get_framebuffer_size(&fw, &fh);
-        cx = (float)fw / 2.0f;
-        cy = (float)fh / 2.0f;
-        scale_ratio = new_scale / old_scale;
-
-        g_root_vp.scroll_x = cx - (cx - g_root_vp.scroll_x) * scale_ratio;
-        g_root_vp.scroll_y = cy - (cy - g_root_vp.scroll_y) * scale_ratio;
-        g_root_vp.scale = new_scale;
-        request_redraw();
     } else if (type == CROFT_UI_EVENT_MOUSE) {
         if (arg1 == 1) {
             hit_result hit;
@@ -316,9 +289,6 @@ int main(int argc, char** argv) {
     }
     host_render_set_profiling(profile_enabled);
 
-#ifdef __APPLE__
-    host_gesture_mac_init(host_ui_get_native_window(), (void*)on_ui_event);
-#endif
     host_ui_set_event_callback(on_ui_event);
 
     {
