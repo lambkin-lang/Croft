@@ -66,6 +66,8 @@ int test_editor_syntax_language_from_path(void) {
                   == CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT);
     ASSERT_SYNTAX(croft_editor_syntax_language_from_path("/tmp/app.jsx")
                   == CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT);
+    ASSERT_SYNTAX(croft_editor_syntax_language_from_path("/tmp/site.css")
+                  == CROFT_EDITOR_SYNTAX_LANGUAGE_CSS);
     ASSERT_SYNTAX(croft_editor_syntax_language_from_path("/tmp/prelude.lamb")
                   == CROFT_EDITOR_SYNTAX_LANGUAGE_LAMBKIN);
     ASSERT_SYNTAX(croft_editor_syntax_language_from_path("/tmp/PRELUDE.LAMBKIN")
@@ -460,6 +462,64 @@ int test_editor_syntax_javascript_refinements(void) {
                                     CROFT_EDITOR_SYNTAX_TOKEN_STRING, "/hi+/gi") == 0);
     ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT, &offset,
                                     CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ";") == 0);
+
+    croft_editor_text_model_dispose(&model);
+    return 0;
+}
+
+int test_editor_syntax_css_tokens(void) {
+    const char* source =
+        "@media screen {\n"
+        "  .card:hover {\n"
+        "    color: #fff;\n"
+        "    margin: 12px;\n"
+        "  }\n"
+        "  /* note */\n"
+        "}\n";
+    croft_editor_text_model model;
+    uint32_t offset = 0u;
+
+    croft_editor_text_model_init(&model);
+    ASSERT_SYNTAX(croft_editor_text_model_set_text(&model, source, strlen(source)) == CROFT_EDITOR_OK);
+
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_CSS, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "@media") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_CSS, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PLAIN, "screen") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_CSS, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "{") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_CSS, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ".") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_CSS, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PLAIN, "card") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_CSS, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ":") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_CSS, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PLAIN, "hover") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_CSS, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "{") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_CSS, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PROPERTY, "color") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_CSS, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ":") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_CSS, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_STRING, "#fff") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_CSS, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ";") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_CSS, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PROPERTY, "margin") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_CSS, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ":") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_CSS, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_NUMBER, "12px") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_CSS, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ";") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_CSS, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "}") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_CSS, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_COMMENT, "/* note */") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_CSS, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "}") == 0);
 
     croft_editor_text_model_dispose(&model);
     return 0;

@@ -16,7 +16,8 @@ typedef enum croft_editor_syntax_language {
     CROFT_EDITOR_SYNTAX_LANGUAGE_MARKDOWN = 5,
     CROFT_EDITOR_SYNTAX_LANGUAGE_PYTHON = 6,
     CROFT_EDITOR_SYNTAX_LANGUAGE_YAML = 7,
-    CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT = 8
+    CROFT_EDITOR_SYNTAX_LANGUAGE_JAVASCRIPT = 8,
+    CROFT_EDITOR_SYNTAX_LANGUAGE_CSS = 9
 } croft_editor_syntax_language;
 
 typedef enum croft_editor_syntax_token_kind {
