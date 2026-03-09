@@ -38,7 +38,7 @@ typedef enum {
 typedef struct {
     WitTypeKind kind;
     char        ident[MAX_NAME]; /* only for TYPE_IDENT */
-    int         params[4];       /* indices into type pool (-1 = none) */
+    int         params[4];       /* indices into type pool (-1 = omitted "_") */
     int         param_count;
 } WitTypeExpr;
 
@@ -63,7 +63,11 @@ static int type_alloc(void)
 /* Stringify a type expression (for diagnostics and debug). Returns bytes written. */
 static int type_to_str(int idx, char *buf, int bufsize)
 {
-    if (idx < 0 || bufsize <= 0) return 0;
+    if (bufsize <= 0) return 0;
+    if (idx < 0) {
+        int n = snprintf(buf, bufsize, "_");
+        return (n < bufsize) ? n : bufsize - 1;
+    }
     WitTypeExpr *t = &g_type_pool[idx];
     int n = 0;
 
@@ -108,64 +112,169 @@ static void codegen_die_type(const char *context, int type_idx)
     codegen_die("%s: %s", context, typebuf);
 }
 
-static void build_result_access_paths(const char *access,
-                                      char **is_ok_access_out,
-                                      char **ok_access_out,
-                                      char **err_access_out)
+static void split_access_base(const char *access,
+                              char **prefix_out,
+                              char **field_out)
 {
+    const char *arrow;
+    const char *dot;
     const char *field;
     size_t prefix_len;
     size_t field_len;
-    size_t is_ok_len;
-    size_t ok_len;
-    size_t err_len;
-    char *is_ok_access;
-    char *ok_access;
-    char *err_access;
+    char *prefix;
+    char *field_name;
 
-    if (!access || !is_ok_access_out || !ok_access_out || !err_access_out) {
-        codegen_die("internal: invalid result access path inputs");
+    if (!access || !prefix_out || !field_out) {
+        codegen_die("internal: invalid access split inputs");
     }
 
-    field = strrchr(access, '>');
-    if (field) field += 1; /* skip "->" */
-    else field = access;
+    arrow = strrchr(access, '>');
+    dot = strrchr(access, '.');
+    if (arrow && (!dot || arrow > dot)) {
+        field = arrow + 1;
+    } else if (dot) {
+        field = dot + 1;
+    } else {
+        field = access;
+    }
 
     prefix_len = (size_t)(field - access);
     field_len = strlen(field);
     if (field_len == 0) {
-        codegen_die("internal: empty field in result access path: %s", access);
+        codegen_die("internal: empty field in access path: %s", access);
     }
 
-    is_ok_len = prefix_len + 3u + field_len + 3u + 1u;     /* prefix + is_ + field + _ok + NUL */
-    ok_len = prefix_len + field_len + 9u + 1u;             /* prefix + field + _val.ok.v + NUL */
-    err_len = prefix_len + field_len + 10u + 1u;           /* prefix + field + _val.err.v + NUL */
-
-    is_ok_access = (char *)malloc(is_ok_len);
-    ok_access = (char *)malloc(ok_len);
-    err_access = (char *)malloc(err_len);
-    if (!is_ok_access || !ok_access || !err_access) {
-        free(is_ok_access);
-        free(ok_access);
-        free(err_access);
-        codegen_die("out of memory while building result access paths");
+    prefix = (char *)malloc(prefix_len + 1u);
+    field_name = (char *)malloc(field_len + 1u);
+    if (!prefix || !field_name) {
+        free(prefix);
+        free(field_name);
+        codegen_die("out of memory while splitting access path");
     }
 
-    memcpy(is_ok_access, access, prefix_len);
-    memcpy(is_ok_access + prefix_len, "is_", 3u);
-    memcpy(is_ok_access + prefix_len + 3u, field, field_len);
-    memcpy(is_ok_access + prefix_len + 3u + field_len, "_ok", 3u);
-    is_ok_access[is_ok_len - 1u] = '\0';
+    memcpy(prefix, access, prefix_len);
+    prefix[prefix_len] = '\0';
+    memcpy(field_name, field, field_len + 1u);
 
-    memcpy(ok_access, access, prefix_len);
-    memcpy(ok_access + prefix_len, field, field_len);
-    memcpy(ok_access + prefix_len + field_len, "_val.ok.v", 9u);
-    ok_access[ok_len - 1u] = '\0';
+    *prefix_out = prefix;
+    *field_out = field_name;
+}
 
-    memcpy(err_access, access, prefix_len);
-    memcpy(err_access + prefix_len, field, field_len);
-    memcpy(err_access + prefix_len + field_len, "_val.err.v", 10u);
-    err_access[err_len - 1u] = '\0';
+static void build_option_access_paths(const char *access,
+                                      const char *sep,
+                                      char **has_access_out,
+                                      char **value_access_out)
+{
+    char *has_access = NULL;
+    char *value_access = NULL;
+
+    if (!access || !sep || !has_access_out || !value_access_out) {
+        codegen_die("internal: invalid option access path inputs");
+    }
+
+    if (strcmp(sep, ".") == 0) {
+        size_t has_len = strlen(access) + strlen(".has_v") + 1u;
+        size_t value_len = strlen(access) + strlen(".v") + 1u;
+
+        has_access = (char *)malloc(has_len);
+        value_access = (char *)malloc(value_len);
+        if (!has_access || !value_access) {
+            free(has_access);
+            free(value_access);
+            codegen_die("out of memory while building option access paths");
+        }
+
+        snprintf(has_access, has_len, "%s.has_v", access);
+        snprintf(value_access, value_len, "%s.v", access);
+    } else {
+        char *prefix = NULL;
+        char *field = NULL;
+        size_t has_len;
+
+        split_access_base(access, &prefix, &field);
+        has_len = strlen(prefix) + strlen("has_") + strlen(field) + 1u;
+        has_access = (char *)malloc(has_len);
+        value_access = (char *)malloc(strlen(access) + 1u);
+        if (!has_access || !value_access) {
+            free(prefix);
+            free(field);
+            free(has_access);
+            free(value_access);
+            codegen_die("out of memory while building option access paths");
+        }
+
+        snprintf(has_access, has_len, "%shas_%s", prefix, field);
+        memcpy(value_access, access, strlen(access) + 1u);
+        free(prefix);
+        free(field);
+    }
+
+    *has_access_out = has_access;
+    *value_access_out = value_access;
+}
+
+static void build_result_access_paths(const char *access,
+                                      const char *sep,
+                                      char **is_ok_access_out,
+                                      char **ok_access_out,
+                                      char **err_access_out)
+{
+    char *is_ok_access;
+    char *ok_access;
+    char *err_access;
+
+    if (!access || !sep || !is_ok_access_out || !ok_access_out || !err_access_out) {
+        codegen_die("internal: invalid result access path inputs");
+    }
+
+    if (strcmp(sep, ".") == 0) {
+        size_t is_ok_len = strlen(access) + strlen(".is_v_ok") + 1u;
+        size_t ok_len = strlen(access) + strlen(".v_val.ok.v") + 1u;
+        size_t err_len = strlen(access) + strlen(".v_val.err.v") + 1u;
+
+        is_ok_access = (char *)malloc(is_ok_len);
+        ok_access = (char *)malloc(ok_len);
+        err_access = (char *)malloc(err_len);
+        if (!is_ok_access || !ok_access || !err_access) {
+            free(is_ok_access);
+            free(ok_access);
+            free(err_access);
+            codegen_die("out of memory while building result access paths");
+        }
+
+        snprintf(is_ok_access, is_ok_len, "%s.is_v_ok", access);
+        snprintf(ok_access, ok_len, "%s.v_val.ok.v", access);
+        snprintf(err_access, err_len, "%s.v_val.err.v", access);
+    } else {
+        char *prefix = NULL;
+        char *field = NULL;
+        size_t is_ok_len;
+        size_t ok_len;
+        size_t err_len;
+
+        split_access_base(access, &prefix, &field);
+        is_ok_len = strlen(prefix) + strlen("is_") + strlen(field) + strlen("_ok") + 1u;
+        ok_len = strlen(prefix) + strlen(field) + strlen("_val.ok.v") + 1u;
+        err_len = strlen(prefix) + strlen(field) + strlen("_val.err.v") + 1u;
+
+        is_ok_access = (char *)malloc(is_ok_len);
+        ok_access = (char *)malloc(ok_len);
+        err_access = (char *)malloc(err_len);
+        if (!is_ok_access || !ok_access || !err_access) {
+            free(prefix);
+            free(field);
+            free(is_ok_access);
+            free(ok_access);
+            free(err_access);
+            codegen_die("out of memory while building result access paths");
+        }
+
+        snprintf(is_ok_access, is_ok_len, "%sis_%s_ok", prefix, field);
+        snprintf(ok_access, ok_len, "%s%s_val.ok.v", prefix, field);
+        snprintf(err_access, err_len, "%s%s_val.err.v", prefix, field);
+        free(prefix);
+        free(field);
+    }
 
     *is_ok_access_out = is_ok_access;
     *ok_access_out = ok_access;
@@ -492,6 +601,8 @@ static void wit_trim(char *buf)
 /* Recursive descent parser                                           */
 /* ------------------------------------------------------------------ */
 
+static int parse_generic_param(Scanner *s, int *param_out);
+
 /*
  * type_expr = ident
  *           | ident '<' type_expr (',' type_expr)* '>'
@@ -534,8 +645,8 @@ static int parse_type_expr(Scanner *s)
 
     /* parse comma-separated type parameters via recursion */
     while (g_type_pool[idx].param_count < 4) {
-        int param = parse_type_expr(s);
-        if (param < 0) return -1;
+        int param = -1;
+        if (!parse_generic_param(s, &param)) return -1;
         g_type_pool[idx].params[g_type_pool[idx].param_count++] = param;
 
         skip_whitespace(s);
@@ -548,6 +659,19 @@ static int parse_type_expr(Scanner *s)
 
     if (!expect_char(s, '>')) return -1;
     return idx;
+}
+
+static int parse_generic_param(Scanner *s, int *param_out)
+{
+    skip_whitespace(s);
+    if (scanner_peek(s) == '_') {
+        scanner_advance(s);
+        *param_out = -1;
+        return 1;
+    }
+
+    *param_out = parse_type_expr(s);
+    return *param_out >= 0;
 }
 
 static int parse_record(Scanner *s, WitRecord *rec)
@@ -1836,14 +1960,19 @@ static void emit_write_type_expr(FILE *out, const WitRegistry *reg,
         }
         /* When called from emit_write_record, options are handled inline there.
          * This path handles option<T> in nested positions (e.g. inside tuples). */
+        char *has_access = NULL;
+        char *value_access = NULL;
+        build_option_access_paths(access, sep, &has_access, &value_access);
         char inner_indent[64];
         snprintf(inner_indent, sizeof(inner_indent), "%s    ", indent);
-        fprintf(out, "%sif (%s) {\n", indent, access);
+        fprintf(out, "%sif (%s) {\n", indent, has_access);
         fprintf(out, "%sSAP_WIT_CHECK(thatch_write_tag(region, SAP_WIT_TAG_OPTION_SOME));\n", inner_indent);
-        emit_write_type_expr(out, reg, t->params[0], access, sep, inner_indent);
+        emit_write_type_expr(out, reg, t->params[0], value_access, sep, inner_indent);
         fprintf(out, "%s} else {\n", indent);
         fprintf(out, "%sSAP_WIT_CHECK(thatch_write_tag(region, SAP_WIT_TAG_OPTION_NONE));\n", inner_indent);
         fprintf(out, "%s}\n", indent);
+        free(has_access);
+        free(value_access);
         return;
     }
     case TYPE_TUPLE: {
@@ -1866,18 +1995,18 @@ static void emit_write_type_expr(FILE *out, const WitRegistry *reg,
         char *is_ok_access = NULL;
         char *ok_access = NULL;
         char *err_access = NULL;
-        build_result_access_paths(access, &is_ok_access, &ok_access, &err_access);
+        build_result_access_paths(access, sep, &is_ok_access, &ok_access, &err_access);
 
         char inner[64];
         snprintf(inner, sizeof(inner), "%s    ", indent);
         fprintf(out, "%sif (%s) {\n", indent, is_ok_access);
         fprintf(out, "%sSAP_WIT_CHECK(thatch_write_tag(region, SAP_WIT_TAG_RESULT_OK));\n", inner);
         if (t->param_count > 0 && t->params[0] >= 0)
-            emit_write_type_expr(out, reg, t->params[0], ok_access, ".", inner);
+            emit_write_type_expr(out, reg, t->params[0], ok_access, "_", inner);
         fprintf(out, "%s} else {\n", indent);
         fprintf(out, "%sSAP_WIT_CHECK(thatch_write_tag(region, SAP_WIT_TAG_RESULT_ERR));\n", inner);
         if (t->param_count > 1 && t->params[1] >= 0)
-            emit_write_type_expr(out, reg, t->params[1], err_access, ".", inner);
+            emit_write_type_expr(out, reg, t->params[1], err_access, "_", inner);
         fprintf(out, "%s}\n", indent);
         free(is_ok_access);
         free(ok_access);
@@ -1957,13 +2086,25 @@ static void emit_write_variant(FILE *out, const WitRegistry *reg,
 
     for (int j = 0; j < var->case_count; j++) {
         char cu[MAX_NAME], cs[MAX_NAME];
+        int resolved;
+        WitTypeExpr *payload_type;
         wit_name_to_upper_ident(var->cases[j].name, cu, (int)sizeof(cu));
         wit_name_to_snake_ident(var->cases[j].name, cs, (int)sizeof(cs));
         fprintf(out, "    case %s_%s:\n", macro_name, cu);
         if (var->cases[j].payload_type >= 0) {
             char access[256];
-            snprintf(access, sizeof(access), "val->val.%s", cs);
-            emit_write_type_expr(out, reg, var->cases[j].payload_type, access, ".", "        ");
+            resolved = resolve_type(reg, var->cases[j].payload_type);
+            payload_type = (resolved >= 0) ? &g_type_pool[resolved] : NULL;
+            if (payload_type &&
+                (payload_type->kind == TYPE_OPTION
+                 || payload_type->kind == TYPE_TUPLE
+                 || payload_type->kind == TYPE_RESULT)) {
+                snprintf(access, sizeof(access), "val->val.%s.v", cs);
+                emit_write_type_expr(out, reg, var->cases[j].payload_type, access, "_", "        ");
+            } else {
+                snprintf(access, sizeof(access), "val->val.%s", cs);
+                emit_write_type_expr(out, reg, var->cases[j].payload_type, access, ".", "        ");
+            }
         }
         fprintf(out, "        break;\n");
     }
@@ -2107,15 +2248,20 @@ static void emit_read_type_expr(FILE *out, const WitRegistry *reg,
         if (t->param_count < 1 || t->params[0] < 0) {
             codegen_die_type("option<T> reader missing inner type", resolved);
         }
+        char *has_access = NULL;
+        char *value_access = NULL;
+        build_option_access_paths(access, sep, &has_access, &value_access);
         char inner_indent[64];
         snprintf(inner_indent, sizeof(inner_indent), "%s    ", indent);
         fprintf(out, "%s{ uint8_t tag; SAP_WIT_CHECK(thatch_read_tag(region, cursor, &tag));\n", indent);
         fprintf(out, "%s  if (tag == SAP_WIT_TAG_OPTION_SOME) {\n", indent);
-        fprintf(out, "%s    %s = 1;\n", indent, access);
-        emit_read_type_expr(out, reg, t->params[0], access, sep, inner_indent);
+        fprintf(out, "%s    %s = 1;\n", indent, has_access);
+        emit_read_type_expr(out, reg, t->params[0], value_access, sep, inner_indent);
         fprintf(out, "%s  } else if (tag == SAP_WIT_TAG_OPTION_NONE) {\n", indent);
-        fprintf(out, "%s    %s = 0;\n", indent, access);
+        fprintf(out, "%s    %s = 0;\n", indent, has_access);
         fprintf(out, "%s  } else return ERR_TYPE; }\n", indent);
+        free(has_access);
+        free(value_access);
         return;
     }
     case TYPE_TUPLE: {
@@ -2142,7 +2288,7 @@ static void emit_read_type_expr(FILE *out, const WitRegistry *reg,
         char *is_ok_access = NULL;
         char *ok_access = NULL;
         char *err_access = NULL;
-        build_result_access_paths(access, &is_ok_access, &ok_access, &err_access);
+        build_result_access_paths(access, sep, &is_ok_access, &ok_access, &err_access);
 
         char inner[64];
         snprintf(inner, sizeof(inner), "%s    ", indent);
@@ -2150,11 +2296,11 @@ static void emit_read_type_expr(FILE *out, const WitRegistry *reg,
         fprintf(out, "%s  if (tag == SAP_WIT_TAG_RESULT_OK) {\n", indent);
         fprintf(out, "%s%s = 1;\n", inner, is_ok_access);
         if (t->param_count > 0 && t->params[0] >= 0)
-            emit_read_type_expr(out, reg, t->params[0], ok_access, ".", inner);
+            emit_read_type_expr(out, reg, t->params[0], ok_access, "_", inner);
         fprintf(out, "%s  } else if (tag == SAP_WIT_TAG_RESULT_ERR) {\n", indent);
         fprintf(out, "%s%s = 0;\n", inner, is_ok_access);
         if (t->param_count > 1 && t->params[1] >= 0)
-            emit_read_type_expr(out, reg, t->params[1], err_access, ".", inner);
+            emit_read_type_expr(out, reg, t->params[1], err_access, "_", inner);
         fprintf(out, "%s  } else return ERR_TYPE; }\n", indent);
         free(is_ok_access);
         free(ok_access);
@@ -2245,13 +2391,25 @@ static void emit_read_variant(FILE *out, const WitRegistry *reg,
 
     for (int j = 0; j < var->case_count; j++) {
         char cu[MAX_NAME], cs[MAX_NAME];
+        int resolved;
+        WitTypeExpr *payload_type;
         wit_name_to_upper_ident(var->cases[j].name, cu, (int)sizeof(cu));
         wit_name_to_snake_ident(var->cases[j].name, cs, (int)sizeof(cs));
         fprintf(out, "    case %s_%s:\n", macro_name, cu);
         if (var->cases[j].payload_type >= 0) {
             char access[256];
-            snprintf(access, sizeof(access), "out->val.%s", cs);
-            emit_read_type_expr(out, reg, var->cases[j].payload_type, access, ".", "        ");
+            resolved = resolve_type(reg, var->cases[j].payload_type);
+            payload_type = (resolved >= 0) ? &g_type_pool[resolved] : NULL;
+            if (payload_type &&
+                (payload_type->kind == TYPE_OPTION
+                 || payload_type->kind == TYPE_TUPLE
+                 || payload_type->kind == TYPE_RESULT)) {
+                snprintf(access, sizeof(access), "out->val.%s.v", cs);
+                emit_read_type_expr(out, reg, var->cases[j].payload_type, access, "_", "        ");
+            } else {
+                snprintf(access, sizeof(access), "out->val.%s", cs);
+                emit_read_type_expr(out, reg, var->cases[j].payload_type, access, ".", "        ");
+            }
         }
         fprintf(out, "        break;\n");
     }
