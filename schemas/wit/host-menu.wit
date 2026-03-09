@@ -8,12 +8,6 @@ interface types {
     cmd,
   }
 
-  enum error {
-    unavailable,
-    busy,
-    internal,
-  }
-
   record begin-update {}
 
   record commit-update {}
@@ -24,21 +18,12 @@ interface types {
     action-id: s32,
     parent-action-id: s32,
     label: list<u8>,
-    has-shortcut: bool,
-    shortcut: list<u8>,
+    shortcut: option<list<u8>>,
     mods: modifiers,
   }
 
-  variant status {
-    ok,
-    err(error),
-  }
-
-  variant action-result {
-    ok(s32),
-    empty,
-    err(error),
-  }
+  type status = result<_, string>;
+  type action-result = result<option<s32>, string>;
 
   variant command {
     begin-update(begin-update),

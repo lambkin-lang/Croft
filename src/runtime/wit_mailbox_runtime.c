@@ -25,15 +25,29 @@ struct croft_wit_mailbox_runtime {
     size_t slot_cap;
 };
 
-static uint8_t croft_wit_mailbox_error_from_rc(int32_t rc)
+static void croft_wit_set_string_view(const char* text,
+                                      const uint8_t** data_out,
+                                      uint32_t* len_out)
+{
+    if (!data_out || !len_out) {
+        return;
+    }
+    if (!text) {
+        text = "";
+    }
+    *data_out = (const uint8_t*)text;
+    *len_out = (uint32_t)strlen(text);
+}
+
+static const char* croft_wit_mailbox_error_from_rc(int32_t rc)
 {
     switch (rc) {
         case ERR_OOM:
-            return SAP_WIT_COMMON_CORE_COMMON_ERROR_OOM;
+            return "oom";
         case ERR_BUSY:
-            return SAP_WIT_COMMON_CORE_COMMON_ERROR_BUSY;
+            return "busy";
         default:
-            return SAP_WIT_COMMON_CORE_COMMON_ERROR_INTERNAL;
+            return "internal";
     }
 }
 
@@ -49,55 +63,63 @@ static void croft_wit_mailbox_reply_mailbox_ok(SapWitCommonCoreMailboxReply* rep
 {
     croft_wit_mailbox_reply_zero(reply);
     reply->case_tag = SAP_WIT_COMMON_CORE_MAILBOX_REPLY_MAILBOX;
-    reply->val.mailbox.case_tag = SAP_WIT_COMMON_CORE_MAILBOX_OP_RESULT_OK;
-    reply->val.mailbox.val.ok = handle;
+    reply->val.mailbox.is_v_ok = 1u;
+    reply->val.mailbox.v_val.ok.v = handle;
 }
 
-static void croft_wit_mailbox_reply_mailbox_err(SapWitCommonCoreMailboxReply* reply, uint8_t err)
+static void croft_wit_mailbox_reply_mailbox_err(SapWitCommonCoreMailboxReply* reply, const char* err)
 {
     croft_wit_mailbox_reply_zero(reply);
     reply->case_tag = SAP_WIT_COMMON_CORE_MAILBOX_REPLY_MAILBOX;
-    reply->val.mailbox.case_tag = SAP_WIT_COMMON_CORE_MAILBOX_OP_RESULT_ERR;
-    reply->val.mailbox.val.err = err;
+    reply->val.mailbox.is_v_ok = 0u;
+    croft_wit_set_string_view(err,
+                              &reply->val.mailbox.v_val.err.v_data,
+                              &reply->val.mailbox.v_val.err.v_len);
 }
 
 static void croft_wit_mailbox_reply_status_ok(SapWitCommonCoreMailboxReply* reply)
 {
     croft_wit_mailbox_reply_zero(reply);
     reply->case_tag = SAP_WIT_COMMON_CORE_MAILBOX_REPLY_STATUS;
-    reply->val.status.case_tag = SAP_WIT_COMMON_CORE_STATUS_OK;
+    reply->val.status.is_v_ok = 1u;
 }
 
-static void croft_wit_mailbox_reply_status_err(SapWitCommonCoreMailboxReply* reply, uint8_t err)
+static void croft_wit_mailbox_reply_status_err(SapWitCommonCoreMailboxReply* reply, const char* err)
 {
     croft_wit_mailbox_reply_zero(reply);
     reply->case_tag = SAP_WIT_COMMON_CORE_MAILBOX_REPLY_STATUS;
-    reply->val.status.case_tag = SAP_WIT_COMMON_CORE_STATUS_ERR;
-    reply->val.status.val.err = err;
+    reply->val.status.is_v_ok = 0u;
+    croft_wit_set_string_view(err,
+                              &reply->val.status.v_val.err.v_data,
+                              &reply->val.status.v_val.err.v_len);
 }
 
 static void croft_wit_mailbox_reply_recv_ok(SapWitCommonCoreMailboxReply* reply, uint8_t* data, uint32_t len)
 {
     croft_wit_mailbox_reply_zero(reply);
     reply->case_tag = SAP_WIT_COMMON_CORE_MAILBOX_REPLY_RECV;
-    reply->val.recv.case_tag = SAP_WIT_COMMON_CORE_MAILBOX_RECV_RESULT_OK;
-    reply->val.recv.val.ok.data = data;
-    reply->val.recv.val.ok.len = len;
+    reply->val.recv.is_v_ok = 1u;
+    reply->val.recv.v_val.ok.has_v = 1u;
+    reply->val.recv.v_val.ok.v_data = data;
+    reply->val.recv.v_val.ok.v_len = len;
 }
 
 static void croft_wit_mailbox_reply_recv_empty(SapWitCommonCoreMailboxReply* reply)
 {
     croft_wit_mailbox_reply_zero(reply);
     reply->case_tag = SAP_WIT_COMMON_CORE_MAILBOX_REPLY_RECV;
-    reply->val.recv.case_tag = SAP_WIT_COMMON_CORE_MAILBOX_RECV_RESULT_EMPTY;
+    reply->val.recv.is_v_ok = 1u;
+    reply->val.recv.v_val.ok.has_v = 0u;
 }
 
-static void croft_wit_mailbox_reply_recv_err(SapWitCommonCoreMailboxReply* reply, uint8_t err)
+static void croft_wit_mailbox_reply_recv_err(SapWitCommonCoreMailboxReply* reply, const char* err)
 {
     croft_wit_mailbox_reply_zero(reply);
     reply->case_tag = SAP_WIT_COMMON_CORE_MAILBOX_REPLY_RECV;
-    reply->val.recv.case_tag = SAP_WIT_COMMON_CORE_MAILBOX_RECV_RESULT_ERR;
-    reply->val.recv.val.err = err;
+    reply->val.recv.is_v_ok = 0u;
+    croft_wit_set_string_view(err,
+                              &reply->val.recv.v_val.err.v_data,
+                              &reply->val.recv.v_val.err.v_len);
 }
 
 void croft_wit_mailbox_reply_dispose(SapWitCommonCoreMailboxReply* reply)
@@ -107,9 +129,10 @@ void croft_wit_mailbox_reply_dispose(SapWitCommonCoreMailboxReply* reply)
     }
 
     if (reply->case_tag == SAP_WIT_COMMON_CORE_MAILBOX_REPLY_RECV
-            && reply->val.recv.case_tag == SAP_WIT_COMMON_CORE_MAILBOX_RECV_RESULT_OK
-            && reply->val.recv.val.ok.data) {
-        free((void*)reply->val.recv.val.ok.data);
+            && reply->val.recv.is_v_ok
+            && reply->val.recv.v_val.ok.has_v
+            && reply->val.recv.v_val.ok.v_data) {
+        free((void*)reply->val.recv.v_val.ok.v_data);
     }
 
     memset(reply, 0, sizeof(*reply));
@@ -271,11 +294,11 @@ static int32_t croft_wit_mailbox_dispatch_drop(croft_wit_mailbox_runtime* runtim
 
     slot = croft_wit_mailbox_slots_lookup(runtime, request->mailbox);
     if (!slot) {
-        croft_wit_mailbox_reply_status_err(reply_out, SAP_WIT_COMMON_CORE_COMMON_ERROR_INVALID_HANDLE);
+        croft_wit_mailbox_reply_status_err(reply_out, "invalid-handle");
         return ERR_OK;
     }
     if (slot->message_count > 0u) {
-        croft_wit_mailbox_reply_status_err(reply_out, SAP_WIT_COMMON_CORE_COMMON_ERROR_BUSY);
+        croft_wit_mailbox_reply_status_err(reply_out, "busy");
         return ERR_OK;
     }
 
@@ -303,17 +326,17 @@ static int32_t croft_wit_mailbox_dispatch_send(croft_wit_mailbox_runtime* runtim
 
     slot = croft_wit_mailbox_slots_lookup(runtime, request->mailbox);
     if (!slot) {
-        croft_wit_mailbox_reply_status_err(reply_out, SAP_WIT_COMMON_CORE_COMMON_ERROR_INVALID_HANDLE);
+        croft_wit_mailbox_reply_status_err(reply_out, "invalid-handle");
         return ERR_OK;
     }
     if (slot->max_messages > 0u && slot->message_count >= slot->max_messages) {
-        croft_wit_mailbox_reply_status_err(reply_out, SAP_WIT_COMMON_CORE_COMMON_ERROR_BUSY);
+        croft_wit_mailbox_reply_status_err(reply_out, "busy");
         return ERR_OK;
     }
 
     message = (croft_wit_mailbox_message*)calloc(1u, sizeof(*message));
     if (!message) {
-        croft_wit_mailbox_reply_status_err(reply_out, SAP_WIT_COMMON_CORE_COMMON_ERROR_OOM);
+        croft_wit_mailbox_reply_status_err(reply_out, "oom");
         return ERR_OK;
     }
 
@@ -321,7 +344,7 @@ static int32_t croft_wit_mailbox_dispatch_send(croft_wit_mailbox_runtime* runtim
     message->data = (uint8_t*)malloc(alloc_len);
     if (!message->data) {
         free(message);
-        croft_wit_mailbox_reply_status_err(reply_out, SAP_WIT_COMMON_CORE_COMMON_ERROR_OOM);
+        croft_wit_mailbox_reply_status_err(reply_out, "oom");
         return ERR_OK;
     }
 
@@ -356,7 +379,7 @@ static int32_t croft_wit_mailbox_dispatch_recv(croft_wit_mailbox_runtime* runtim
 
     slot = croft_wit_mailbox_slots_lookup(runtime, request->mailbox);
     if (!slot) {
-        croft_wit_mailbox_reply_recv_err(reply_out, SAP_WIT_COMMON_CORE_COMMON_ERROR_INVALID_HANDLE);
+        croft_wit_mailbox_reply_recv_err(reply_out, "invalid-handle");
         return ERR_OK;
     }
     if (!slot->head) {

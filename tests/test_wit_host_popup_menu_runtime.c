@@ -1,17 +1,34 @@
 #include "croft/wit_host_popup_menu_runtime.h"
 
+#include <string.h>
+
 static int wit_host_popup_menu_expect_status_ok(const SapWitHostPopupMenuReply* reply)
 {
     return reply
         && reply->case_tag == SAP_WIT_HOST_POPUP_MENU_REPLY_STATUS
-        && reply->val.status.case_tag == SAP_WIT_HOST_POPUP_MENU_STATUS_OK;
+        && reply->val.status.is_v_ok;
 }
 
 static int wit_host_popup_menu_expect_action_empty(const SapWitHostPopupMenuReply* reply)
 {
     return reply
         && reply->case_tag == SAP_WIT_HOST_POPUP_MENU_REPLY_ACTION
-        && reply->val.action.case_tag == SAP_WIT_HOST_POPUP_MENU_ACTION_RESULT_EMPTY;
+        && reply->val.action.is_v_ok
+        && !reply->val.action.v_val.ok.has_v;
+}
+
+static int wit_host_popup_menu_expect_error(const SapWitHostPopupMenuReply* reply, const char* expected)
+{
+    size_t expected_len;
+
+    if (!reply || !expected) {
+        return 0;
+    }
+    expected_len = strlen(expected);
+    return reply->case_tag == SAP_WIT_HOST_POPUP_MENU_REPLY_ACTION
+        && !reply->val.action.is_v_ok
+        && reply->val.action.v_val.err.v_len == (uint32_t)expected_len
+        && memcmp(reply->val.action.v_val.err.v_data, expected, expected_len) == 0;
 }
 
 int test_wit_host_popup_menu_runtime_empty_popup(void)
@@ -79,9 +96,7 @@ int test_wit_host_popup_menu_runtime_unavailable_without_window(void)
     command.val.show_at.x_milli = 4000;
     command.val.show_at.y_milli = 7000;
     if (croft_wit_host_popup_menu_runtime_dispatch(runtime, &command, &reply) != 0
-            || reply.case_tag != SAP_WIT_HOST_POPUP_MENU_REPLY_ACTION
-            || reply.val.action.case_tag != SAP_WIT_HOST_POPUP_MENU_ACTION_RESULT_ERR
-            || reply.val.action.val.err != SAP_WIT_HOST_POPUP_MENU_ERROR_UNAVAILABLE) {
+            || !wit_host_popup_menu_expect_error(&reply, "unavailable")) {
         croft_wit_host_popup_menu_runtime_destroy(runtime);
         return 1;
     }

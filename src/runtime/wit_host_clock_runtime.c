@@ -21,8 +21,8 @@ static void croft_wit_host_clock_reply_now_ok(SapWitHostClockReply* reply, uint6
 {
     croft_wit_host_clock_reply_zero(reply);
     reply->case_tag = SAP_WIT_HOST_CLOCK_REPLY_NOW;
-    reply->val.now.case_tag = SAP_WIT_HOST_CLOCK_NOW_RESULT_OK;
-    reply->val.now.val.ok = now_ms;
+    reply->val.now.is_v_ok = 1u;
+    reply->val.now.v_val.ok.v = now_ms;
 }
 
 croft_wit_host_clock_runtime* croft_wit_host_clock_runtime_create(void)

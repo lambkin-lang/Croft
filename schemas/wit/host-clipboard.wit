@@ -3,27 +3,14 @@ package lambkin:host-clipboard@0.1.0;
 interface types {
   type utf8 = list<u8>;
 
-  enum error {
-    unavailable,
-    internal,
-  }
-
   record get-text {}
 
   record set-text {
     utf8: utf8,
   }
 
-  variant status {
-    ok,
-    err(error),
-  }
-
-  variant text-result {
-    ok(utf8),
-    empty,
-    err(error),
-  }
+  type status = result<_, string>;
+  type text-result = result<option<string>, string>;
 
   variant command {
     get-text(get-text),

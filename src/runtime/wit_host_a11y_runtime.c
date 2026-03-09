@@ -25,35 +25,53 @@ static void croft_wit_host_a11y_reply_zero(SapWitHostA11yReply* reply)
     }
 }
 
+static void croft_wit_set_string_view(const char* text,
+                                      const uint8_t** data_out,
+                                      uint32_t* len_out)
+{
+    if (!data_out || !len_out) {
+        return;
+    }
+    if (!text) {
+        text = "";
+    }
+    *data_out = (const uint8_t*)text;
+    *len_out = (uint32_t)strlen(text);
+}
+
 static void croft_wit_host_a11y_reply_status_ok(SapWitHostA11yReply* reply)
 {
     croft_wit_host_a11y_reply_zero(reply);
     reply->case_tag = SAP_WIT_HOST_A11Y_REPLY_STATUS;
-    reply->val.status.case_tag = SAP_WIT_HOST_A11Y_STATUS_OK;
+    reply->val.status.is_v_ok = 1u;
 }
 
-static void croft_wit_host_a11y_reply_status_err(SapWitHostA11yReply* reply, uint8_t err)
+static void croft_wit_host_a11y_reply_status_err(SapWitHostA11yReply* reply, const char* err)
 {
     croft_wit_host_a11y_reply_zero(reply);
     reply->case_tag = SAP_WIT_HOST_A11Y_REPLY_STATUS;
-    reply->val.status.case_tag = SAP_WIT_HOST_A11Y_STATUS_ERR;
-    reply->val.status.val.err = err;
+    reply->val.status.is_v_ok = 0u;
+    croft_wit_set_string_view(err,
+                              &reply->val.status.v_val.err.v_data,
+                              &reply->val.status.v_val.err.v_len);
 }
 
 static void croft_wit_host_a11y_reply_node_ok(SapWitHostA11yReply* reply, SapWitHostA11yNodeResource handle)
 {
     croft_wit_host_a11y_reply_zero(reply);
     reply->case_tag = SAP_WIT_HOST_A11Y_REPLY_NODE;
-    reply->val.node.case_tag = SAP_WIT_HOST_A11Y_NODE_RESULT_OK;
-    reply->val.node.val.ok = handle;
+    reply->val.node.is_v_ok = 1u;
+    reply->val.node.v_val.ok.v = handle;
 }
 
-static void croft_wit_host_a11y_reply_node_err(SapWitHostA11yReply* reply, uint8_t err)
+static void croft_wit_host_a11y_reply_node_err(SapWitHostA11yReply* reply, const char* err)
 {
     croft_wit_host_a11y_reply_zero(reply);
     reply->case_tag = SAP_WIT_HOST_A11Y_REPLY_NODE;
-    reply->val.node.case_tag = SAP_WIT_HOST_A11Y_NODE_RESULT_ERR;
-    reply->val.node.val.err = err;
+    reply->val.node.is_v_ok = 0u;
+    croft_wit_set_string_view(err,
+                              &reply->val.node.v_val.err.v_data,
+                              &reply->val.node.v_val.err.v_len);
 }
 
 static host_a11y_role croft_wit_host_a11y_role(uint8_t role)
@@ -176,11 +194,11 @@ static int32_t croft_wit_host_a11y_dispatch_open(croft_wit_host_a11y_runtime* ru
         return -1;
     }
     if (runtime->open) {
-        croft_wit_host_a11y_reply_status_err(reply_out, SAP_WIT_HOST_A11Y_ERROR_BUSY);
+        croft_wit_host_a11y_reply_status_err(reply_out, "busy");
         return 0;
     }
     if (host_a11y_init(host_ui_get_native_window()) != 0) {
-        croft_wit_host_a11y_reply_status_err(reply_out, SAP_WIT_HOST_A11Y_ERROR_UNAVAILABLE);
+        croft_wit_host_a11y_reply_status_err(reply_out, "unavailable");
         return 0;
     }
     runtime->open = 1u;
@@ -233,7 +251,7 @@ int32_t croft_wit_host_a11y_runtime_dispatch(croft_wit_host_a11y_runtime* runtim
             char* label = NULL;
 
             if (!runtime->open) {
-                croft_wit_host_a11y_reply_node_err(reply_out, SAP_WIT_HOST_A11Y_ERROR_UNAVAILABLE);
+                croft_wit_host_a11y_reply_node_err(reply_out, "unavailable");
                 return 0;
             }
             cfg.x = command->val.create_node.bounds.x;
@@ -244,7 +262,7 @@ int32_t croft_wit_host_a11y_runtime_dispatch(croft_wit_host_a11y_runtime* runtim
             if (command->val.create_node.has_label) {
                 label = (char*)malloc((size_t)command->val.create_node.label_len + 1u);
                 if (!label) {
-                    croft_wit_host_a11y_reply_node_err(reply_out, SAP_WIT_HOST_A11Y_ERROR_INTERNAL);
+                    croft_wit_host_a11y_reply_node_err(reply_out, "internal");
                     return 0;
                 }
                 memcpy(label, command->val.create_node.label_data, command->val.create_node.label_len);
@@ -258,7 +276,7 @@ int32_t croft_wit_host_a11y_runtime_dispatch(croft_wit_host_a11y_runtime* runtim
                 if (native_node) {
                     host_a11y_destroy_node(native_node);
                 }
-                croft_wit_host_a11y_reply_node_err(reply_out, SAP_WIT_HOST_A11Y_ERROR_INTERNAL);
+                croft_wit_host_a11y_reply_node_err(reply_out, "internal");
                 return 0;
             }
             croft_wit_host_a11y_reply_node_ok(reply_out, handle);
@@ -269,13 +287,13 @@ int32_t croft_wit_host_a11y_runtime_dispatch(croft_wit_host_a11y_runtime* runtim
                                                                          command->val.add_child.child);
             croft_wit_host_a11y_slot* parent = NULL;
             if (!child) {
-                croft_wit_host_a11y_reply_status_err(reply_out, SAP_WIT_HOST_A11Y_ERROR_INVALID_HANDLE);
+                croft_wit_host_a11y_reply_status_err(reply_out, "invalid-handle");
                 return 0;
             }
             if (command->val.add_child.has_parent) {
                 parent = croft_wit_host_a11y_lookup(runtime, command->val.add_child.parent);
                 if (!parent) {
-                    croft_wit_host_a11y_reply_status_err(reply_out, SAP_WIT_HOST_A11Y_ERROR_INVALID_HANDLE);
+                    croft_wit_host_a11y_reply_status_err(reply_out, "invalid-handle");
                     return 0;
                 }
             }
@@ -287,7 +305,7 @@ int32_t croft_wit_host_a11y_runtime_dispatch(croft_wit_host_a11y_runtime* runtim
             croft_wit_host_a11y_slot* node = croft_wit_host_a11y_lookup(runtime,
                                                                         command->val.update_frame.node);
             if (!node) {
-                croft_wit_host_a11y_reply_status_err(reply_out, SAP_WIT_HOST_A11Y_ERROR_INVALID_HANDLE);
+                croft_wit_host_a11y_reply_status_err(reply_out, "invalid-handle");
                 return 0;
             }
             host_a11y_update_frame(node->native_node,
@@ -302,7 +320,7 @@ int32_t croft_wit_host_a11y_runtime_dispatch(croft_wit_host_a11y_runtime* runtim
             croft_wit_host_a11y_slot* node = croft_wit_host_a11y_lookup(runtime,
                                                                         command->val.destroy_node.node);
             if (!node) {
-                croft_wit_host_a11y_reply_status_err(reply_out, SAP_WIT_HOST_A11Y_ERROR_INVALID_HANDLE);
+                croft_wit_host_a11y_reply_status_err(reply_out, "invalid-handle");
                 return 0;
             }
             host_a11y_destroy_node(node->native_node);
@@ -312,7 +330,7 @@ int32_t croft_wit_host_a11y_runtime_dispatch(croft_wit_host_a11y_runtime* runtim
             return 0;
         }
         default:
-            croft_wit_host_a11y_reply_status_err(reply_out, SAP_WIT_HOST_A11Y_ERROR_INTERNAL);
+            croft_wit_host_a11y_reply_status_err(reply_out, "internal");
             return 0;
     }
 }
@@ -326,7 +344,7 @@ static int32_t croft_wit_host_a11y_bridge_open(void* userdata)
     command.case_tag = SAP_WIT_HOST_A11Y_COMMAND_OPEN;
     if (croft_wit_host_a11y_runtime_dispatch(runtime, &command, &reply) != 0
             || reply.case_tag != SAP_WIT_HOST_A11Y_REPLY_STATUS
-            || reply.val.status.case_tag != SAP_WIT_HOST_A11Y_STATUS_OK) {
+            || !reply.val.status.is_v_ok) {
         return -1;
     }
     return 0;
@@ -382,10 +400,10 @@ static croft_scene_a11y_handle croft_wit_host_a11y_bridge_create_node(
     command.val.create_node.label_len = config->label ? (uint32_t)strlen(config->label) : 0u;
     if (croft_wit_host_a11y_runtime_dispatch(runtime, &command, &reply) != 0
             || reply.case_tag != SAP_WIT_HOST_A11Y_REPLY_NODE
-            || reply.val.node.case_tag != SAP_WIT_HOST_A11Y_NODE_RESULT_OK) {
+            || !reply.val.node.is_v_ok) {
         return (croft_scene_a11y_handle)0u;
     }
-    return (croft_scene_a11y_handle)reply.val.node.val.ok;
+    return (croft_scene_a11y_handle)reply.val.node.v_val.ok.v;
 }
 
 static void croft_wit_host_a11y_bridge_add_child(void* userdata,

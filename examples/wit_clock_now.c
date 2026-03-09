@@ -19,13 +19,13 @@ int main(void)
     command.case_tag = SAP_WIT_HOST_CLOCK_COMMAND_MONOTONIC_NOW;
     if (croft_wit_host_clock_runtime_dispatch(runtime, &command, &reply) != 0
             || reply.case_tag != SAP_WIT_HOST_CLOCK_REPLY_NOW
-            || reply.val.now.case_tag != SAP_WIT_HOST_CLOCK_NOW_RESULT_OK) {
+            || !reply.val.now.is_v_ok) {
         fprintf(stderr, "example_wit_clock_now: monotonic-now failed\n");
         croft_wit_host_clock_runtime_destroy(runtime);
         return 1;
     }
 
-    printf("clock=%" PRIu64 "\n", reply.val.now.val.ok);
+    printf("clock=%" PRIu64 "\n", reply.val.now.v_val.ok.v);
     croft_wit_host_clock_runtime_destroy(runtime);
     return 0;
 }

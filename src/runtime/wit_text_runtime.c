@@ -21,35 +21,49 @@ struct croft_wit_text_runtime {
     size_t slot_cap;
 };
 
-static uint8_t croft_wit_error_from_rc(int32_t rc)
+static void croft_wit_set_string_view(const char* text,
+                                      const uint8_t** data_out,
+                                      uint32_t* len_out)
+{
+    if (!data_out || !len_out) {
+        return;
+    }
+    if (!text) {
+        text = "";
+    }
+    *data_out = (const uint8_t*)text;
+    *len_out = (uint32_t)strlen(text);
+}
+
+static const char* croft_wit_error_from_rc(int32_t rc)
 {
     switch (rc) {
         case ERR_OOM:
-            return SAP_WIT_COMMON_CORE_COMMON_ERROR_OOM;
+            return "oom";
         case ERR_BUSY:
-            return SAP_WIT_COMMON_CORE_COMMON_ERROR_BUSY;
+            return "busy";
         case ERR_RANGE:
-            return SAP_WIT_COMMON_CORE_COMMON_ERROR_RANGE;
+            return "range";
         default:
-            return SAP_WIT_COMMON_CORE_COMMON_ERROR_INTERNAL;
+            return "internal";
     }
 }
 
-static uint8_t croft_wit_text_input_error_from_rc(int32_t rc)
+static const char* croft_wit_text_input_error_from_rc(int32_t rc)
 {
     switch (rc) {
         case ERR_OOM:
-            return SAP_WIT_COMMON_CORE_COMMON_ERROR_OOM;
+            return "oom";
         case ERR_RANGE:
-            return SAP_WIT_COMMON_CORE_COMMON_ERROR_RANGE;
+            return "range";
         case ERR_INVALID:
         case ERR_PARSE:
         case ERR_TYPE:
-            return SAP_WIT_COMMON_CORE_COMMON_ERROR_INVALID_UTF8;
+            return "invalid-utf8";
         case ERR_BUSY:
-            return SAP_WIT_COMMON_CORE_COMMON_ERROR_BUSY;
+            return "busy";
         default:
-            return SAP_WIT_COMMON_CORE_COMMON_ERROR_INTERNAL;
+            return "internal";
     }
 }
 
@@ -65,48 +79,52 @@ static void croft_wit_text_reply_text_ok(SapWitCommonCoreTextReply* reply, SapWi
 {
     croft_wit_text_reply_zero(reply);
     reply->case_tag = SAP_WIT_COMMON_CORE_TEXT_REPLY_TEXT;
-    reply->val.text.case_tag = SAP_WIT_COMMON_CORE_TEXT_OP_RESULT_OK;
-    reply->val.text.val.ok = handle;
+    reply->val.text.is_v_ok = 1u;
+    reply->val.text.v_val.ok.v = handle;
 }
 
-static void croft_wit_text_reply_text_err(SapWitCommonCoreTextReply* reply, uint8_t err)
+static void croft_wit_text_reply_text_err(SapWitCommonCoreTextReply* reply, const char* err)
 {
     croft_wit_text_reply_zero(reply);
     reply->case_tag = SAP_WIT_COMMON_CORE_TEXT_REPLY_TEXT;
-    reply->val.text.case_tag = SAP_WIT_COMMON_CORE_TEXT_OP_RESULT_ERR;
-    reply->val.text.val.err = err;
+    reply->val.text.is_v_ok = 0u;
+    croft_wit_set_string_view(err, &reply->val.text.v_val.err.v_data, &reply->val.text.v_val.err.v_len);
 }
 
 static void croft_wit_text_reply_status_ok(SapWitCommonCoreTextReply* reply)
 {
     croft_wit_text_reply_zero(reply);
     reply->case_tag = SAP_WIT_COMMON_CORE_TEXT_REPLY_STATUS;
-    reply->val.status.case_tag = SAP_WIT_COMMON_CORE_STATUS_OK;
+    reply->val.status.is_v_ok = 1u;
 }
 
-static void croft_wit_text_reply_status_err(SapWitCommonCoreTextReply* reply, uint8_t err)
+static void croft_wit_text_reply_status_err(SapWitCommonCoreTextReply* reply, const char* err)
 {
     croft_wit_text_reply_zero(reply);
     reply->case_tag = SAP_WIT_COMMON_CORE_TEXT_REPLY_STATUS;
-    reply->val.status.case_tag = SAP_WIT_COMMON_CORE_STATUS_ERR;
-    reply->val.status.val.err = err;
+    reply->val.status.is_v_ok = 0u;
+    croft_wit_set_string_view(err,
+                              &reply->val.status.v_val.err.v_data,
+                              &reply->val.status.v_val.err.v_len);
 }
 
 static void croft_wit_text_reply_export_ok(SapWitCommonCoreTextReply* reply, uint8_t* utf8, uint32_t utf8_len)
 {
     croft_wit_text_reply_zero(reply);
     reply->case_tag = SAP_WIT_COMMON_CORE_TEXT_REPLY_EXPORT;
-    reply->val.export.case_tag = SAP_WIT_COMMON_CORE_TEXT_EXPORT_RESULT_OK;
-    reply->val.export.val.ok.data = utf8;
-    reply->val.export.val.ok.len = utf8_len;
+    reply->val.export.is_v_ok = 1u;
+    reply->val.export.v_val.ok.v_data = utf8;
+    reply->val.export.v_val.ok.v_len = utf8_len;
 }
 
-static void croft_wit_text_reply_export_err(SapWitCommonCoreTextReply* reply, uint8_t err)
+static void croft_wit_text_reply_export_err(SapWitCommonCoreTextReply* reply, const char* err)
 {
     croft_wit_text_reply_zero(reply);
     reply->case_tag = SAP_WIT_COMMON_CORE_TEXT_REPLY_EXPORT;
-    reply->val.export.case_tag = SAP_WIT_COMMON_CORE_TEXT_EXPORT_RESULT_ERR;
-    reply->val.export.val.err = err;
+    reply->val.export.is_v_ok = 0u;
+    croft_wit_set_string_view(err,
+                              &reply->val.export.v_val.err.v_data,
+                              &reply->val.export.v_val.err.v_len);
 }
 
 void croft_wit_text_reply_dispose(SapWitCommonCoreTextReply* reply)
@@ -116,9 +134,9 @@ void croft_wit_text_reply_dispose(SapWitCommonCoreTextReply* reply)
     }
 
     if (reply->case_tag == SAP_WIT_COMMON_CORE_TEXT_REPLY_EXPORT
-            && reply->val.export.case_tag == SAP_WIT_COMMON_CORE_TEXT_EXPORT_RESULT_OK
-            && reply->val.export.val.ok.data) {
-        free((void*)reply->val.export.val.ok.data);
+            && reply->val.export.is_v_ok
+            && reply->val.export.v_val.ok.v_data) {
+        free((void*)reply->val.export.v_val.ok.v_data);
     }
 
     memset(reply, 0, sizeof(*reply));
@@ -529,14 +547,14 @@ static int32_t croft_wit_text_dispatch_open(croft_wit_text_runtime* runtime,
 
     text = text_new(runtime->env);
     if (!text) {
-        croft_wit_text_reply_text_err(reply_out, SAP_WIT_COMMON_CORE_COMMON_ERROR_OOM);
+        croft_wit_text_reply_text_err(reply_out, "oom");
         return ERR_OK;
     }
 
     txn = sap_txn_begin(runtime->env, NULL, 0u);
     if (!txn) {
         text_free(runtime->env, text);
-        croft_wit_text_reply_text_err(reply_out, SAP_WIT_COMMON_CORE_COMMON_ERROR_BUSY);
+        croft_wit_text_reply_text_err(reply_out, "busy");
         return ERR_OK;
     }
 
@@ -580,13 +598,13 @@ static int32_t croft_wit_text_dispatch_clone(croft_wit_text_runtime* runtime,
 
     source = croft_wit_text_slots_lookup(runtime, request->source);
     if (!source) {
-        croft_wit_text_reply_text_err(reply_out, SAP_WIT_COMMON_CORE_COMMON_ERROR_INVALID_HANDLE);
+        croft_wit_text_reply_text_err(reply_out, "invalid-handle");
         return ERR_OK;
     }
 
     clone = text_clone(runtime->env, source);
     if (!clone) {
-        croft_wit_text_reply_text_err(reply_out, SAP_WIT_COMMON_CORE_COMMON_ERROR_OOM);
+        croft_wit_text_reply_text_err(reply_out, "oom");
         return ERR_OK;
     }
 
@@ -615,13 +633,13 @@ static int32_t croft_wit_text_dispatch_insert(croft_wit_text_runtime* runtime,
 
     text = croft_wit_text_slots_lookup(runtime, request->text);
     if (!text) {
-        croft_wit_text_reply_status_err(reply_out, SAP_WIT_COMMON_CORE_COMMON_ERROR_INVALID_HANDLE);
+        croft_wit_text_reply_status_err(reply_out, "invalid-handle");
         return ERR_OK;
     }
 
     txn = sap_txn_begin(runtime->env, NULL, 0u);
     if (!txn) {
-        croft_wit_text_reply_status_err(reply_out, SAP_WIT_COMMON_CORE_COMMON_ERROR_BUSY);
+        croft_wit_text_reply_status_err(reply_out, "busy");
         return ERR_OK;
     }
 
@@ -657,13 +675,13 @@ static int32_t croft_wit_text_dispatch_delete(croft_wit_text_runtime* runtime,
 
     text = croft_wit_text_slots_lookup(runtime, request->text);
     if (!text) {
-        croft_wit_text_reply_status_err(reply_out, SAP_WIT_COMMON_CORE_COMMON_ERROR_INVALID_HANDLE);
+        croft_wit_text_reply_status_err(reply_out, "invalid-handle");
         return ERR_OK;
     }
 
     txn = sap_txn_begin(runtime->env, NULL, 0u);
     if (!txn) {
-        croft_wit_text_reply_status_err(reply_out, SAP_WIT_COMMON_CORE_COMMON_ERROR_BUSY);
+        croft_wit_text_reply_status_err(reply_out, "busy");
         return ERR_OK;
     }
 
@@ -701,7 +719,7 @@ static int32_t croft_wit_text_dispatch_export(croft_wit_text_runtime* runtime,
 
     text = croft_wit_text_slots_lookup(runtime, request->text);
     if (!text) {
-        croft_wit_text_reply_export_err(reply_out, SAP_WIT_COMMON_CORE_COMMON_ERROR_INVALID_HANDLE);
+        croft_wit_text_reply_export_err(reply_out, "invalid-handle");
         return ERR_OK;
     }
 
@@ -713,7 +731,7 @@ static int32_t croft_wit_text_dispatch_export(croft_wit_text_runtime* runtime,
 
     buffer = (uint8_t*)malloc(utf8_len + 1u);
     if (!buffer) {
-        croft_wit_text_reply_export_err(reply_out, SAP_WIT_COMMON_CORE_COMMON_ERROR_OOM);
+        croft_wit_text_reply_export_err(reply_out, "oom");
         return ERR_OK;
     }
 
@@ -741,7 +759,7 @@ static int32_t croft_wit_text_dispatch_drop(croft_wit_text_runtime* runtime,
 
     rc = croft_wit_text_slots_release(runtime, request->text);
     if (rc == ERR_NOT_FOUND || rc == ERR_INVALID) {
-        croft_wit_text_reply_status_err(reply_out, SAP_WIT_COMMON_CORE_COMMON_ERROR_INVALID_HANDLE);
+        croft_wit_text_reply_status_err(reply_out, "invalid-handle");
         return ERR_OK;
     }
     if (rc != ERR_OK) {

@@ -3,13 +3,6 @@ package lambkin:host-window@0.1.0;
 interface types {
   resource window;
 
-  enum window-error {
-    invalid-handle,
-    unavailable,
-    busy,
-    internal,
-  }
-
   record window-open {
     width: u32,
     height: u32,
@@ -80,31 +73,11 @@ interface types {
     zoom(window-zoom-event),
   }
 
-  variant window-op-result {
-    ok(window),
-    err(window-error),
-  }
-
-  variant window-status {
-    ok,
-    err(window-error),
-  }
-
-  variant window-event-result {
-    ok(window-event),
-    empty,
-    err(window-error),
-  }
-
-  variant window-bool-result {
-    ok(bool),
-    err(window-error),
-  }
-
-  variant window-size-result {
-    ok(window-size),
-    err(window-error),
-  }
+  type window-op-result = result<window, string>;
+  type window-status = result<_, string>;
+  type window-event-result = result<option<window-event>, string>;
+  type window-bool-result = result<bool, string>;
+  type window-size-result = result<window-size, string>;
 
   variant window-command {
     open(window-open),

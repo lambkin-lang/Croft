@@ -36,53 +36,73 @@ static void croft_wit_host_popup_menu_reply_zero(SapWitHostPopupMenuReply* reply
     }
 }
 
+static void croft_wit_set_string_view(const char* text,
+                                      const uint8_t** data_out,
+                                      uint32_t* len_out)
+{
+    if (!data_out || !len_out) {
+        return;
+    }
+    if (!text) {
+        text = "";
+    }
+    *data_out = (const uint8_t*)text;
+    *len_out = (uint32_t)strlen(text);
+}
+
 static void croft_wit_host_popup_menu_reply_status_ok(SapWitHostPopupMenuReply* reply)
 {
     croft_wit_host_popup_menu_reply_zero(reply);
     reply->case_tag = SAP_WIT_HOST_POPUP_MENU_REPLY_STATUS;
-    reply->val.status.case_tag = SAP_WIT_HOST_POPUP_MENU_STATUS_OK;
+    reply->val.status.is_v_ok = 1u;
 }
 
-static void croft_wit_host_popup_menu_reply_status_err(SapWitHostPopupMenuReply* reply, uint8_t err)
+static void croft_wit_host_popup_menu_reply_status_err(SapWitHostPopupMenuReply* reply, const char* err)
 {
     croft_wit_host_popup_menu_reply_zero(reply);
     reply->case_tag = SAP_WIT_HOST_POPUP_MENU_REPLY_STATUS;
-    reply->val.status.case_tag = SAP_WIT_HOST_POPUP_MENU_STATUS_ERR;
-    reply->val.status.val.err = err;
+    reply->val.status.is_v_ok = 0u;
+    croft_wit_set_string_view(err,
+                              &reply->val.status.v_val.err.v_data,
+                              &reply->val.status.v_val.err.v_len);
 }
 
 static void croft_wit_host_popup_menu_reply_action_ok(SapWitHostPopupMenuReply* reply, int32_t action_id)
 {
     croft_wit_host_popup_menu_reply_zero(reply);
     reply->case_tag = SAP_WIT_HOST_POPUP_MENU_REPLY_ACTION;
-    reply->val.action.case_tag = SAP_WIT_HOST_POPUP_MENU_ACTION_RESULT_OK;
-    reply->val.action.val.ok = action_id;
+    reply->val.action.is_v_ok = 1u;
+    reply->val.action.v_val.ok.has_v = 1u;
+    reply->val.action.v_val.ok.v = action_id;
 }
 
 static void croft_wit_host_popup_menu_reply_action_empty(SapWitHostPopupMenuReply* reply)
 {
     croft_wit_host_popup_menu_reply_zero(reply);
     reply->case_tag = SAP_WIT_HOST_POPUP_MENU_REPLY_ACTION;
-    reply->val.action.case_tag = SAP_WIT_HOST_POPUP_MENU_ACTION_RESULT_EMPTY;
+    reply->val.action.is_v_ok = 1u;
+    reply->val.action.v_val.ok.has_v = 0u;
 }
 
-static void croft_wit_host_popup_menu_reply_action_err(SapWitHostPopupMenuReply* reply, uint8_t err)
+static void croft_wit_host_popup_menu_reply_action_err(SapWitHostPopupMenuReply* reply, const char* err)
 {
     croft_wit_host_popup_menu_reply_zero(reply);
     reply->case_tag = SAP_WIT_HOST_POPUP_MENU_REPLY_ACTION;
-    reply->val.action.case_tag = SAP_WIT_HOST_POPUP_MENU_ACTION_RESULT_ERR;
-    reply->val.action.val.err = err;
+    reply->val.action.is_v_ok = 0u;
+    croft_wit_set_string_view(err,
+                              &reply->val.action.v_val.err.v_data,
+                              &reply->val.action.v_val.err.v_len);
 }
 
-static uint8_t croft_wit_host_popup_menu_map_result(host_popup_menu_result result)
+static const char* croft_wit_host_popup_menu_map_result(host_popup_menu_result result)
 {
     switch (result) {
         case HOST_POPUP_MENU_RESULT_UNAVAILABLE:
-            return SAP_WIT_HOST_POPUP_MENU_ERROR_UNAVAILABLE;
+            return "unavailable";
         case HOST_POPUP_MENU_RESULT_INTERNAL:
-            return SAP_WIT_HOST_POPUP_MENU_ERROR_INTERNAL;
+            return "internal";
         default:
-            return SAP_WIT_HOST_POPUP_MENU_ERROR_INTERNAL;
+            return "internal";
     }
 }
 
@@ -152,7 +172,7 @@ int32_t croft_wit_host_popup_menu_runtime_dispatch(croft_wit_host_popup_menu_run
             return 0;
         case SAP_WIT_HOST_POPUP_MENU_COMMAND_ADD_ITEM:
             if (!croft_wit_host_popup_menu_add_item(runtime, &command->val.add_item)) {
-                croft_wit_host_popup_menu_reply_status_err(reply_out, SAP_WIT_HOST_POPUP_MENU_ERROR_INTERNAL);
+                croft_wit_host_popup_menu_reply_status_err(reply_out, "internal");
                 return 0;
             }
             croft_wit_host_popup_menu_reply_status_ok(reply_out);
@@ -175,7 +195,7 @@ int32_t croft_wit_host_popup_menu_runtime_dispatch(croft_wit_host_popup_menu_run
             return 0;
         }
         default:
-            croft_wit_host_popup_menu_reply_status_err(reply_out, SAP_WIT_HOST_POPUP_MENU_ERROR_INTERNAL);
+            croft_wit_host_popup_menu_reply_status_err(reply_out, "internal");
             return 0;
     }
 }

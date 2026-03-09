@@ -15,10 +15,10 @@ static int wit_host_fs_expect_file_ok(const SapWitHostFsReply* reply, SapWitHost
         return 0;
     }
     if (reply->case_tag != SAP_WIT_HOST_FS_REPLY_FILE
-            || reply->val.file.case_tag != SAP_WIT_HOST_FS_FILE_OP_RESULT_OK) {
+            || !reply->val.file.is_v_ok) {
         return 0;
     }
-    *handle_out = reply->val.file.val.ok;
+    *handle_out = reply->val.file.v_val.ok.v;
     return 1;
 }
 
@@ -26,7 +26,7 @@ static int wit_host_fs_expect_status_ok(const SapWitHostFsReply* reply)
 {
     return reply
         && reply->case_tag == SAP_WIT_HOST_FS_REPLY_STATUS
-        && reply->val.status.case_tag == SAP_WIT_HOST_FS_STATUS_OK;
+        && reply->val.status.is_v_ok;
 }
 
 int test_wit_host_fs_runtime_read_fixture(void)
@@ -58,13 +58,13 @@ int test_wit_host_fs_runtime_read_fixture(void)
     command.val.read_all.file = file;
     if (croft_wit_host_fs_runtime_dispatch(runtime, &command, &reply) != 0
             || reply.case_tag != SAP_WIT_HOST_FS_REPLY_READ
-            || reply.val.read.case_tag != SAP_WIT_HOST_FS_FILE_READ_RESULT_OK) {
+            || !reply.val.read.is_v_ok) {
         croft_wit_host_fs_reply_dispose(&reply);
         croft_wit_host_fs_runtime_destroy(runtime);
         return 1;
     }
-    if (reply.val.read.val.ok.len != (uint32_t)strlen(WIT_FS_SAMPLE_TEXT)
-            || memcmp(reply.val.read.val.ok.data, WIT_FS_SAMPLE_TEXT,
+    if (reply.val.read.v_val.ok.v_len != (uint32_t)strlen(WIT_FS_SAMPLE_TEXT)
+            || memcmp(reply.val.read.v_val.ok.v_data, WIT_FS_SAMPLE_TEXT,
                       strlen(WIT_FS_SAMPLE_TEXT)) != 0) {
         croft_wit_host_fs_reply_dispose(&reply);
         croft_wit_host_fs_runtime_destroy(runtime);

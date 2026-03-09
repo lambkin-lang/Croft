@@ -14,10 +14,10 @@ static int expect_file_ok(const SapWitHostFsReply* reply, SapWitHostFsFileResour
         return 0;
     }
     if (reply->case_tag != SAP_WIT_HOST_FS_REPLY_FILE
-            || reply->val.file.case_tag != SAP_WIT_HOST_FS_FILE_OP_RESULT_OK) {
+            || !reply->val.file.is_v_ok) {
         return 0;
     }
-    *handle_out = reply->val.file.val.ok;
+    *handle_out = reply->val.file.v_val.ok.v;
     return 1;
 }
 
@@ -25,7 +25,7 @@ static int expect_fs_status_ok(const SapWitHostFsReply* reply)
 {
     return reply
         && reply->case_tag == SAP_WIT_HOST_FS_REPLY_STATUS
-        && reply->val.status.case_tag == SAP_WIT_HOST_FS_STATUS_OK;
+        && reply->val.status.is_v_ok;
 }
 
 static int load_input_bytes(croft_wit_host_fs_runtime* fs_runtime,
@@ -56,7 +56,7 @@ static int load_input_bytes(croft_wit_host_fs_runtime* fs_runtime,
     command.val.read_all.file = file;
     if (croft_wit_host_fs_runtime_dispatch(fs_runtime, &command, &reply) != 0
             || reply.case_tag != SAP_WIT_HOST_FS_REPLY_READ
-            || reply.val.read.case_tag != SAP_WIT_HOST_FS_FILE_READ_RESULT_OK) {
+            || !reply.val.read.is_v_ok) {
         croft_wit_host_fs_reply_dispose(&reply);
         command.case_tag = SAP_WIT_HOST_FS_COMMAND_CLOSE;
         command.val.close.file = file;
@@ -66,8 +66,8 @@ static int load_input_bytes(croft_wit_host_fs_runtime* fs_runtime,
         return -1;
     }
 
-    if (reply.val.read.val.ok.len > 0u) {
-        owned = (uint8_t*)malloc((size_t)reply.val.read.val.ok.len);
+    if (reply.val.read.v_val.ok.v_len > 0u) {
+        owned = (uint8_t*)malloc((size_t)reply.val.read.v_val.ok.v_len);
         if (!owned) {
             croft_wit_host_fs_reply_dispose(&reply);
             command.case_tag = SAP_WIT_HOST_FS_COMMAND_CLOSE;
@@ -77,10 +77,10 @@ static int load_input_bytes(croft_wit_host_fs_runtime* fs_runtime,
             }
             return -1;
         }
-        memcpy(owned, reply.val.read.val.ok.data, reply.val.read.val.ok.len);
+        memcpy(owned, reply.val.read.v_val.ok.v_data, reply.val.read.v_val.ok.v_len);
     }
     out_bytes->data = owned;
-    out_bytes->len = reply.val.read.val.ok.len;
+    out_bytes->len = reply.val.read.v_val.ok.v_len;
     croft_wit_host_fs_reply_dispose(&reply);
 
     command.case_tag = SAP_WIT_HOST_FS_COMMAND_CLOSE;

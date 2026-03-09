@@ -27,91 +27,117 @@ static void croft_wit_host_window_reply_zero(SapWitHostWindowReply* reply)
     memset(reply, 0, sizeof(*reply));
 }
 
+static void croft_wit_set_string_view(const char* text,
+                                      const uint8_t** data_out,
+                                      uint32_t* len_out)
+{
+    if (!data_out || !len_out) {
+        return;
+    }
+    if (!text) {
+        text = "";
+    }
+    *data_out = (const uint8_t*)text;
+    *len_out = (uint32_t)strlen(text);
+}
+
 static void croft_wit_host_window_reply_window_ok(SapWitHostWindowReply* reply, SapWitHostWindowResource handle)
 {
     croft_wit_host_window_reply_zero(reply);
     reply->case_tag = SAP_WIT_HOST_WINDOW_REPLY_WINDOW;
-    reply->val.window.case_tag = SAP_WIT_HOST_WINDOW_OP_RESULT_OK;
-    reply->val.window.val.ok = handle;
+    reply->val.window.is_v_ok = 1u;
+    reply->val.window.v_val.ok.v = handle;
 }
 
-static void croft_wit_host_window_reply_window_err(SapWitHostWindowReply* reply, uint8_t err)
+static void croft_wit_host_window_reply_window_err(SapWitHostWindowReply* reply, const char* err)
 {
     croft_wit_host_window_reply_zero(reply);
     reply->case_tag = SAP_WIT_HOST_WINDOW_REPLY_WINDOW;
-    reply->val.window.case_tag = SAP_WIT_HOST_WINDOW_OP_RESULT_ERR;
-    reply->val.window.val.err = err;
+    reply->val.window.is_v_ok = 0u;
+    croft_wit_set_string_view(err,
+                              &reply->val.window.v_val.err.v_data,
+                              &reply->val.window.v_val.err.v_len);
 }
 
 static void croft_wit_host_window_reply_status_ok(SapWitHostWindowReply* reply)
 {
     croft_wit_host_window_reply_zero(reply);
     reply->case_tag = SAP_WIT_HOST_WINDOW_REPLY_STATUS;
-    reply->val.status.case_tag = SAP_WIT_HOST_WINDOW_STATUS_OK;
+    reply->val.status.is_v_ok = 1u;
 }
 
-static void croft_wit_host_window_reply_status_err(SapWitHostWindowReply* reply, uint8_t err)
+static void croft_wit_host_window_reply_status_err(SapWitHostWindowReply* reply, const char* err)
 {
     croft_wit_host_window_reply_zero(reply);
     reply->case_tag = SAP_WIT_HOST_WINDOW_REPLY_STATUS;
-    reply->val.status.case_tag = SAP_WIT_HOST_WINDOW_STATUS_ERR;
-    reply->val.status.val.err = err;
+    reply->val.status.is_v_ok = 0u;
+    croft_wit_set_string_view(err,
+                              &reply->val.status.v_val.err.v_data,
+                              &reply->val.status.v_val.err.v_len);
 }
 
 static void croft_wit_host_window_reply_event_ok(SapWitHostWindowReply* reply, const SapWitHostWindowEvent* event)
 {
     croft_wit_host_window_reply_zero(reply);
     reply->case_tag = SAP_WIT_HOST_WINDOW_REPLY_EVENT;
-    reply->val.event.case_tag = SAP_WIT_HOST_WINDOW_EVENT_RESULT_OK;
-    reply->val.event.val.ok = *event;
+    reply->val.event.is_v_ok = 1u;
+    reply->val.event.v_val.ok.has_v = 1u;
+    reply->val.event.v_val.ok.v = *event;
 }
 
 static void croft_wit_host_window_reply_event_empty(SapWitHostWindowReply* reply)
 {
     croft_wit_host_window_reply_zero(reply);
     reply->case_tag = SAP_WIT_HOST_WINDOW_REPLY_EVENT;
-    reply->val.event.case_tag = SAP_WIT_HOST_WINDOW_EVENT_RESULT_EMPTY;
+    reply->val.event.is_v_ok = 1u;
+    reply->val.event.v_val.ok.has_v = 0u;
 }
 
-static void croft_wit_host_window_reply_event_err(SapWitHostWindowReply* reply, uint8_t err)
+static void croft_wit_host_window_reply_event_err(SapWitHostWindowReply* reply, const char* err)
 {
     croft_wit_host_window_reply_zero(reply);
     reply->case_tag = SAP_WIT_HOST_WINDOW_REPLY_EVENT;
-    reply->val.event.case_tag = SAP_WIT_HOST_WINDOW_EVENT_RESULT_ERR;
-    reply->val.event.val.err = err;
+    reply->val.event.is_v_ok = 0u;
+    croft_wit_set_string_view(err,
+                              &reply->val.event.v_val.err.v_data,
+                              &reply->val.event.v_val.err.v_len);
 }
 
 static void croft_wit_host_window_reply_bool_ok(SapWitHostWindowReply* reply, uint8_t value)
 {
     croft_wit_host_window_reply_zero(reply);
     reply->case_tag = SAP_WIT_HOST_WINDOW_REPLY_SHOULD_CLOSE;
-    reply->val.should_close.case_tag = SAP_WIT_HOST_WINDOW_BOOL_RESULT_OK;
-    reply->val.should_close.val.ok = value ? 1u : 0u;
+    reply->val.should_close.is_v_ok = 1u;
+    reply->val.should_close.v_val.ok.v = value ? 1u : 0u;
 }
 
-static void croft_wit_host_window_reply_bool_err(SapWitHostWindowReply* reply, uint8_t err)
+static void croft_wit_host_window_reply_bool_err(SapWitHostWindowReply* reply, const char* err)
 {
     croft_wit_host_window_reply_zero(reply);
     reply->case_tag = SAP_WIT_HOST_WINDOW_REPLY_SHOULD_CLOSE;
-    reply->val.should_close.case_tag = SAP_WIT_HOST_WINDOW_BOOL_RESULT_ERR;
-    reply->val.should_close.val.err = err;
+    reply->val.should_close.is_v_ok = 0u;
+    croft_wit_set_string_view(err,
+                              &reply->val.should_close.v_val.err.v_data,
+                              &reply->val.should_close.v_val.err.v_len);
 }
 
 static void croft_wit_host_window_reply_size_ok(SapWitHostWindowReply* reply, uint32_t width, uint32_t height)
 {
     croft_wit_host_window_reply_zero(reply);
     reply->case_tag = SAP_WIT_HOST_WINDOW_REPLY_SIZE;
-    reply->val.size.case_tag = SAP_WIT_HOST_WINDOW_SIZE_RESULT_OK;
-    reply->val.size.val.ok.width = width;
-    reply->val.size.val.ok.height = height;
+    reply->val.size.is_v_ok = 1u;
+    reply->val.size.v_val.ok.v.width = width;
+    reply->val.size.v_val.ok.v.height = height;
 }
 
-static void croft_wit_host_window_reply_size_err(SapWitHostWindowReply* reply, uint8_t err)
+static void croft_wit_host_window_reply_size_err(SapWitHostWindowReply* reply, const char* err)
 {
     croft_wit_host_window_reply_zero(reply);
     reply->case_tag = SAP_WIT_HOST_WINDOW_REPLY_SIZE;
-    reply->val.size.case_tag = SAP_WIT_HOST_WINDOW_SIZE_RESULT_ERR;
-    reply->val.size.val.err = err;
+    reply->val.size.is_v_ok = 0u;
+    croft_wit_set_string_view(err,
+                              &reply->val.size.v_val.err.v_data,
+                              &reply->val.size.v_val.err.v_len);
 }
 
 static void croft_wit_host_window_enqueue(const SapWitHostWindowEvent* event)
@@ -224,13 +250,13 @@ static int32_t croft_wit_host_window_dispatch_open(croft_wit_host_window_runtime
         return -1;
     }
     if (runtime->live || g_window_runtime) {
-        croft_wit_host_window_reply_window_err(reply_out, SAP_WIT_HOST_WINDOW_ERROR_BUSY);
+        croft_wit_host_window_reply_window_err(reply_out, "busy");
         return 0;
     }
 
     title = (char*)malloc((size_t)request->title_len + 1u);
     if (!title) {
-        croft_wit_host_window_reply_window_err(reply_out, SAP_WIT_HOST_WINDOW_ERROR_INTERNAL);
+        croft_wit_host_window_reply_window_err(reply_out, "internal");
         return 0;
     }
     if (request->title_len > 0u) {
@@ -241,7 +267,7 @@ static int32_t croft_wit_host_window_dispatch_open(croft_wit_host_window_runtime
     if (host_ui_init() != 0 || host_ui_create_window(request->width, request->height, title) != 0) {
         free(title);
         host_ui_terminate();
-        croft_wit_host_window_reply_window_err(reply_out, SAP_WIT_HOST_WINDOW_ERROR_UNAVAILABLE);
+        croft_wit_host_window_reply_window_err(reply_out, "unavailable");
         return 0;
     }
     free(title);
@@ -263,7 +289,7 @@ static int32_t croft_wit_host_window_dispatch_close(croft_wit_host_window_runtim
                                                     SapWitHostWindowReply* reply_out)
 {
     if (!croft_wit_host_window_valid(runtime, request ? request->window : 0u)) {
-        croft_wit_host_window_reply_status_err(reply_out, SAP_WIT_HOST_WINDOW_ERROR_INVALID_HANDLE);
+        croft_wit_host_window_reply_status_err(reply_out, "invalid-handle");
         return 0;
     }
 
@@ -285,7 +311,7 @@ static int32_t croft_wit_host_window_dispatch_poll(croft_wit_host_window_runtime
                                                    SapWitHostWindowReply* reply_out)
 {
     if (!croft_wit_host_window_valid(runtime, request ? request->window : 0u)) {
-        croft_wit_host_window_reply_status_err(reply_out, SAP_WIT_HOST_WINDOW_ERROR_INVALID_HANDLE);
+        croft_wit_host_window_reply_status_err(reply_out, "invalid-handle");
         return 0;
     }
 
@@ -301,7 +327,7 @@ static int32_t croft_wit_host_window_dispatch_next_event(croft_wit_host_window_r
     SapWitHostWindowEvent event;
 
     if (!croft_wit_host_window_valid(runtime, request ? request->window : 0u)) {
-        croft_wit_host_window_reply_event_err(reply_out, SAP_WIT_HOST_WINDOW_ERROR_INVALID_HANDLE);
+        croft_wit_host_window_reply_event_err(reply_out, "invalid-handle");
         return 0;
     }
     if (runtime->event_count == 0u) {
@@ -321,7 +347,7 @@ static int32_t croft_wit_host_window_dispatch_should_close(croft_wit_host_window
                                                            SapWitHostWindowReply* reply_out)
 {
     if (!croft_wit_host_window_valid(runtime, request ? request->window : 0u)) {
-        croft_wit_host_window_reply_bool_err(reply_out, SAP_WIT_HOST_WINDOW_ERROR_INVALID_HANDLE);
+        croft_wit_host_window_reply_bool_err(reply_out, "invalid-handle");
         return 0;
     }
 
@@ -338,7 +364,7 @@ static int32_t croft_wit_host_window_dispatch_framebuffer_size(
     uint32_t height = 0u;
 
     if (!croft_wit_host_window_valid(runtime, request ? request->window : 0u)) {
-        croft_wit_host_window_reply_size_err(reply_out, SAP_WIT_HOST_WINDOW_ERROR_INVALID_HANDLE);
+        croft_wit_host_window_reply_size_err(reply_out, "invalid-handle");
         return 0;
     }
 

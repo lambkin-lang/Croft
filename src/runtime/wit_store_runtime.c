@@ -29,23 +29,37 @@ struct croft_wit_store_runtime {
     size_t txn_slot_cap;
 };
 
-static uint8_t croft_wit_store_error_from_rc(int32_t rc)
+static void croft_wit_set_string_view(const char* text,
+                                      const uint8_t** data_out,
+                                      uint32_t* len_out)
+{
+    if (!data_out || !len_out) {
+        return;
+    }
+    if (!text) {
+        text = "";
+    }
+    *data_out = (const uint8_t*)text;
+    *len_out = (uint32_t)strlen(text);
+}
+
+static const char* croft_wit_store_error_from_rc(int32_t rc)
 {
     switch (rc) {
         case ERR_OOM:
-            return SAP_WIT_COMMON_CORE_COMMON_ERROR_OOM;
+            return "oom";
         case ERR_RANGE:
-            return SAP_WIT_COMMON_CORE_COMMON_ERROR_RANGE;
+            return "range";
         case ERR_BUSY:
-            return SAP_WIT_COMMON_CORE_COMMON_ERROR_BUSY;
+            return "busy";
         case ERR_NOT_FOUND:
-            return SAP_WIT_COMMON_CORE_COMMON_ERROR_NOT_FOUND;
+            return "not-found";
         case ERR_READONLY:
-            return SAP_WIT_COMMON_CORE_COMMON_ERROR_READONLY;
+            return "readonly";
         case ERR_CONFLICT:
-            return SAP_WIT_COMMON_CORE_COMMON_ERROR_CONFLICT;
+            return "conflict";
         default:
-            return SAP_WIT_COMMON_CORE_COMMON_ERROR_INTERNAL;
+            return "internal";
     }
 }
 
@@ -61,71 +75,75 @@ static void croft_wit_store_reply_db_ok(SapWitCommonCoreStoreReply* reply, SapWi
 {
     croft_wit_store_reply_zero(reply);
     reply->case_tag = SAP_WIT_COMMON_CORE_STORE_REPLY_DB;
-    reply->val.db.case_tag = SAP_WIT_COMMON_CORE_DB_OP_RESULT_OK;
-    reply->val.db.val.ok = handle;
+    reply->val.db.is_v_ok = 1u;
+    reply->val.db.v_val.ok.v = handle;
 }
 
-static void croft_wit_store_reply_db_err(SapWitCommonCoreStoreReply* reply, uint8_t err)
+static void croft_wit_store_reply_db_err(SapWitCommonCoreStoreReply* reply, const char* err)
 {
     croft_wit_store_reply_zero(reply);
     reply->case_tag = SAP_WIT_COMMON_CORE_STORE_REPLY_DB;
-    reply->val.db.case_tag = SAP_WIT_COMMON_CORE_DB_OP_RESULT_ERR;
-    reply->val.db.val.err = err;
+    reply->val.db.is_v_ok = 0u;
+    croft_wit_set_string_view(err, &reply->val.db.v_val.err.v_data, &reply->val.db.v_val.err.v_len);
 }
 
 static void croft_wit_store_reply_txn_ok(SapWitCommonCoreStoreReply* reply, SapWitCommonCoreTxnResource handle)
 {
     croft_wit_store_reply_zero(reply);
     reply->case_tag = SAP_WIT_COMMON_CORE_STORE_REPLY_TXN;
-    reply->val.txn.case_tag = SAP_WIT_COMMON_CORE_TXN_OP_RESULT_OK;
-    reply->val.txn.val.ok = handle;
+    reply->val.txn.is_v_ok = 1u;
+    reply->val.txn.v_val.ok.v = handle;
 }
 
-static void croft_wit_store_reply_txn_err(SapWitCommonCoreStoreReply* reply, uint8_t err)
+static void croft_wit_store_reply_txn_err(SapWitCommonCoreStoreReply* reply, const char* err)
 {
     croft_wit_store_reply_zero(reply);
     reply->case_tag = SAP_WIT_COMMON_CORE_STORE_REPLY_TXN;
-    reply->val.txn.case_tag = SAP_WIT_COMMON_CORE_TXN_OP_RESULT_ERR;
-    reply->val.txn.val.err = err;
+    reply->val.txn.is_v_ok = 0u;
+    croft_wit_set_string_view(err, &reply->val.txn.v_val.err.v_data, &reply->val.txn.v_val.err.v_len);
 }
 
 static void croft_wit_store_reply_status_ok(SapWitCommonCoreStoreReply* reply)
 {
     croft_wit_store_reply_zero(reply);
     reply->case_tag = SAP_WIT_COMMON_CORE_STORE_REPLY_STATUS;
-    reply->val.status.case_tag = SAP_WIT_COMMON_CORE_STATUS_OK;
+    reply->val.status.is_v_ok = 1u;
 }
 
-static void croft_wit_store_reply_status_err(SapWitCommonCoreStoreReply* reply, uint8_t err)
+static void croft_wit_store_reply_status_err(SapWitCommonCoreStoreReply* reply, const char* err)
 {
     croft_wit_store_reply_zero(reply);
     reply->case_tag = SAP_WIT_COMMON_CORE_STORE_REPLY_STATUS;
-    reply->val.status.case_tag = SAP_WIT_COMMON_CORE_STATUS_ERR;
-    reply->val.status.val.err = err;
+    reply->val.status.is_v_ok = 0u;
+    croft_wit_set_string_view(err,
+                              &reply->val.status.v_val.err.v_data,
+                              &reply->val.status.v_val.err.v_len);
 }
 
 static void croft_wit_store_reply_get_ok(SapWitCommonCoreStoreReply* reply, uint8_t* value, uint32_t len)
 {
     croft_wit_store_reply_zero(reply);
     reply->case_tag = SAP_WIT_COMMON_CORE_STORE_REPLY_GET;
-    reply->val.get.case_tag = SAP_WIT_COMMON_CORE_KV_GET_RESULT_OK;
-    reply->val.get.val.ok.data = value;
-    reply->val.get.val.ok.len = len;
+    reply->val.get.is_v_ok = 1u;
+    reply->val.get.v_val.ok.has_v = 1u;
+    reply->val.get.v_val.ok.v_data = value;
+    reply->val.get.v_val.ok.v_len = len;
 }
 
 static void croft_wit_store_reply_get_not_found(SapWitCommonCoreStoreReply* reply)
 {
     croft_wit_store_reply_zero(reply);
     reply->case_tag = SAP_WIT_COMMON_CORE_STORE_REPLY_GET;
-    reply->val.get.case_tag = SAP_WIT_COMMON_CORE_KV_GET_RESULT_NOT_FOUND;
+    reply->val.get.is_v_ok = 1u;
+    reply->val.get.v_val.ok.has_v = 0u;
 }
 
-static void croft_wit_store_reply_get_err(SapWitCommonCoreStoreReply* reply, uint8_t err)
+static void croft_wit_store_reply_get_err(SapWitCommonCoreStoreReply* reply, const char* err)
 {
     croft_wit_store_reply_zero(reply);
     reply->case_tag = SAP_WIT_COMMON_CORE_STORE_REPLY_GET;
-    reply->val.get.case_tag = SAP_WIT_COMMON_CORE_KV_GET_RESULT_ERR;
-    reply->val.get.val.err = err;
+    reply->val.get.is_v_ok = 0u;
+    croft_wit_set_string_view(err, &reply->val.get.v_val.err.v_data, &reply->val.get.v_val.err.v_len);
 }
 
 void croft_wit_store_reply_dispose(SapWitCommonCoreStoreReply* reply)
@@ -135,9 +153,10 @@ void croft_wit_store_reply_dispose(SapWitCommonCoreStoreReply* reply)
     }
 
     if (reply->case_tag == SAP_WIT_COMMON_CORE_STORE_REPLY_GET
-            && reply->val.get.case_tag == SAP_WIT_COMMON_CORE_KV_GET_RESULT_OK
-            && reply->val.get.val.ok.data) {
-        free((void*)reply->val.get.val.ok.data);
+            && reply->val.get.is_v_ok
+            && reply->val.get.v_val.ok.has_v
+            && reply->val.get.v_val.ok.v_data) {
+        free((void*)reply->val.get.v_val.ok.v_data);
     }
 
     memset(reply, 0, sizeof(*reply));
@@ -435,7 +454,7 @@ static int32_t croft_wit_store_dispatch_db_open(croft_wit_store_runtime* runtime
     db = db_open(arena, page_size, NULL, NULL);
     if (!db) {
         sap_arena_destroy(arena);
-        croft_wit_store_reply_db_err(reply_out, SAP_WIT_COMMON_CORE_COMMON_ERROR_OOM);
+        croft_wit_store_reply_db_err(reply_out, "oom");
         return ERR_OK;
     }
 
@@ -464,11 +483,11 @@ static int32_t croft_wit_store_dispatch_db_drop(croft_wit_store_runtime* runtime
 
     db_slot = croft_wit_db_slots_lookup(runtime, request->db);
     if (!db_slot) {
-        croft_wit_store_reply_status_err(reply_out, SAP_WIT_COMMON_CORE_COMMON_ERROR_INVALID_HANDLE);
+        croft_wit_store_reply_status_err(reply_out, "invalid-handle");
         return ERR_OK;
     }
     if (croft_wit_db_has_live_txn(runtime, request->db)) {
-        croft_wit_store_reply_status_err(reply_out, SAP_WIT_COMMON_CORE_COMMON_ERROR_BUSY);
+        croft_wit_store_reply_status_err(reply_out, "busy");
         return ERR_OK;
     }
 
@@ -498,7 +517,7 @@ static int32_t croft_wit_store_dispatch_txn_begin(croft_wit_store_runtime* runti
 
     db_slot = croft_wit_db_slots_lookup(runtime, request->db);
     if (!db_slot) {
-        croft_wit_store_reply_txn_err(reply_out, SAP_WIT_COMMON_CORE_COMMON_ERROR_INVALID_HANDLE);
+        croft_wit_store_reply_txn_err(reply_out, "invalid-handle");
         return ERR_OK;
     }
 
@@ -508,7 +527,7 @@ static int32_t croft_wit_store_dispatch_txn_begin(croft_wit_store_runtime* runti
 
     txn = txn_begin(db_slot->db, NULL, flags);
     if (!txn) {
-        croft_wit_store_reply_txn_err(reply_out, SAP_WIT_COMMON_CORE_COMMON_ERROR_BUSY);
+        croft_wit_store_reply_txn_err(reply_out, "busy");
         return ERR_OK;
     }
 
@@ -536,7 +555,7 @@ static int32_t croft_wit_store_dispatch_txn_commit(croft_wit_store_runtime* runt
 
     txn_slot = croft_wit_txn_slots_lookup(runtime, request->txn);
     if (!txn_slot) {
-        croft_wit_store_reply_status_err(reply_out, SAP_WIT_COMMON_CORE_COMMON_ERROR_INVALID_HANDLE);
+        croft_wit_store_reply_status_err(reply_out, "invalid-handle");
         return ERR_OK;
     }
 
@@ -563,7 +582,7 @@ static int32_t croft_wit_store_dispatch_txn_abort(croft_wit_store_runtime* runti
 
     txn_slot = croft_wit_txn_slots_lookup(runtime, request->txn);
     if (!txn_slot) {
-        croft_wit_store_reply_status_err(reply_out, SAP_WIT_COMMON_CORE_COMMON_ERROR_INVALID_HANDLE);
+        croft_wit_store_reply_status_err(reply_out, "invalid-handle");
         return ERR_OK;
     }
 
@@ -586,7 +605,7 @@ static int32_t croft_wit_store_dispatch_kv_put(croft_wit_store_runtime* runtime,
 
     txn_slot = croft_wit_txn_slots_lookup(runtime, request->txn);
     if (!txn_slot) {
-        croft_wit_store_reply_status_err(reply_out, SAP_WIT_COMMON_CORE_COMMON_ERROR_INVALID_HANDLE);
+        croft_wit_store_reply_status_err(reply_out, "invalid-handle");
         return ERR_OK;
     }
 
@@ -625,7 +644,7 @@ static int32_t croft_wit_store_dispatch_kv_get(croft_wit_store_runtime* runtime,
 
     txn_slot = croft_wit_txn_slots_lookup(runtime, request->txn);
     if (!txn_slot) {
-        croft_wit_store_reply_get_err(reply_out, SAP_WIT_COMMON_CORE_COMMON_ERROR_INVALID_HANDLE);
+        croft_wit_store_reply_get_err(reply_out, "invalid-handle");
         return ERR_OK;
     }
 
@@ -641,7 +660,7 @@ static int32_t croft_wit_store_dispatch_kv_get(croft_wit_store_runtime* runtime,
 
     copy = (uint8_t*)malloc(value_len + 1u);
     if (!copy) {
-        croft_wit_store_reply_get_err(reply_out, SAP_WIT_COMMON_CORE_COMMON_ERROR_OOM);
+        croft_wit_store_reply_get_err(reply_out, "oom");
         return ERR_OK;
     }
     if (value_len > 0u) {

@@ -12,11 +12,6 @@ interface types {
     word-part,
   }
 
-  enum error {
-    unsupported,
-    internal,
-  }
-
   record key-event {
     key: s32,
     action: s32,
@@ -65,16 +60,8 @@ interface types {
     quit,
   }
 
-  variant status {
-    ok,
-    err(error),
-  }
-
-  variant action-result {
-    ok(editor-action),
-    empty,
-    err(error),
-  }
+  type status = result<_, string>;
+  type action-result = result<option<editor-action>, string>;
 
   variant command {
     window-key(key-event),

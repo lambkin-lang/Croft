@@ -10,10 +10,10 @@ static int expect_mailbox_ok(const SapWitCommonCoreMailboxReply* reply, SapWitCo
         return 0;
     }
     if (reply->case_tag != SAP_WIT_COMMON_CORE_MAILBOX_REPLY_MAILBOX
-            || reply->val.mailbox.case_tag != SAP_WIT_COMMON_CORE_MAILBOX_OP_RESULT_OK) {
+            || !reply->val.mailbox.is_v_ok) {
         return 0;
     }
-    *handle_out = reply->val.mailbox.val.ok;
+    *handle_out = reply->val.mailbox.v_val.ok.v;
     return 1;
 }
 
@@ -21,7 +21,7 @@ static int expect_status_ok(const SapWitCommonCoreMailboxReply* reply)
 {
     return reply
         && reply->case_tag == SAP_WIT_COMMON_CORE_MAILBOX_REPLY_STATUS
-        && reply->val.status.case_tag == SAP_WIT_COMMON_CORE_STATUS_OK;
+        && reply->val.status.is_v_ok;
 }
 
 static int expect_recv_ok(const SapWitCommonCoreMailboxReply* reply, const uint8_t** data_out, uint32_t* len_out)
@@ -30,11 +30,12 @@ static int expect_recv_ok(const SapWitCommonCoreMailboxReply* reply, const uint8
         return 0;
     }
     if (reply->case_tag != SAP_WIT_COMMON_CORE_MAILBOX_REPLY_RECV
-            || reply->val.recv.case_tag != SAP_WIT_COMMON_CORE_MAILBOX_RECV_RESULT_OK) {
+            || !reply->val.recv.is_v_ok
+            || !reply->val.recv.v_val.ok.has_v) {
         return 0;
     }
-    *data_out = reply->val.recv.val.ok.data;
-    *len_out = reply->val.recv.val.ok.len;
+    *data_out = reply->val.recv.v_val.ok.v_data;
+    *len_out = reply->val.recv.v_val.ok.v_len;
     return 1;
 }
 

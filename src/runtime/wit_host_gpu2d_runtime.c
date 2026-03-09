@@ -31,36 +31,54 @@ static void croft_wit_host_gpu2d_reply_zero(SapWitHostGpu2dReply* reply)
     memset(reply, 0, sizeof(*reply));
 }
 
+static void croft_wit_set_string_view(const char* text,
+                                      const uint8_t** data_out,
+                                      uint32_t* len_out)
+{
+    if (!data_out || !len_out) {
+        return;
+    }
+    if (!text) {
+        text = "";
+    }
+    *data_out = (const uint8_t*)text;
+    *len_out = (uint32_t)strlen(text);
+}
+
 static void croft_wit_host_gpu2d_reply_surface_ok(SapWitHostGpu2dReply* reply,
                                                   SapWitHostGpu2dSurfaceResource handle)
 {
     croft_wit_host_gpu2d_reply_zero(reply);
     reply->case_tag = SAP_WIT_HOST_GPU2D_REPLY_SURFACE;
-    reply->val.surface.case_tag = SAP_WIT_HOST_GPU2D_SURFACE_RESULT_OK;
-    reply->val.surface.val.ok = handle;
+    reply->val.surface.is_v_ok = 1u;
+    reply->val.surface.v_val.ok.v = handle;
 }
 
-static void croft_wit_host_gpu2d_reply_surface_err(SapWitHostGpu2dReply* reply, uint8_t err)
+static void croft_wit_host_gpu2d_reply_surface_err(SapWitHostGpu2dReply* reply, const char* err)
 {
     croft_wit_host_gpu2d_reply_zero(reply);
     reply->case_tag = SAP_WIT_HOST_GPU2D_REPLY_SURFACE;
-    reply->val.surface.case_tag = SAP_WIT_HOST_GPU2D_SURFACE_RESULT_ERR;
-    reply->val.surface.val.err = err;
+    reply->val.surface.is_v_ok = 0u;
+    croft_wit_set_string_view(err,
+                              &reply->val.surface.v_val.err.v_data,
+                              &reply->val.surface.v_val.err.v_len);
 }
 
 static void croft_wit_host_gpu2d_reply_status_ok(SapWitHostGpu2dReply* reply)
 {
     croft_wit_host_gpu2d_reply_zero(reply);
     reply->case_tag = SAP_WIT_HOST_GPU2D_REPLY_STATUS;
-    reply->val.status.case_tag = SAP_WIT_HOST_GPU2D_STATUS_OK;
+    reply->val.status.is_v_ok = 1u;
 }
 
-static void croft_wit_host_gpu2d_reply_status_err(SapWitHostGpu2dReply* reply, uint8_t err)
+static void croft_wit_host_gpu2d_reply_status_err(SapWitHostGpu2dReply* reply, const char* err)
 {
     croft_wit_host_gpu2d_reply_zero(reply);
     reply->case_tag = SAP_WIT_HOST_GPU2D_REPLY_STATUS;
-    reply->val.status.case_tag = SAP_WIT_HOST_GPU2D_STATUS_ERR;
-    reply->val.status.val.err = err;
+    reply->val.status.is_v_ok = 0u;
+    croft_wit_set_string_view(err,
+                              &reply->val.status.v_val.err.v_data,
+                              &reply->val.status.v_val.err.v_len);
 }
 
 static void croft_wit_host_gpu2d_reply_capabilities_ok(SapWitHostGpu2dReply* reply,
@@ -68,32 +86,36 @@ static void croft_wit_host_gpu2d_reply_capabilities_ok(SapWitHostGpu2dReply* rep
 {
     croft_wit_host_gpu2d_reply_zero(reply);
     reply->case_tag = SAP_WIT_HOST_GPU2D_REPLY_CAPABILITIES;
-    reply->val.capabilities.case_tag = SAP_WIT_HOST_GPU2D_CAPABILITIES_RESULT_OK;
-    reply->val.capabilities.val.ok = flags;
+    reply->val.capabilities.is_v_ok = 1u;
+    reply->val.capabilities.v_val.ok.v = flags;
 }
 
-static void croft_wit_host_gpu2d_reply_capabilities_err(SapWitHostGpu2dReply* reply, uint8_t err)
+static void croft_wit_host_gpu2d_reply_capabilities_err(SapWitHostGpu2dReply* reply, const char* err)
 {
     croft_wit_host_gpu2d_reply_zero(reply);
     reply->case_tag = SAP_WIT_HOST_GPU2D_REPLY_CAPABILITIES;
-    reply->val.capabilities.case_tag = SAP_WIT_HOST_GPU2D_CAPABILITIES_RESULT_ERR;
-    reply->val.capabilities.val.err = err;
+    reply->val.capabilities.is_v_ok = 0u;
+    croft_wit_set_string_view(err,
+                              &reply->val.capabilities.v_val.err.v_data,
+                              &reply->val.capabilities.v_val.err.v_len);
 }
 
 static void croft_wit_host_gpu2d_reply_measure_ok(SapWitHostGpu2dReply* reply, float width)
 {
     croft_wit_host_gpu2d_reply_zero(reply);
     reply->case_tag = SAP_WIT_HOST_GPU2D_REPLY_MEASURE;
-    reply->val.measure.case_tag = SAP_WIT_HOST_GPU2D_MEASURE_RESULT_OK;
-    reply->val.measure.val.ok = width;
+    reply->val.measure.is_v_ok = 1u;
+    reply->val.measure.v_val.ok.v = width;
 }
 
-static void croft_wit_host_gpu2d_reply_measure_err(SapWitHostGpu2dReply* reply, uint8_t err)
+static void croft_wit_host_gpu2d_reply_measure_err(SapWitHostGpu2dReply* reply, const char* err)
 {
     croft_wit_host_gpu2d_reply_zero(reply);
     reply->case_tag = SAP_WIT_HOST_GPU2D_REPLY_MEASURE;
-    reply->val.measure.case_tag = SAP_WIT_HOST_GPU2D_MEASURE_RESULT_ERR;
-    reply->val.measure.val.err = err;
+    reply->val.measure.is_v_ok = 0u;
+    croft_wit_set_string_view(err,
+                              &reply->val.measure.v_val.err.v_data,
+                              &reply->val.measure.v_val.err.v_len);
 }
 
 static uint32_t croft_wit_host_gpu2d_capabilities(void)
@@ -143,11 +165,11 @@ static int32_t croft_wit_host_gpu2d_dispatch_open(croft_wit_host_gpu2d_runtime* 
         return -1;
     }
     if (runtime->live) {
-        croft_wit_host_gpu2d_reply_surface_err(reply_out, SAP_WIT_HOST_GPU2D_ERROR_BUSY);
+        croft_wit_host_gpu2d_reply_surface_err(reply_out, "busy");
         return 0;
     }
     if (host_render_init() != 0) {
-        croft_wit_host_gpu2d_reply_surface_err(reply_out, SAP_WIT_HOST_GPU2D_ERROR_UNAVAILABLE);
+        croft_wit_host_gpu2d_reply_surface_err(reply_out, "unavailable");
         return 0;
     }
     runtime->live = 1u;
@@ -164,11 +186,11 @@ static int32_t croft_wit_host_gpu2d_dispatch_drop(croft_wit_host_gpu2d_runtime* 
         return -1;
     }
     if (!croft_wit_host_gpu2d_valid(runtime, request->surface)) {
-        croft_wit_host_gpu2d_reply_status_err(reply_out, SAP_WIT_HOST_GPU2D_ERROR_INVALID_HANDLE);
+        croft_wit_host_gpu2d_reply_status_err(reply_out, "invalid-handle");
         return 0;
     }
     if (runtime->frame_active) {
-        croft_wit_host_gpu2d_reply_status_err(reply_out, SAP_WIT_HOST_GPU2D_ERROR_BUSY);
+        croft_wit_host_gpu2d_reply_status_err(reply_out, "busy");
         return 0;
     }
     host_render_terminate();
@@ -186,15 +208,15 @@ static int32_t croft_wit_host_gpu2d_dispatch_begin_frame(
         return -1;
     }
     if (!croft_wit_host_gpu2d_valid(runtime, request->surface)) {
-        croft_wit_host_gpu2d_reply_status_err(reply_out, SAP_WIT_HOST_GPU2D_ERROR_INVALID_HANDLE);
+        croft_wit_host_gpu2d_reply_status_err(reply_out, "invalid-handle");
         return 0;
     }
     if (runtime->frame_active) {
-        croft_wit_host_gpu2d_reply_status_err(reply_out, SAP_WIT_HOST_GPU2D_ERROR_BUSY);
+        croft_wit_host_gpu2d_reply_status_err(reply_out, "busy");
         return 0;
     }
     if (host_render_begin_frame(request->width, request->height) != 0) {
-        croft_wit_host_gpu2d_reply_status_err(reply_out, SAP_WIT_HOST_GPU2D_ERROR_INTERNAL);
+        croft_wit_host_gpu2d_reply_status_err(reply_out, "internal");
         return 0;
     }
     runtime->frame_active = 1u;
@@ -208,11 +230,11 @@ static int32_t croft_wit_host_gpu2d_dispatch_frame_required(
     SapWitHostGpu2dReply* reply_out)
 {
     if (!croft_wit_host_gpu2d_valid(runtime, surface)) {
-        croft_wit_host_gpu2d_reply_status_err(reply_out, SAP_WIT_HOST_GPU2D_ERROR_INVALID_HANDLE);
+        croft_wit_host_gpu2d_reply_status_err(reply_out, "invalid-handle");
         return 0;
     }
     if (!runtime->frame_active) {
-        croft_wit_host_gpu2d_reply_status_err(reply_out, SAP_WIT_HOST_GPU2D_ERROR_BUSY);
+        croft_wit_host_gpu2d_reply_status_err(reply_out, "busy");
         return 0;
     }
     return 1;
@@ -224,7 +246,7 @@ static int32_t croft_wit_host_gpu2d_dispatch_surface_required(
     SapWitHostGpu2dReply* reply_out)
 {
     if (!croft_wit_host_gpu2d_valid(runtime, surface)) {
-        croft_wit_host_gpu2d_reply_status_err(reply_out, SAP_WIT_HOST_GPU2D_ERROR_INVALID_HANDLE);
+        croft_wit_host_gpu2d_reply_status_err(reply_out, "invalid-handle");
         return 0;
     }
     return 1;
@@ -253,7 +275,7 @@ int32_t croft_wit_host_gpu2d_runtime_dispatch(
                 return 0;
             }
             if (host_render_clear(command->val.clear.color_rgba) != 0) {
-                croft_wit_host_gpu2d_reply_status_err(reply_out, SAP_WIT_HOST_GPU2D_ERROR_INTERNAL);
+                croft_wit_host_gpu2d_reply_status_err(reply_out, "internal");
                 return 0;
             }
             croft_wit_host_gpu2d_reply_status_ok(reply_out);
@@ -267,7 +289,7 @@ int32_t croft_wit_host_gpu2d_runtime_dispatch(
                                       command->val.draw_rect.w,
                                       command->val.draw_rect.h,
                                       command->val.draw_rect.color_rgba) != 0) {
-                croft_wit_host_gpu2d_reply_status_err(reply_out, SAP_WIT_HOST_GPU2D_ERROR_INTERNAL);
+                croft_wit_host_gpu2d_reply_status_err(reply_out, "internal");
                 return 0;
             }
             croft_wit_host_gpu2d_reply_status_ok(reply_out);
@@ -282,14 +304,14 @@ int32_t croft_wit_host_gpu2d_runtime_dispatch(
                                       command->val.draw_text.utf8_len,
                                       command->val.draw_text.font_size,
                                       command->val.draw_text.color_rgba) != 0) {
-                croft_wit_host_gpu2d_reply_status_err(reply_out, SAP_WIT_HOST_GPU2D_ERROR_INTERNAL);
+                croft_wit_host_gpu2d_reply_status_err(reply_out, "internal");
                 return 0;
             }
             croft_wit_host_gpu2d_reply_status_ok(reply_out);
             return 0;
         case SAP_WIT_HOST_GPU2D_COMMAND_MEASURE_TEXT:
             if (!croft_wit_host_gpu2d_dispatch_surface_required(runtime, command->val.measure_text.surface, reply_out)) {
-                croft_wit_host_gpu2d_reply_measure_err(reply_out, SAP_WIT_HOST_GPU2D_ERROR_INVALID_HANDLE);
+                croft_wit_host_gpu2d_reply_measure_err(reply_out, "invalid-handle");
                 return 0;
             }
             croft_wit_host_gpu2d_reply_measure_ok(
@@ -341,7 +363,7 @@ int32_t croft_wit_host_gpu2d_runtime_dispatch(
                 return 0;
             }
             if (host_render_end_frame() != 0) {
-                croft_wit_host_gpu2d_reply_status_err(reply_out, SAP_WIT_HOST_GPU2D_ERROR_INTERNAL);
+                croft_wit_host_gpu2d_reply_status_err(reply_out, "internal");
                 return 0;
             }
             host_ui_swap_buffers();
@@ -349,7 +371,7 @@ int32_t croft_wit_host_gpu2d_runtime_dispatch(
             croft_wit_host_gpu2d_reply_status_ok(reply_out);
             return 0;
         default:
-            croft_wit_host_gpu2d_reply_status_err(reply_out, SAP_WIT_HOST_GPU2D_ERROR_INTERNAL);
+            croft_wit_host_gpu2d_reply_status_err(reply_out, "internal");
             return 0;
     }
 }

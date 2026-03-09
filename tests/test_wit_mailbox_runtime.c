@@ -10,10 +10,10 @@ static int wit_mailbox_expect_mailbox_ok(const SapWitCommonCoreMailboxReply* rep
         return 0;
     }
     if (reply->case_tag != SAP_WIT_COMMON_CORE_MAILBOX_REPLY_MAILBOX
-            || reply->val.mailbox.case_tag != SAP_WIT_COMMON_CORE_MAILBOX_OP_RESULT_OK) {
+            || !reply->val.mailbox.is_v_ok) {
         return 0;
     }
-    *handle_out = reply->val.mailbox.val.ok;
+    *handle_out = reply->val.mailbox.v_val.ok.v;
     return 1;
 }
 
@@ -21,7 +21,18 @@ static int wit_mailbox_expect_status_ok(const SapWitCommonCoreMailboxReply* repl
 {
     return reply
         && reply->case_tag == SAP_WIT_COMMON_CORE_MAILBOX_REPLY_STATUS
-        && reply->val.status.case_tag == SAP_WIT_COMMON_CORE_STATUS_OK;
+        && reply->val.status.is_v_ok;
+}
+
+static int wit_mailbox_expect_error(const uint8_t* data, uint32_t len, const char* expected)
+{
+    size_t expected_len;
+
+    if (!expected) {
+        return 0;
+    }
+    expected_len = strlen(expected);
+    return len == (uint32_t)expected_len && memcmp(data, expected, expected_len) == 0;
 }
 
 int test_wit_mailbox_runtime_roundtrip(void)
@@ -64,14 +75,15 @@ int test_wit_mailbox_runtime_roundtrip(void)
     command.val.recv.mailbox = mailbox;
     if (croft_wit_mailbox_runtime_dispatch(runtime, &command, &reply) != 0
             || reply.case_tag != SAP_WIT_COMMON_CORE_MAILBOX_REPLY_RECV
-            || reply.val.recv.case_tag != SAP_WIT_COMMON_CORE_MAILBOX_RECV_RESULT_OK) {
+            || !reply.val.recv.is_v_ok
+            || !reply.val.recv.v_val.ok.has_v) {
         croft_wit_mailbox_reply_dispose(&reply);
         croft_wit_mailbox_runtime_destroy(runtime);
         return 1;
     }
 
-    payload = reply.val.recv.val.ok.data;
-    payload_len = reply.val.recv.val.ok.len;
+    payload = reply.val.recv.v_val.ok.v_data;
+    payload_len = reply.val.recv.v_val.ok.v_len;
     if (payload_len != 4u || memcmp(payload, "mail", 4u) != 0) {
         croft_wit_mailbox_reply_dispose(&reply);
         croft_wit_mailbox_runtime_destroy(runtime);
@@ -81,7 +93,8 @@ int test_wit_mailbox_runtime_roundtrip(void)
 
     if (croft_wit_mailbox_runtime_dispatch(runtime, &command, &reply) != 0
             || reply.case_tag != SAP_WIT_COMMON_CORE_MAILBOX_REPLY_RECV
-            || reply.val.recv.case_tag != SAP_WIT_COMMON_CORE_MAILBOX_RECV_RESULT_EMPTY) {
+            || !reply.val.recv.is_v_ok
+            || reply.val.recv.v_val.ok.has_v) {
         croft_wit_mailbox_reply_dispose(&reply);
         croft_wit_mailbox_runtime_destroy(runtime);
         return 1;
@@ -140,8 +153,10 @@ int test_wit_mailbox_runtime_drop_busy(void)
     command.val.drop.mailbox = mailbox;
     if (croft_wit_mailbox_runtime_dispatch(runtime, &command, &reply) != 0
             || reply.case_tag != SAP_WIT_COMMON_CORE_MAILBOX_REPLY_STATUS
-            || reply.val.status.case_tag != SAP_WIT_COMMON_CORE_STATUS_ERR
-            || reply.val.status.val.err != SAP_WIT_COMMON_CORE_COMMON_ERROR_BUSY) {
+            || reply.val.status.is_v_ok
+            || !wit_mailbox_expect_error(reply.val.status.v_val.err.v_data,
+                                         reply.val.status.v_val.err.v_len,
+                                         "busy")) {
         croft_wit_mailbox_reply_dispose(&reply);
         croft_wit_mailbox_runtime_destroy(runtime);
         return 1;
@@ -152,7 +167,8 @@ int test_wit_mailbox_runtime_drop_busy(void)
     command.val.recv.mailbox = mailbox;
     if (croft_wit_mailbox_runtime_dispatch(runtime, &command, &reply) != 0
             || reply.case_tag != SAP_WIT_COMMON_CORE_MAILBOX_REPLY_RECV
-            || reply.val.recv.case_tag != SAP_WIT_COMMON_CORE_MAILBOX_RECV_RESULT_OK) {
+            || !reply.val.recv.is_v_ok
+            || !reply.val.recv.v_val.ok.has_v) {
         croft_wit_mailbox_reply_dispose(&reply);
         croft_wit_mailbox_runtime_destroy(runtime);
         return 1;

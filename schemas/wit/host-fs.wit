@@ -3,17 +3,6 @@ package lambkin:host-fs@0.1.0;
 interface types {
   resource file;
 
-  enum fs-error {
-    invalid-handle,
-    not-found,
-    access,
-    io,
-    invalid,
-    too-large,
-    oom,
-    internal,
-  }
-
   record fs-file-open {
     path: list<u8>,
     write: bool,
@@ -30,20 +19,9 @@ interface types {
     file: file,
   }
 
-  variant fs-file-op-result {
-    ok(file),
-    err(fs-error),
-  }
-
-  variant fs-status {
-    ok,
-    err(fs-error),
-  }
-
-  variant fs-file-read-result {
-    ok(list<u8>),
-    err(fs-error),
-  }
+  type fs-file-op-result = result<file, string>;
+  type fs-status = result<_, string>;
+  type fs-file-read-result = result<list<u8>, string>;
 
   variant fs-command {
     open(fs-file-open),

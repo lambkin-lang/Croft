@@ -5,13 +5,6 @@ interface types {
 
   resource surface;
 
-  enum error {
-    invalid-handle,
-    unavailable,
-    busy,
-    internal,
-  }
-
   flags capabilities {
     text,
     transform,
@@ -82,25 +75,10 @@ interface types {
     h: f32,
   }
 
-  variant surface-result {
-    ok(surface),
-    err(error),
-  }
-
-  variant status {
-    ok,
-    err(error),
-  }
-
-  variant capabilities-result {
-    ok(capabilities),
-    err(error),
-  }
-
-  variant measure-result {
-    ok(f32),
-    err(error),
-  }
+  type surface-result = result<surface, string>;
+  type status = result<_, string>;
+  type capabilities-result = result<capabilities, string>;
+  type measure-result = result<f32, string>;
 
   variant command {
     capabilities(capabilities-query),

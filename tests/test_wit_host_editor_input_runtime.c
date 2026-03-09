@@ -10,13 +10,13 @@ static int wit_editor_input_expect_action(const SapWitHostEditorInputReply* repl
     if (reply->case_tag != SAP_WIT_HOST_EDITOR_INPUT_REPLY_ACTION) {
         return -1;
     }
-    if (reply->val.action.case_tag == SAP_WIT_HOST_EDITOR_INPUT_ACTION_RESULT_EMPTY) {
-        return 0;
-    }
-    if (reply->val.action.case_tag != SAP_WIT_HOST_EDITOR_INPUT_ACTION_RESULT_OK) {
+    if (!reply->val.action.is_v_ok) {
         return -1;
     }
-    *action_out = reply->val.action.val.ok;
+    if (!reply->val.action.v_val.ok.has_v) {
+        return 0;
+    }
+    *action_out = reply->val.action.v_val.ok.v;
     return 1;
 }
 

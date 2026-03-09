@@ -10,10 +10,10 @@ static int expect_db_handle(const SapWitCommonCoreStoreReply* reply, SapWitCommo
         return 0;
     }
     if (reply->case_tag != SAP_WIT_COMMON_CORE_STORE_REPLY_DB
-            || reply->val.db.case_tag != SAP_WIT_COMMON_CORE_DB_OP_RESULT_OK) {
+            || !reply->val.db.is_v_ok) {
         return 0;
     }
-    *handle_out = reply->val.db.val.ok;
+    *handle_out = reply->val.db.v_val.ok.v;
     return 1;
 }
 
@@ -23,10 +23,10 @@ static int expect_txn_handle(const SapWitCommonCoreStoreReply* reply, SapWitComm
         return 0;
     }
     if (reply->case_tag != SAP_WIT_COMMON_CORE_STORE_REPLY_TXN
-            || reply->val.txn.case_tag != SAP_WIT_COMMON_CORE_TXN_OP_RESULT_OK) {
+            || !reply->val.txn.is_v_ok) {
         return 0;
     }
-    *handle_out = reply->val.txn.val.ok;
+    *handle_out = reply->val.txn.v_val.ok.v;
     return 1;
 }
 
@@ -34,7 +34,7 @@ static int expect_status_ok(const SapWitCommonCoreStoreReply* reply)
 {
     return reply
         && reply->case_tag == SAP_WIT_COMMON_CORE_STORE_REPLY_STATUS
-        && reply->val.status.case_tag == SAP_WIT_COMMON_CORE_STATUS_OK;
+        && reply->val.status.is_v_ok;
 }
 
 static int expect_get_ok(const SapWitCommonCoreStoreReply* reply, const uint8_t** data_out, uint32_t* len_out)
@@ -43,11 +43,12 @@ static int expect_get_ok(const SapWitCommonCoreStoreReply* reply, const uint8_t*
         return 0;
     }
     if (reply->case_tag != SAP_WIT_COMMON_CORE_STORE_REPLY_GET
-            || reply->val.get.case_tag != SAP_WIT_COMMON_CORE_KV_GET_RESULT_OK) {
+            || !reply->val.get.is_v_ok
+            || !reply->val.get.v_val.ok.has_v) {
         return 0;
     }
-    *data_out = reply->val.get.val.ok.data;
-    *len_out = reply->val.get.val.ok.len;
+    *data_out = reply->val.get.v_val.ok.v_data;
+    *len_out = reply->val.get.v_val.ok.v_len;
     return 1;
 }
 

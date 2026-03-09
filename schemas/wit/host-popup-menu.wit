@@ -1,12 +1,6 @@
 package lambkin:host-popup-menu@0.1.0;
 
 interface types {
-  enum error {
-    unavailable,
-    busy,
-    internal,
-  }
-
   record begin-popup {}
 
   record show-at {
@@ -21,16 +15,8 @@ interface types {
     separator: bool,
   }
 
-  variant status {
-    ok,
-    err(error),
-  }
-
-  variant action-result {
-    ok(s32),
-    empty,
-    err(error),
-  }
+  type status = result<_, string>;
+  type action-result = result<option<s32>, string>;
 
   variant command {
     begin-popup(begin-popup),

@@ -3,13 +3,6 @@ package lambkin:host-a11y@0.1.0;
 interface types {
   resource node;
 
-  enum error {
-    invalid-handle,
-    unavailable,
-    busy,
-    internal,
-  }
-
   enum role {
     unknown,
     window,
@@ -32,13 +25,11 @@ interface types {
   record create-node {
     role: role,
     bounds: bounds,
-    has-label: bool,
-    label: list<u8>,
+    label: option<list<u8>>,
   }
 
   record add-child {
-    has-parent: bool,
-    parent: node,
+    parent: option<node>,
     child: node,
   }
 
@@ -51,15 +42,8 @@ interface types {
     node: node,
   }
 
-  variant node-result {
-    ok(node),
-    err(error),
-  }
-
-  variant status {
-    ok,
-    err(error),
-  }
+  type node-result = result<node, string>;
+  type status = result<_, string>;
 
   variant command {
     open(open),

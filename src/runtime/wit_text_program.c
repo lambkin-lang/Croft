@@ -10,10 +10,10 @@ static int croft_wit_text_expect_handle(const SapWitCommonCoreTextReply* reply,
         return 0;
     }
     if (reply->case_tag != SAP_WIT_COMMON_CORE_TEXT_REPLY_TEXT
-            || reply->val.text.case_tag != SAP_WIT_COMMON_CORE_TEXT_OP_RESULT_OK) {
+            || !reply->val.text.is_v_ok) {
         return 0;
     }
-    *handle_out = reply->val.text.val.ok;
+    *handle_out = reply->val.text.v_val.ok.v;
     return 1;
 }
 
@@ -21,7 +21,7 @@ static int croft_wit_text_expect_status_ok(const SapWitCommonCoreTextReply* repl
 {
     return reply
         && reply->case_tag == SAP_WIT_COMMON_CORE_TEXT_REPLY_STATUS
-        && reply->val.status.case_tag == SAP_WIT_COMMON_CORE_STATUS_OK;
+        && reply->val.status.is_v_ok;
 }
 
 static int croft_wit_text_expect_export_ok(const SapWitCommonCoreTextReply* reply,
@@ -32,11 +32,11 @@ static int croft_wit_text_expect_export_ok(const SapWitCommonCoreTextReply* repl
         return 0;
     }
     if (reply->case_tag != SAP_WIT_COMMON_CORE_TEXT_REPLY_EXPORT
-            || reply->val.export.case_tag != SAP_WIT_COMMON_CORE_TEXT_EXPORT_RESULT_OK) {
+            || !reply->val.export.is_v_ok) {
         return 0;
     }
-    *utf8_out = reply->val.export.val.ok.data;
-    *len_out = reply->val.export.val.ok.len;
+    *utf8_out = reply->val.export.v_val.ok.v_data;
+    *len_out = reply->val.export.v_val.ok.v_len;
     return 1;
 }
 

@@ -38,33 +38,9 @@ interface types {
     text: text,
   }
 
-  enum common-error {
-    invalid-handle,
-    invalid-utf8,
-    range,
-    oom,
-    busy,
-    platform,
-    internal,
-    not-found,
-    readonly,
-    conflict,
-  }
-
-  variant text-op-result {
-    ok(text),
-    err(common-error),
-  }
-
-  variant status {
-    ok,
-    err(common-error),
-  }
-
-  variant text-export-result {
-    ok(utf8),
-    err(common-error),
-  }
+  type text-op-result = result<text, string>;
+  type status = result<_, string>;
+  type text-export-result = result<utf8, string>;
 
   variant text-command {
     open(text-open),
@@ -113,21 +89,9 @@ interface types {
     key: bytes,
   }
 
-  variant db-op-result {
-    ok(db),
-    err(common-error),
-  }
-
-  variant txn-op-result {
-    ok(txn),
-    err(common-error),
-  }
-
-  variant kv-get-result {
-    ok(bytes),
-    not-found,
-    err(common-error),
-  }
+  type db-op-result = result<db, string>;
+  type txn-op-result = result<txn, string>;
+  type kv-get-result = result<option<bytes>, string>;
 
   variant store-command {
     db-open(db-open),
@@ -163,16 +127,8 @@ interface types {
     mailbox: mailbox,
   }
 
-  variant mailbox-op-result {
-    ok(mailbox),
-    err(common-error),
-  }
-
-  variant mailbox-recv-result {
-    ok(bytes),
-    empty,
-    err(common-error),
-  }
+  type mailbox-op-result = result<mailbox, string>;
+  type mailbox-recv-result = result<option<bytes>, string>;
 
   variant mailbox-command {
     open(mailbox-open),
