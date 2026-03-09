@@ -56,6 +56,10 @@ int test_editor_syntax_language_from_path(void) {
                   == CROFT_EDITOR_SYNTAX_LANGUAGE_MARKDOWN);
     ASSERT_SYNTAX(croft_editor_syntax_language_from_path("/tmp/tool.py")
                   == CROFT_EDITOR_SYNTAX_LANGUAGE_PYTHON);
+    ASSERT_SYNTAX(croft_editor_syntax_language_from_path("/tmp/config.yaml")
+                  == CROFT_EDITOR_SYNTAX_LANGUAGE_YAML);
+    ASSERT_SYNTAX(croft_editor_syntax_language_from_path("/tmp/CONFIG.YML")
+                  == CROFT_EDITOR_SYNTAX_LANGUAGE_YAML);
     ASSERT_SYNTAX(croft_editor_syntax_language_from_path("/tmp/prelude.lamb")
                   == CROFT_EDITOR_SYNTAX_LANGUAGE_LAMBKIN);
     ASSERT_SYNTAX(croft_editor_syntax_language_from_path("/tmp/PRELUDE.LAMBKIN")
@@ -213,6 +217,64 @@ int test_editor_syntax_python_tokens(void) {
                                     CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "else") == 0);
     ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_PYTHON, &offset,
                                     CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "None") == 0);
+
+    croft_editor_text_model_dispose(&model);
+    return 0;
+}
+
+int test_editor_syntax_yaml_tokens(void) {
+    const char* source =
+        "---\n"
+        "name: croft\n"
+        "enabled: true\n"
+        "count: 42\n"
+        "items:\n"
+        "  - first\n"
+        "  - \"second\"\n"
+        "# note\n"
+        "...\n";
+    croft_editor_text_model model;
+    uint32_t offset = 0u;
+
+    croft_editor_text_model_init(&model);
+    ASSERT_SYNTAX(croft_editor_text_model_set_text(&model, source, strlen(source)) == CROFT_EDITOR_OK);
+
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_YAML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "---") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_YAML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PROPERTY, "name") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_YAML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ":") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_YAML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PLAIN, "croft") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_YAML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PROPERTY, "enabled") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_YAML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ":") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_YAML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "true") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_YAML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PROPERTY, "count") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_YAML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ":") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_YAML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_NUMBER, "42") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_YAML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PROPERTY, "items") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_YAML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ":") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_YAML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "-") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_YAML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PLAIN, "first") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_YAML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "-") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_YAML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_STRING, "\"second\"") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_YAML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_COMMENT, "# note") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_YAML, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "...") == 0);
 
     croft_editor_text_model_dispose(&model);
     return 0;

@@ -1150,6 +1150,169 @@ static int32_t croft_editor_syntax_markdown_next_token(const croft_editor_text_m
     return CROFT_EDITOR_OK;
 }
 
+static int croft_editor_syntax_yaml_is_boundary(uint32_t codepoint) {
+    return croft_editor_syntax_is_whitespace(codepoint)
+        || codepoint == ':'
+        || codepoint == '['
+        || codepoint == ']'
+        || codepoint == '{'
+        || codepoint == '}'
+        || codepoint == ','
+        || codepoint == '#'
+        || codepoint == '&'
+        || codepoint == '*'
+        || codepoint == '!'
+        || codepoint == '|'
+        || codepoint == '>'
+        || codepoint == '?';
+}
+
+static uint32_t croft_editor_syntax_scan_yaml_plain(const croft_editor_text_model* model,
+                                                    uint32_t start_offset,
+                                                    uint32_t limit_offset) {
+    uint32_t offset = start_offset;
+    uint32_t codepoint = 0u;
+
+    while (offset < limit_offset && croft_editor_syntax_codepoint_at(model, offset, &codepoint)) {
+        if (croft_editor_syntax_yaml_is_boundary(codepoint)) {
+            break;
+        }
+        offset++;
+    }
+    return offset;
+}
+
+static int croft_editor_syntax_yaml_scalar_is_property(const croft_editor_text_model* model,
+                                                       uint32_t end_offset,
+                                                       uint32_t limit_offset) {
+    uint32_t probe = croft_editor_syntax_skip_whitespace(model, end_offset, limit_offset);
+    uint32_t codepoint = 0u;
+
+    if (probe >= limit_offset || !croft_editor_syntax_codepoint_at(model, probe, &codepoint)) {
+        return 0;
+    }
+    return codepoint == ':';
+}
+
+static int32_t croft_editor_syntax_yaml_next_token(const croft_editor_text_model* model,
+                                                   uint32_t search_offset,
+                                                   uint32_t limit_offset,
+                                                   croft_editor_syntax_token* out_token) {
+    static const char* const yaml_keywords[] = {
+        "true", "false", "null", "~", "yes", "no", "on", "off"
+    };
+    uint32_t offset;
+    uint32_t codepoint = 0u;
+    uint32_t next_codepoint = 0u;
+    uint32_t third_codepoint = 0u;
+    int line_leading_space_only;
+
+    if (!model || !out_token || search_offset >= limit_offset) {
+        return CROFT_EDITOR_ERR_INVALID;
+    }
+
+    offset = croft_editor_syntax_skip_whitespace(model, search_offset, limit_offset);
+    if (offset >= limit_offset || !croft_editor_syntax_codepoint_at(model, offset, &codepoint)) {
+        return CROFT_EDITOR_ERR_INVALID;
+    }
+
+    line_leading_space_only = croft_editor_syntax_is_line_leading_space_only(model, offset);
+    out_token->start_offset = offset;
+    out_token->end_offset = offset + 1u;
+    out_token->kind = CROFT_EDITOR_SYNTAX_TOKEN_PLAIN;
+
+    if (line_leading_space_only && offset + 2u < limit_offset) {
+        if (croft_editor_syntax_codepoint_at(model, offset + 1u, &next_codepoint)
+                && croft_editor_syntax_codepoint_at(model, offset + 2u, &third_codepoint)
+                && ((codepoint == '-' && next_codepoint == '-' && third_codepoint == '-')
+                    || (codepoint == '.' && next_codepoint == '.' && third_codepoint == '.'))) {
+            out_token->end_offset = offset + 3u;
+            out_token->kind = CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION;
+            return CROFT_EDITOR_OK;
+        }
+    }
+
+    if (codepoint == '#') {
+        out_token->end_offset = croft_editor_syntax_scan_line_comment(model, offset, limit_offset);
+        out_token->kind = CROFT_EDITOR_SYNTAX_TOKEN_COMMENT;
+        return CROFT_EDITOR_OK;
+    }
+
+    if (line_leading_space_only && codepoint == '-') {
+        if (offset + 1u >= limit_offset
+                || (croft_editor_syntax_codepoint_at(model, offset + 1u, &next_codepoint)
+                    && croft_editor_syntax_is_whitespace(next_codepoint))) {
+            out_token->kind = CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION;
+            return CROFT_EDITOR_OK;
+        }
+    }
+
+    if (line_leading_space_only && codepoint == '?') {
+        if (offset + 1u >= limit_offset
+                || (croft_editor_syntax_codepoint_at(model, offset + 1u, &next_codepoint)
+                    && croft_editor_syntax_is_whitespace(next_codepoint))) {
+            out_token->kind = CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION;
+            return CROFT_EDITOR_OK;
+        }
+    }
+
+    if (codepoint == '"' || codepoint == '\'') {
+        int closed = 0;
+        out_token->end_offset = croft_editor_syntax_scan_string(model, offset, limit_offset, codepoint, &closed);
+        out_token->kind = closed
+            ? (croft_editor_syntax_yaml_scalar_is_property(model, out_token->end_offset, limit_offset)
+                ? CROFT_EDITOR_SYNTAX_TOKEN_PROPERTY
+                : CROFT_EDITOR_SYNTAX_TOKEN_STRING)
+            : CROFT_EDITOR_SYNTAX_TOKEN_INVALID;
+        return CROFT_EDITOR_OK;
+    }
+
+    if (codepoint == '-' || croft_editor_syntax_is_digit(codepoint)) {
+        uint32_t number_end = croft_editor_syntax_scan_number(model, offset, limit_offset);
+        if (number_end > offset) {
+            out_token->end_offset = number_end;
+            out_token->kind = CROFT_EDITOR_SYNTAX_TOKEN_NUMBER;
+            return CROFT_EDITOR_OK;
+        }
+    }
+
+    if (codepoint == ':'
+            || codepoint == '['
+            || codepoint == ']'
+            || codepoint == '{'
+            || codepoint == '}'
+            || codepoint == ','
+            || codepoint == '&'
+            || codepoint == '*'
+            || codepoint == '!'
+            || codepoint == '|'
+            || codepoint == '>'
+            || codepoint == '?') {
+        out_token->kind = CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION;
+        return CROFT_EDITOR_OK;
+    }
+
+    out_token->end_offset = croft_editor_syntax_scan_yaml_plain(model, offset, limit_offset);
+    if (out_token->end_offset <= offset) {
+        out_token->end_offset = offset + 1u;
+        out_token->kind = CROFT_EDITOR_SYNTAX_TOKEN_INVALID;
+        return CROFT_EDITOR_OK;
+    }
+
+    if (croft_editor_syntax_yaml_scalar_is_property(model, out_token->end_offset, limit_offset)) {
+        out_token->kind = CROFT_EDITOR_SYNTAX_TOKEN_PROPERTY;
+    } else if (croft_editor_syntax_token_in_list(model,
+                                                 out_token->start_offset,
+                                                 out_token->end_offset,
+                                                 yaml_keywords,
+                                                 sizeof(yaml_keywords) / sizeof(yaml_keywords[0]))) {
+        out_token->kind = CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD;
+    } else {
+        out_token->kind = CROFT_EDITOR_SYNTAX_TOKEN_PLAIN;
+    }
+    return CROFT_EDITOR_OK;
+}
+
 static int croft_editor_syntax_python_is_identifier_start(uint32_t codepoint) {
     return croft_editor_syntax_is_ascii_alpha(codepoint) || codepoint == '_';
 }
@@ -1452,6 +1615,10 @@ croft_editor_syntax_language croft_editor_syntax_language_from_path(const char* 
     if (croft_editor_syntax_path_has_suffix(path, ".py")) {
         return CROFT_EDITOR_SYNTAX_LANGUAGE_PYTHON;
     }
+    if (croft_editor_syntax_path_has_suffix(path, ".yaml")
+            || croft_editor_syntax_path_has_suffix(path, ".yml")) {
+        return CROFT_EDITOR_SYNTAX_LANGUAGE_YAML;
+    }
     if (croft_editor_syntax_path_has_suffix(path, ".lamb")
             || croft_editor_syntax_path_has_suffix(path, ".lambkin")) {
         return CROFT_EDITOR_SYNTAX_LANGUAGE_LAMBKIN;
@@ -1491,6 +1658,8 @@ int32_t croft_editor_syntax_next_token(const croft_editor_text_model* model,
             return croft_editor_syntax_markdown_next_token(model, search_offset, limit_offset, out_token);
         case CROFT_EDITOR_SYNTAX_LANGUAGE_PYTHON:
             return croft_editor_syntax_python_next_token(model, search_offset, limit_offset, out_token);
+        case CROFT_EDITOR_SYNTAX_LANGUAGE_YAML:
+            return croft_editor_syntax_yaml_next_token(model, search_offset, limit_offset, out_token);
         default:
             break;
     }
