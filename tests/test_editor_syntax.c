@@ -50,6 +50,10 @@ int test_editor_syntax_language_from_path(void) {
                   == CROFT_EDITOR_SYNTAX_LANGUAGE_JSON);
     ASSERT_SYNTAX(croft_editor_syntax_language_from_path("/tmp/SETTINGS.JSON")
                   == CROFT_EDITOR_SYNTAX_LANGUAGE_JSON);
+    ASSERT_SYNTAX(croft_editor_syntax_language_from_path("/tmp/README.md")
+                  == CROFT_EDITOR_SYNTAX_LANGUAGE_MARKDOWN);
+    ASSERT_SYNTAX(croft_editor_syntax_language_from_path("/tmp/NOTES.MARKDOWN")
+                  == CROFT_EDITOR_SYNTAX_LANGUAGE_MARKDOWN);
     ASSERT_SYNTAX(croft_editor_syntax_language_from_path("/tmp/prelude.lamb")
                   == CROFT_EDITOR_SYNTAX_LANGUAGE_LAMBKIN);
     ASSERT_SYNTAX(croft_editor_syntax_language_from_path("/tmp/PRELUDE.LAMBKIN")
@@ -105,6 +109,44 @@ int test_editor_syntax_json_tokens(void) {
                                     CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "null") == 0);
     ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_JSON, &offset,
                                     CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "}") == 0);
+
+    croft_editor_text_model_dispose(&model);
+    return 0;
+}
+
+int test_editor_syntax_markdown_tokens(void) {
+    const char* source =
+        "# Heading\n"
+        "- item with `code` and [link](https://example.com)\n"
+        "> quote\n";
+    croft_editor_text_model model;
+    uint32_t offset = 0u;
+
+    croft_editor_text_model_init(&model);
+    ASSERT_SYNTAX(croft_editor_text_model_set_text(&model, source, strlen(source)) == CROFT_EDITOR_OK);
+
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_MARKDOWN, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_KEYWORD, "# Heading") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_MARKDOWN, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "-") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_MARKDOWN, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PLAIN, "item") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_MARKDOWN, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PLAIN, "with") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_MARKDOWN, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_STRING, "`code`") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_MARKDOWN, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PLAIN, "and") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_MARKDOWN, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PROPERTY, "[link]") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_MARKDOWN, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, "(") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_MARKDOWN, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PLAIN, "https://example.com") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_MARKDOWN, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_PUNCTUATION, ")") == 0);
+    ASSERT_SYNTAX(assert_next_token(&model, CROFT_EDITOR_SYNTAX_LANGUAGE_MARKDOWN, &offset,
+                                    CROFT_EDITOR_SYNTAX_TOKEN_COMMENT, "> quote") == 0);
 
     croft_editor_text_model_dispose(&model);
     return 0;

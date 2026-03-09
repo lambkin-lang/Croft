@@ -12,7 +12,8 @@ typedef enum croft_editor_syntax_language {
     CROFT_EDITOR_SYNTAX_LANGUAGE_JSON = 1,
     CROFT_EDITOR_SYNTAX_LANGUAGE_LAMBKIN = 2,
     CROFT_EDITOR_SYNTAX_LANGUAGE_WIT = 3,
-    CROFT_EDITOR_SYNTAX_LANGUAGE_WAT = 4
+    CROFT_EDITOR_SYNTAX_LANGUAGE_WAT = 4,
+    CROFT_EDITOR_SYNTAX_LANGUAGE_MARKDOWN = 5
 } croft_editor_syntax_language;
 
 typedef enum croft_editor_syntax_token_kind {

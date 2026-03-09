@@ -218,6 +218,7 @@ extern int test_editor_text_model_selection(void);
 extern int test_editor_text_model_word_ranges(void);
 extern int test_editor_syntax_language_from_path(void);
 extern int test_editor_syntax_json_tokens(void);
+extern int test_editor_syntax_markdown_tokens(void);
 extern int test_editor_syntax_lambkin_tokens(void);
 extern int test_editor_syntax_wit_tokens(void);
 extern int test_editor_syntax_wat_tokens(void);
@@ -327,6 +328,7 @@ int main(void)
     printf("\n[editor_syntax]\n");
     RUN_TEST(test_editor_syntax_language_from_path);
     RUN_TEST(test_editor_syntax_json_tokens);
+    RUN_TEST(test_editor_syntax_markdown_tokens);
     RUN_TEST(test_editor_syntax_lambkin_tokens);
     RUN_TEST(test_editor_syntax_wit_tokens);
     RUN_TEST(test_editor_syntax_wat_tokens);
