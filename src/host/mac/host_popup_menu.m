@@ -1,7 +1,5 @@
 #include "croft/host_popup_menu.h"
 
-#include "croft/host_ui.h"
-
 #include <AppKit/AppKit.h>
 
 static int32_t g_selected_action_id = 0;
@@ -19,10 +17,11 @@ static int32_t g_selected_action_id = 0;
 }
 @end
 
-int32_t host_popup_menu_show(const host_popup_menu_item* items,
-                             uint32_t item_count,
-                             float x,
-                             float y)
+host_popup_menu_result host_popup_menu_show(const host_popup_menu_item* items,
+                                            uint32_t item_count,
+                                            float x,
+                                            float y,
+                                            int32_t* action_id_out)
 {
     NSWindow* window;
     NSView* view;
@@ -30,18 +29,28 @@ int32_t host_popup_menu_show(const host_popup_menu_item* items,
     NSPoint location;
     uint32_t index;
 
-    if (!items || item_count == 0u) {
-        return 0;
+    if (action_id_out) {
+        *action_id_out = 0;
     }
 
-    window = (__bridge NSWindow*)host_ui_get_native_window();
+    if (!action_id_out) {
+        return HOST_POPUP_MENU_RESULT_INTERNAL;
+    }
+    if (!items || item_count == 0u) {
+        return HOST_POPUP_MENU_RESULT_EMPTY;
+    }
+
+    window = [NSApp keyWindow];
     if (!window) {
-        return 0;
+        window = [NSApp mainWindow];
+    }
+    if (!window) {
+        return HOST_POPUP_MENU_RESULT_UNAVAILABLE;
     }
 
     view = window.contentView;
     if (!view) {
-        return 0;
+        return HOST_POPUP_MENU_RESULT_UNAVAILABLE;
     }
 
     menu = [[NSMenu alloc] initWithTitle:@"Context"];
@@ -78,5 +87,10 @@ int32_t host_popup_menu_show(const host_popup_menu_item* items,
     g_selected_action_id = 0;
     location = NSMakePoint((CGFloat)x, NSHeight(view.bounds) - (CGFloat)y);
     [menu popUpMenuPositioningItem:nil atLocation:location inView:view];
-    return g_selected_action_id;
+    if (g_selected_action_id == 0) {
+        return HOST_POPUP_MENU_RESULT_EMPTY;
+    }
+
+    *action_id_out = g_selected_action_id;
+    return HOST_POPUP_MENU_RESULT_OK;
 }

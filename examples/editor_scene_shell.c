@@ -188,6 +188,7 @@ static int editor_apply_menu_action(int32_t action_id) {
 }
 
 static void show_editor_context_menu(float x, float y) {
+    int32_t action_id = 0;
     host_popup_menu_item items[] = {
         { CROFT_EDITOR_MENU_OPEN, "Open...", 1u, 0u },
         { CROFT_EDITOR_MENU_SAVE, "Save", 1u, 0u },
@@ -210,12 +211,12 @@ static void show_editor_context_menu(float x, float y) {
         { CROFT_EDITOR_MENU_FOLD, "Fold Region", 1u, 0u },
         { CROFT_EDITOR_MENU_UNFOLD, "Unfold Region", 1u, 0u }
     };
-    int32_t action_id = host_popup_menu_show(items,
-                                             (uint32_t)(sizeof(items) / sizeof(items[0])),
-                                             x,
-                                             y);
-
-    if (action_id != 0 && !editor_apply_menu_action(action_id)) {
+    if (host_popup_menu_show(items,
+                             (uint32_t)(sizeof(items) / sizeof(items[0])),
+                             x,
+                             y,
+                             &action_id) == HOST_POPUP_MENU_RESULT_OK
+            && !editor_apply_menu_action(action_id)) {
         g_running = 0;
     }
     if (action_id != 0) {

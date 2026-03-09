@@ -1,0 +1,49 @@
+package lambkin:host-popup-menu@0.1.0;
+
+interface types {
+  enum error {
+    unavailable,
+    busy,
+    internal,
+  }
+
+  record begin-popup {}
+
+  record show-at {
+    x-milli: s32,
+    y-milli: s32,
+  }
+
+  record popup-item {
+    action-id: s32,
+    label: list<u8>,
+    enabled: bool,
+    separator: bool,
+  }
+
+  variant status {
+    ok,
+    err(error),
+  }
+
+  variant action-result {
+    ok(s32),
+    empty,
+    err(error),
+  }
+
+  variant command {
+    begin-popup(begin-popup),
+    add-item(popup-item),
+    show-at(show-at),
+  }
+
+  variant reply {
+    status(status),
+    action(action-result),
+  }
+}
+
+world host-popup-menu {
+  export types;
+}

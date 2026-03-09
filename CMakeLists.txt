@@ -246,6 +246,10 @@ set(HOST_MENU_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_me
 set(HOST_MENU_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_menu.c")
 set(HOST_MENU_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_menu.manifest")
 
+set(HOST_POPUP_MENU_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_popup_menu.h")
+set(HOST_POPUP_MENU_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_popup_menu.c")
+set(HOST_POPUP_MENU_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_popup_menu.manifest")
+
 set(HOST_CLIPBOARD_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_clipboard.h")
 set(HOST_CLIPBOARD_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_clipboard.c")
 set(HOST_CLIPBOARD_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_clipboard.manifest")
@@ -344,6 +348,17 @@ add_custom_command(
     COMMENT "Generating Host-Menu WIT C Layouts..."
 )
 add_custom_target(host_menu_wit_schema_gen DEPENDS ${HOST_MENU_WIT_GENERATED_H} ${HOST_MENU_WIT_GENERATED_C} ${HOST_MENU_WIT_GENERATED_MANIFEST})
+
+# Host-popup-menu schema
+add_custom_command(
+    OUTPUT ${HOST_POPUP_MENU_WIT_GENERATED_H} ${HOST_POPUP_MENU_WIT_GENERATED_C} ${HOST_POPUP_MENU_WIT_GENERATED_MANIFEST}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
+    COMMAND wit_codegen --wit "${CMAKE_CURRENT_SOURCE_DIR}/schemas/wit/host-popup-menu.wit"
+                        --header "${HOST_POPUP_MENU_WIT_GENERATED_H}" --source "${HOST_POPUP_MENU_WIT_GENERATED_C}" --manifest "${HOST_POPUP_MENU_WIT_GENERATED_MANIFEST}"
+    DEPENDS wit_codegen "${CMAKE_CURRENT_SOURCE_DIR}/schemas/wit/host-popup-menu.wit"
+    COMMENT "Generating Host-Popup-Menu WIT C Layouts..."
+)
+add_custom_target(host_popup_menu_wit_schema_gen DEPENDS ${HOST_POPUP_MENU_WIT_GENERATED_H} ${HOST_POPUP_MENU_WIT_GENERATED_C} ${HOST_POPUP_MENU_WIT_GENERATED_MANIFEST})
 
 # Host-clipboard schema
 add_custom_command(
@@ -674,6 +689,15 @@ croft_apply_public_includes(croft_wit_host_menu)
 target_link_libraries(croft_wit_host_menu PUBLIC croft_thatch_core)
 croft_register_artifact(croft_wit_host_menu wit
     TAGS wit host-menu service xpi
+    DEPENDS croft_thatch_core
+)
+
+add_library(croft_wit_host_popup_menu STATIC ${HOST_POPUP_MENU_WIT_GENERATED_C})
+add_dependencies(croft_wit_host_popup_menu host_popup_menu_wit_schema_gen)
+croft_apply_public_includes(croft_wit_host_popup_menu)
+target_link_libraries(croft_wit_host_popup_menu PUBLIC croft_thatch_core)
+croft_register_artifact(croft_wit_host_popup_menu wit
+    TAGS wit host-popup-menu service xpi
     DEPENDS croft_thatch_core
 )
 
@@ -1279,6 +1303,18 @@ else()
     )
 endif()
 
+add_library(croft_wit_host_popup_menu_runtime STATIC src/runtime/wit_host_popup_menu_runtime.c)
+add_dependencies(croft_wit_host_popup_menu_runtime host_popup_menu_wit_schema_gen)
+croft_apply_public_includes(croft_wit_host_popup_menu_runtime)
+target_link_libraries(croft_wit_host_popup_menu_runtime PUBLIC
+    croft_popup_menu_macos
+    croft_wit_host_popup_menu
+)
+croft_register_artifact(croft_wit_host_popup_menu_runtime wit
+    TAGS tier8 wit host-popup-menu host-mix-in service machine-generated-model
+    DEPENDS croft_popup_menu_macos croft_wit_host_popup_menu
+)
+
 if(APPLE)
     add_library(croft_editor_appkit STATIC src/host/mac/host_editor_appkit.mm)
     croft_apply_public_includes(croft_editor_appkit)
@@ -1755,21 +1791,21 @@ if(TARGET croft_scene_text_editor_metal_native
         AND TARGET croft_wit_host_window_runtime
         AND TARGET croft_wit_host_clock_runtime
         AND TARGET croft_wit_host_menu_runtime
+        AND TARGET croft_wit_host_popup_menu_runtime
         AND TARGET croft_wit_host_clipboard_runtime
         AND TARGET croft_wit_host_editor_input_runtime
         AND TARGET croft_wit_host_a11y_runtime
-        AND TARGET croft_file_dialog_macos
-        AND TARGET croft_popup_menu_macos)
+        AND TARGET croft_file_dialog_macos)
     croft_add_example(example_editor_text_metal_native
         SOURCES examples/editor_scene_shell_wit.c
         LINKS croft_scene_text_editor_metal_native
               croft_editor_document_fs
               croft_editor_scene_runtime
               croft_file_dialog_macos
-              croft_popup_menu_macos
               croft_wit_host_window_runtime
               croft_wit_host_clock_runtime
               croft_wit_host_menu_runtime
+              croft_wit_host_popup_menu_runtime
               croft_wit_host_clipboard_runtime
               croft_wit_host_editor_input_runtime
               croft_wit_host_a11y_runtime
@@ -1778,15 +1814,15 @@ if(TARGET croft_scene_text_editor_metal_native
                  croft_editor_document_fs
                  croft_editor_scene_runtime
                  croft_file_dialog_macos
-                 croft_popup_menu_macos
                  croft_wit_host_window_runtime
                  croft_wit_host_clock_runtime
                  croft_wit_host_menu_runtime
+                 croft_wit_host_popup_menu_runtime
                  croft_wit_host_clipboard_runtime
                  croft_wit_host_editor_input_runtime
                  croft_wit_host_a11y_runtime
-        TAGS editor text sapling metal native-direct macos wit xpi host-window host-menu host-clipboard host-editor-input host-a11y
-        FOCUS "Text-editor shell built on the direct-Metal renderer while routing window, menu, clipboard, input, and accessibility through WIT host mix-ins."
+        TAGS editor text sapling metal native-direct macos wit xpi host-window host-menu host-popup-menu host-clipboard host-editor-input host-a11y
+        FOCUS "Text-editor shell built on the direct-Metal renderer while routing window, menu, popup menu, clipboard, input, and accessibility through WIT host mix-ins."
     )
 endif()
 
@@ -1844,7 +1880,7 @@ endif()
 if(CROFT_BUILD_TESTS)
     enable_testing()
 
-    add_executable(test_croft tests/test_main.c tests/test_queue.c tests/host_tests/test_fs.c tests/test_editor_text_model.c tests/test_editor_syntax.c tests/test_editor_brackets.c tests/test_editor_folding.c tests/test_editor_whitespace.c tests/test_editor_search.c tests/test_editor_status.c tests/test_editor_document.c tests/test_editor_commands.c tests/test_editor_scene_runtime.c tests/test_wit_resource_codegen.c tests/test_wit_text_runtime.c tests/test_wit_text_program.c tests/test_wit_store_runtime.c tests/test_wit_mailbox_runtime.c tests/test_wit_host_fs_runtime.c tests/test_wit_host_clock_runtime.c tests/test_wit_host_editor_input_runtime.c)
+    add_executable(test_croft tests/test_main.c tests/test_queue.c tests/host_tests/test_fs.c tests/test_editor_text_model.c tests/test_editor_syntax.c tests/test_editor_brackets.c tests/test_editor_folding.c tests/test_editor_whitespace.c tests/test_editor_search.c tests/test_editor_status.c tests/test_editor_document.c tests/test_editor_commands.c tests/test_editor_scene_runtime.c tests/test_wit_resource_codegen.c tests/test_wit_text_runtime.c tests/test_wit_text_program.c tests/test_wit_store_runtime.c tests/test_wit_mailbox_runtime.c tests/test_wit_host_fs_runtime.c tests/test_wit_host_clock_runtime.c tests/test_wit_host_editor_input_runtime.c tests/test_wit_host_popup_menu_runtime.c)
     target_include_directories(test_croft PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
     target_link_libraries(test_croft
         PRIVATE
@@ -1859,8 +1895,9 @@ if(CROFT_BUILD_TESTS)
             croft_wit_host_fs_runtime
             croft_wit_host_clock_runtime
             croft_wit_host_editor_input_runtime
+            croft_wit_host_popup_menu_runtime
     )
-    add_dependencies(test_croft common_wit_schema_gen host_fs_wit_schema_gen host_clock_wit_schema_gen host_editor_input_wit_schema_gen)
+    add_dependencies(test_croft common_wit_schema_gen host_fs_wit_schema_gen host_clock_wit_schema_gen host_editor_input_wit_schema_gen host_popup_menu_wit_schema_gen)
     target_compile_definitions(test_croft PRIVATE
         CROFT_WIT_FS_SAMPLE_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/wit_host_fs_sample.txt"
     )
