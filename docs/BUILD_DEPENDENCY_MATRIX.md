@@ -49,6 +49,7 @@ The table below covers the external dependencies that affect which Croft artifac
 | `wasm3` | Embeddable WebAssembly interpreter | `croft_wasm_wasm3` and host Wasm test coverage | Standalone. It is not part of the `WASI` spec repo and it is not a sub-system of `wasm-micro-runtime`. | Use a pinned local checkout staged by `tools/bootstrap_deps.sh`. Direct `FetchContent` is only a fallback path. | `CROFT_WASM3_SOURCE_DIR`; fallback: `CROFT_FETCH_WASM3` with `CROFT_WASM3_GIT_REPOSITORY` and `CROFT_WASM3_GIT_TAG` | Consult the official `wasm3` repo and README for build instructions if you need a local override. | Not installed locally before bootstrap. |
 | `wabt` | WebAssembly Binary Toolkit. Croft currently uses the `wat2wasm` tool, not the library. | Wasm guest test fixture generation when `croft_wasm_wasm3` is enabled | Standalone. It is not part of the `WASI` spec repo. | Prefer an external tool install that puts `wat2wasm` on `PATH`. Use a separate source checkout only if you want Croft to build the tool itself. | `find_program(wat2wasm)` or `CROFT_WABT_SOURCE_DIR` | Consult the WABT README if a source build is needed. For this machine, the verified tool install is under Homebrew. | Present at `/opt/homebrew/Cellar/wabt/1.0.39/bin/wat2wasm` and `/opt/homebrew/opt/wabt`. |
 | `miniaudio` | Single-header native audio library | `croft_audio_miniaudio` | Standalone. It is not hiding inside `tgfx`, `makepad`, or the Microsoft editor repos. | Stage the pinned `miniaudio.h` header into `local_deps/src/miniaudio/` with `tools/bootstrap_deps.sh`. A full repo checkout is unnecessary because Croft only includes the header. | `CROFT_MINIAUDIO_SOURCE_DIR`; fallback: `CROFT_FETCH_MINIAUDIO` with `CROFT_MINIAUDIO_GIT_REPOSITORY` and `CROFT_MINIAUDIO_GIT_TAG` | Consult the official `miniaudio` repo/header documentation if you need a local override. The bootstrap uses the raw header URL pinned in `tools/deps.lock.sh`. | Not installed locally before bootstrap. |
+| WASI proposals checkout (optional) | Upstream WIT definitions | Current-machine WASI bindings and manifests when you want Croft to generate from upstream definitions instead of the in-tree fixtures | Standalone spec repo checkout. It is not a runtime dependency and Croft still builds without it. | Keep it outside the Croft tree and point CMake at the `proposals/` directory. | `CROFT_WASI_PROPOSALS_DIR` | Useful when validating parser/codegen changes against upstream `wasi:*` packages. If unset, Croft falls back to the curated in-tree WIT fixtures. | Present on this machine at `/Users/mshonle/Projects/WebAssembly/WASI/proposals`. |
 
 ## Platform-Specific Build Inputs
 
@@ -68,7 +69,7 @@ These repositories are useful design references or future integration candidates
 | `vscode-textmate` | Future grammar/tokenization reference | Relevant only if Croft later adopts TextMate grammar tooling | `/Users/mshonle/Projects/microsoft/vscode-textmate` |
 | `vscode-oniguruma` | Future Oniguruma/WASM grammar support reference | Not part of the current native Croft build | `/Users/mshonle/Projects/microsoft/vscode-oniguruma` |
 | Makepad | UI/runtime architecture reference | Design inspiration only; not linked into Croft | `/Users/mshonle/Projects/makepad` |
-| WASI spec repo | Standards reference | Specification source, not a host runtime implementation for Croft | `/Users/mshonle/Projects/WebAssembly/WASI` |
+| WASI spec repo | Standards reference and optional WIT source checkout | Croft can read `proposals/` via `CROFT_WASI_PROPOSALS_DIR`, but the repo is still not a host runtime implementation for Croft | `/Users/mshonle/Projects/WebAssembly/WASI` |
 | WebAssembly Micro Runtime (WAMR) | Alternative Wasm runtime candidate | Separate runtime with a different embedding model; not a drop-in replacement for the current `wasm3` integration | `/Users/mshonle/Projects/WebAssembly/wasm-micro-runtime` |
 
 ## Canonical Configure Patterns
@@ -82,6 +83,12 @@ cmake -S . -B build \
   -DCROFT_BUILD_TESTS=ON
 ```
 
+Then build the current-machine artifact graph and the dependency reports:
+
+```bash
+cmake --build build --target croft_full_machine
+```
+
 ### Full Optional Build With Explicit External Paths
 
 This is the preferred pattern for local builds on this workstation and in CI:
@@ -92,7 +99,8 @@ git lfs version
 (cd /Users/mshonle/Projects/Tencent/tgfx && bash ./sync_deps.sh)
 tools/bootstrap_deps.sh
 source local_deps/env.sh
-cmake -S . -B build -C local_deps/croft-deps.cmake
+cmake -S . -B build -C local_deps/croft-deps.cmake \
+  -DCROFT_WASI_PROPOSALS_DIR=/Users/mshonle/Projects/WebAssembly/WASI/proposals
 ```
 
 Ensure `wat2wasm` is on `PATH` before configuring if Wasm guest tests are expected to build:
@@ -107,6 +115,12 @@ Homebrew GLFW / WABT installs on this machine.
 
 If you prefer a source checkout for WABT instead of a preinstalled tool, pass
 `-DCROFT_WABT_SOURCE_DIR=/path/to/wabt`.
+
+The full current-machine build now emits:
+
+- generated public WIT headers under `build/generated/`
+- generated WIT manifests under `build/generated/` and installable copies under `share/croft/wit-manifests/`
+- dependency audit reports under `build/reports/`
 
 ## Reproducibility Note On FetchContent Pins
 

@@ -1,5 +1,6 @@
-#include "tests/generated/wasi_clocks_monotonic_clock.h"
-#include "tests/generated/wasi_clocks_timezone.h"
+#include "generated/wit_wasi_clocks_monotonic_clock.h"
+#include "generated/wit_wasi_clocks_timezone.h"
+#include "generated/wit_wasi_io_poll.h"
 
 int main(void)
 {
@@ -9,6 +10,7 @@ int main(void)
     SapWitClocksMonotonicClockCommand monotonic_command = {0};
     SapWitClocksMonotonicClockReply monotonic_reply = {0};
     SapWitClocksPollableResource pollable = 0;
+    SapWitIoPollableResource io_pollable = 0;
 
     when.seconds = 1;
     timezone_command.case_tag = SAP_WIT_CLOCKS_TIMEZONE_COMMAND_DISPLAY;
@@ -22,5 +24,6 @@ int main(void)
     (void)timezone_reply;
     (void)monotonic_command;
     (void)monotonic_reply;
+    (void)io_pollable;
     return 0;
 }

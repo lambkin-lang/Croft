@@ -1,5 +1,5 @@
-#include "tests/generated/wasi_cli_environment.h"
-#include "tests/generated/wasi_random_insecure.h"
+#include "generated/wit_wasi_cli_environment.h"
+#include "generated/wit_wasi_random_insecure.h"
 
 int main(void)
 {
