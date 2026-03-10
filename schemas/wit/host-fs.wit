@@ -1,11 +1,10 @@
 package lambkin:host-fs@0.1.0;
 
-interface types {
+interface host-fs {
   type fs-file-op-result = result<file, string>;
   type fs-status = result<_, string>;
   type fs-file-read-result = result<list<u8>, string>;
 
-  @croft-lower-group(command)
   resource file {
     open: static func(path: list<u8>, write: bool, create: bool, truncate: bool, append: bool) -> fs-file-op-result;
     close: func() -> fs-status;
@@ -14,5 +13,5 @@ interface types {
 }
 
 world host-fs {
-  export types;
+  export host-fs;
 }

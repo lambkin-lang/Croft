@@ -1,6 +1,6 @@
 package lambkin:host-editor-input@0.1.0;
 
-interface types {
+interface host-editor-input {
   flags motion-flags {
     selecting,
     word,
@@ -68,5 +68,5 @@ interface types {
 }
 
 world host-editor-input {
-  export types;
+  export host-editor-input;
 }

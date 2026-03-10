@@ -266,6 +266,14 @@ set(TEST_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/test_resul
 set(TEST_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/test_result_types.c")
 set(TEST_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/test_result_types.manifest")
 
+set(WASI_CLI_ENVIRONMENT_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/wasi_cli_environment.h")
+set(WASI_CLI_ENVIRONMENT_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/wasi_cli_environment.c")
+set(WASI_CLI_ENVIRONMENT_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/wasi_cli_environment.manifest")
+
+set(WASI_RANDOM_INSECURE_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/wasi_random_insecure.h")
+set(WASI_RANDOM_INSECURE_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/wasi_random_insecure.c")
+set(WASI_RANDOM_INSECURE_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/wasi_random_insecure.manifest")
+
 set(MENU_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_menu_schema.h")
 set(MENU_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_menu_schema.c")
 set(MENU_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_menu_schema.manifest")
@@ -403,6 +411,36 @@ add_custom_command(
     COMMENT "Generating Test Schema C Layouts from WIT..."
 )
 add_custom_target(test_wit_schema_gen DEPENDS ${TEST_WIT_GENERATED_H} ${TEST_WIT_GENERATED_C} ${TEST_WIT_GENERATED_MANIFEST})
+
+# WASI CLI environment fixture
+add_custom_command(
+    OUTPUT ${WASI_CLI_ENVIRONMENT_WIT_GENERATED_H} ${WASI_CLI_ENVIRONMENT_WIT_GENERATED_C} ${WASI_CLI_ENVIRONMENT_WIT_GENERATED_MANIFEST}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/tests/generated"
+    COMMAND wit_codegen --wit "${CMAKE_CURRENT_SOURCE_DIR}/tests/sapling_tests/fixtures/wasi/cli/environment.wit"
+                        --header "${WASI_CLI_ENVIRONMENT_WIT_GENERATED_H}" --source "${WASI_CLI_ENVIRONMENT_WIT_GENERATED_C}" --manifest "${WASI_CLI_ENVIRONMENT_WIT_GENERATED_MANIFEST}"
+    DEPENDS wit_codegen
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/sapling_tests/fixtures/wasi/cli/environment.wit"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/sapling_tests/fixtures/wasi/cli/imports.wit"
+    COMMENT "Generating WASI CLI environment fixture bindings..."
+)
+add_custom_target(wasi_cli_environment_wit_schema_gen
+    DEPENDS ${WASI_CLI_ENVIRONMENT_WIT_GENERATED_H}
+            ${WASI_CLI_ENVIRONMENT_WIT_GENERATED_C}
+            ${WASI_CLI_ENVIRONMENT_WIT_GENERATED_MANIFEST})
+
+# WASI random insecure fixture
+add_custom_command(
+    OUTPUT ${WASI_RANDOM_INSECURE_WIT_GENERATED_H} ${WASI_RANDOM_INSECURE_WIT_GENERATED_C} ${WASI_RANDOM_INSECURE_WIT_GENERATED_MANIFEST}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/tests/generated"
+    COMMAND wit_codegen --wit "${CMAKE_CURRENT_SOURCE_DIR}/tests/sapling_tests/fixtures/wasi/random/insecure.wit"
+                        --header "${WASI_RANDOM_INSECURE_WIT_GENERATED_H}" --source "${WASI_RANDOM_INSECURE_WIT_GENERATED_C}" --manifest "${WASI_RANDOM_INSECURE_WIT_GENERATED_MANIFEST}"
+    DEPENDS wit_codegen "${CMAKE_CURRENT_SOURCE_DIR}/tests/sapling_tests/fixtures/wasi/random/insecure.wit"
+    COMMENT "Generating WASI random insecure fixture bindings..."
+)
+add_custom_target(wasi_random_insecure_wit_schema_gen
+    DEPENDS ${WASI_RANDOM_INSECURE_WIT_GENERATED_H}
+            ${WASI_RANDOM_INSECURE_WIT_GENERATED_C}
+            ${WASI_RANDOM_INSECURE_WIT_GENERATED_MANIFEST})
 
 # Menu Schema
 add_custom_command(
@@ -727,6 +765,16 @@ croft_register_artifact(croft_wit_host_a11y wit
     TAGS wit host-a11y resource-handles service xpi accessibility
     DEPENDS croft_thatch_core
 )
+
+add_library(croft_wit_wasi_cli_environment STATIC ${WASI_CLI_ENVIRONMENT_WIT_GENERATED_C})
+add_dependencies(croft_wit_wasi_cli_environment wasi_cli_environment_wit_schema_gen)
+croft_apply_public_includes(croft_wit_wasi_cli_environment)
+target_link_libraries(croft_wit_wasi_cli_environment PUBLIC croft_thatch_core)
+
+add_library(croft_wit_wasi_random_insecure STATIC ${WASI_RANDOM_INSECURE_WIT_GENERATED_C})
+add_dependencies(croft_wit_wasi_random_insecure wasi_random_insecure_wit_schema_gen)
+croft_apply_public_includes(croft_wit_wasi_random_insecure)
+target_link_libraries(croft_wit_wasi_random_insecure PUBLIC croft_thatch_core)
 
 add_library(croft_wire_runtime STATIC
     src/runner/wire_v0.c
@@ -2007,9 +2055,22 @@ if(CROFT_BUILD_TESTS)
         if(test_name STREQUAL "test_wit_thatch_codegen")
             target_link_libraries(${test_name} PRIVATE croft_wire_runtime)
         endif()
+        if(test_name STREQUAL "wasi_wit_smoke")
+            target_link_libraries(${test_name} PRIVATE
+                croft_wit_wasi_cli_environment
+                croft_wit_wasi_random_insecure
+            )
+        endif()
         target_compile_definitions(${test_name} PRIVATE SAPLING_HAMT_TESTING)
         if(test_name STREQUAL "test_wit_thatch_codegen")
             add_dependencies(${test_name} test_wit_schema_gen)
+            target_include_directories(${test_name} PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
+        endif()
+        if(test_name STREQUAL "wasi_wit_smoke")
+            add_dependencies(${test_name}
+                wasi_cli_environment_wit_schema_gen
+                wasi_random_insecure_wit_schema_gen
+            )
             target_include_directories(${test_name} PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
         endif()
         add_test(NAME sapling_${test_name} COMMAND ${test_name})

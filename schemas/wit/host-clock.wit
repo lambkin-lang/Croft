@@ -1,11 +1,11 @@
 package lambkin:host-clock@0.1.0;
 
-interface types {
+interface host-clock {
   type clock-now-result = result<u64, string>;
 
   monotonic-now: func() -> clock-now-result;
 }
 
 world host-clock {
-  export types;
+  export host-clock;
 }

@@ -1,6 +1,6 @@
 package lambkin:common-core@0.1.0;
 
-interface types {
+interface text {
   type bytes = list<u8>;
   type utf8 = list<u8>;
   type offset = u32;
@@ -13,28 +13,32 @@ interface types {
     export: func() -> result<utf8, string>;
     drop: func() -> result<_, string>;
   }
+}
 
+interface store {
   type status = result<_, string>;
 
   type db-op-result = result<db, string>;
   type txn-op-result = result<txn, string>;
   type kv-get-result = result<option<bytes>, string>;
 
-  @croft-lower-group(store)
   resource db {
     open: static func(page-size: u32) -> db-op-result;
     drop: func() -> status;
     begin: func(read-only: bool) -> txn-op-result;
   }
 
-  @croft-lower-group(store)
   resource txn {
     commit: func() -> status;
     abort: func() -> status;
     put: func(key: bytes, value: bytes) -> status;
     get: func(key: bytes) -> kv-get-result;
   }
+}
 
+interface mailbox {
+  type bytes = list<u8>;
+  type status = result<_, string>;
   type mailbox-recv-result = result<option<bytes>, string>;
 
   resource mailbox {
@@ -46,5 +50,7 @@ interface types {
 }
 
 world common-core {
-  export types;
+  export text;
+  export store;
+  export mailbox;
 }

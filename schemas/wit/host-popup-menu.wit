@@ -1,6 +1,6 @@
 package lambkin:host-popup-menu@0.1.0;
 
-interface types {
+interface host-popup-menu {
   record show-at {
     x-milli: s32,
     y-milli: s32,
@@ -22,5 +22,5 @@ interface types {
 }
 
 world host-popup-menu {
-  export types;
+  export host-popup-menu;
 }

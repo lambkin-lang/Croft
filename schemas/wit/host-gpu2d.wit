@@ -1,6 +1,6 @@
 package lambkin:host-gpu2d@0.1.0;
 
-interface types {
+interface host-gpu2d {
   type utf8 = list<u8>;
 
   flags capabilities {
@@ -15,7 +15,6 @@ interface types {
   type capabilities-result = result<capabilities, string>;
   type measure-result = result<f32, string>;
 
-  @croft-lower-group(command)
   resource surface {
     capabilities: static func() -> capabilities-result;
     open: static func() -> surface-result;
@@ -35,5 +34,5 @@ interface types {
 }
 
 world host-gpu2d {
-  export types;
+  export host-gpu2d;
 }

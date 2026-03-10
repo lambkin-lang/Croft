@@ -1,6 +1,6 @@
 package lambkin:host-clipboard@0.1.0;
 
-interface types {
+interface host-clipboard {
   type utf8 = list<u8>;
 
   type status = result<_, string>;
@@ -11,5 +11,5 @@ interface types {
 }
 
 world host-clipboard {
-  export types;
+  export host-clipboard;
 }

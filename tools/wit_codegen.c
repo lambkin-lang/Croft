@@ -15,6 +15,7 @@
 #include <stdint.h>
 #include <ctype.h>
 #include <stdarg.h>
+#include <dirent.h>
 
 #define MAX_FIELDS     32
 #define MAX_CASES      32
@@ -369,7 +370,7 @@ typedef enum {
 typedef struct {
     char        name[MAX_NAME];
     char        owner_name[MAX_NAME];
-    char        lower_group[MAX_NAME];
+    char        interface_name[MAX_NAME];
     WitFuncKind kind;
     WitOwnerKind owner_kind;
     WitField    params[MAX_FIELDS];
@@ -380,8 +381,8 @@ typedef struct {
 
 typedef struct {
     char name[MAX_NAME];
+    char interface_name[MAX_NAME];
     int  imported;
-    char lower_group[MAX_NAME];
 } WitResource;
 
 typedef struct {
@@ -419,7 +420,6 @@ typedef struct {
     int         len;
     int         line;
     int         col;
-    char        pending_lower_group[MAX_NAME];
 } Scanner;
 
 static void scanner_init(Scanner *s, const char *src, int len)
@@ -429,7 +429,6 @@ static void scanner_init(Scanner *s, const char *src, int len)
     s->len  = len;
     s->line = 1;
     s->col  = 1;
-    s->pending_lower_group[0] = '\0';
 }
 
 static int scanner_eof(const Scanner *s)
@@ -475,29 +474,6 @@ static void skip_balanced_parens(Scanner *s)
     }
 }
 
-static void scanner_clear_pending_attrs(Scanner *s)
-{
-    if (!s) {
-        return;
-    }
-    s->pending_lower_group[0] = '\0';
-}
-
-static void scanner_take_pending_lower_group(Scanner *s, char *out, int n)
-{
-    if (!out || n <= 0) {
-        return;
-    }
-    out[0] = '\0';
-    if (!s) {
-        return;
-    }
-    if (s->pending_lower_group[0] != '\0') {
-        snprintf(out, n, "%s", s->pending_lower_group);
-    }
-    s->pending_lower_group[0] = '\0';
-}
-
 static void skip_attribute(Scanner *s)
 {
     char attr_name[MAX_NAME];
@@ -531,28 +507,8 @@ static void skip_attribute(Scanner *s)
     }
 
     if (scanner_peek(s) == '(') {
-        if (strcmp(attr_name, "croft-lower-group") == 0) {
-            scanner_advance(s);
-            while (!scanner_eof(s)) {
-                char ch = scanner_peek(s);
-                if (ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n') {
-                    scanner_advance(s);
-                    continue;
-                }
-                break;
-            }
-            if (!scan_ident(s, s->pending_lower_group, (int)sizeof(s->pending_lower_group))) {
-                s->pending_lower_group[0] = '\0';
-            }
-            while (!scanner_eof(s) && scanner_peek(s) != ')') {
-                scanner_advance(s);
-            }
-            if (scanner_peek(s) == ')') {
-                scanner_advance(s);
-            }
-        } else {
-            skip_balanced_parens(s);
-        }
+        (void)attr_name;
+        skip_balanced_parens(s);
     }
 }
 
@@ -840,6 +796,16 @@ static void path_dirname(const char *path, char *out, int n)
     out[len] = '\0';
 }
 
+static int path_has_extension(const char *path, const char *ext)
+{
+    const char *dot;
+
+    if (!path || !ext) return 0;
+    dot = strrchr(path, '.');
+    if (!dot) return 0;
+    return strcmp(dot, ext) == 0;
+}
+
 static int file_exists(const char *path)
 {
     FILE *f;
@@ -874,6 +840,58 @@ static int find_project_root_from_path(const char *path, char *out, int n)
     }
 
     return 0;
+}
+
+static char *read_text_file(const char *path, long *size_out)
+{
+    FILE *f;
+    long fsize;
+    char *src;
+    size_t nread;
+
+    if (size_out) {
+        *size_out = 0;
+    }
+    if (!path || path[0] == '\0') {
+        return NULL;
+    }
+
+    f = fopen(path, "rb");
+    if (!f) {
+        return NULL;
+    }
+    if (fseek(f, 0, SEEK_END) != 0) {
+        fclose(f);
+        return NULL;
+    }
+    fsize = ftell(f);
+    if (fsize < 0) {
+        fclose(f);
+        return NULL;
+    }
+    if (fseek(f, 0, SEEK_SET) != 0) {
+        fclose(f);
+        return NULL;
+    }
+
+    src = (char *)malloc((size_t)fsize + 1u);
+    if (!src) {
+        fclose(f);
+        return NULL;
+    }
+
+    nread = fread(src, 1, (size_t)fsize, f);
+    fclose(f);
+    if (nread != (size_t)fsize) {
+        free(src);
+        return NULL;
+    }
+
+    src[fsize] = '\0';
+    if (size_out) {
+        *size_out = fsize;
+    }
+    return src;
 }
 
 static void path_to_project_relative(const char *path, char *out, int n)
@@ -1147,9 +1165,17 @@ typedef enum {
 static int parse_scope_items(Scanner *s,
                              WitRegistry *reg,
                              ParseScope scope,
-                             const char *scope_name);
+                             const char *scope_name,
+                             const char *interface_name);
+static int scan_source_for_package_decl(const char *src,
+                                        int len,
+                                        char *out,
+                                        int n);
 
-static int registry_add_resource(WitRegistry *reg, const char *name, int imported)
+static int registry_add_resource(WitRegistry *reg,
+                                 const char *name,
+                                 const char *interface_name,
+                                 int imported)
 {
     if (!reg || !name || name[0] == '\0') {
         return 0;
@@ -1159,6 +1185,13 @@ static int registry_add_resource(WitRegistry *reg, const char *name, int importe
         if (strcmp(reg->resources[i].name, name) == 0) {
             if (imported) {
                 reg->resources[i].imported = 1;
+            }
+            if (interface_name && interface_name[0] != '\0'
+                    && reg->resources[i].interface_name[0] == '\0') {
+                snprintf(reg->resources[i].interface_name,
+                         sizeof(reg->resources[i].interface_name),
+                         "%s",
+                         interface_name);
             }
             return 1;
         }
@@ -1174,6 +1207,12 @@ static int registry_add_resource(WitRegistry *reg, const char *name, int importe
              sizeof(reg->resources[reg->resource_count].name),
              "%s",
              name);
+    if (interface_name && interface_name[0] != '\0') {
+        snprintf(reg->resources[reg->resource_count].interface_name,
+                 sizeof(reg->resources[reg->resource_count].interface_name),
+                 "%s",
+                 interface_name);
+    }
     reg->resources[reg->resource_count].imported = imported ? 1 : 0;
     reg->resource_count++;
     return 1;
@@ -1229,7 +1268,8 @@ static int parse_param_list(Scanner *s, WitField *params, int *param_count_out, 
 static int parse_named_func(Scanner *s,
                             WitRegistry *reg,
                             ParseScope scope,
-                            const char *scope_name)
+                            const char *scope_name,
+                            const char *interface_name)
 {
     WitFunc func;
 
@@ -1250,20 +1290,15 @@ static int parse_named_func(Scanner *s,
     if (match_arrow(s)) {
         func.result_type = parse_type_expr(s);
         if (func.result_type < 0) return 0;
-    } else if (scope_name && scope_name[0] != '\0') {
-        func.result_type = type_alloc();
-        if (func.result_type < 0) return 0;
-        g_type_pool[func.result_type].kind = TYPE_IDENT;
-        snprintf(g_type_pool[func.result_type].ident,
-                 sizeof(g_type_pool[func.result_type].ident),
-                 "%s",
-                 scope_name);
     }
 
     if (!expect_char(s, ';')) return 0;
 
     snprintf(func.owner_name, sizeof(func.owner_name), "%s", scope_name ? scope_name : "");
-    scanner_take_pending_lower_group(s, func.lower_group, (int)sizeof(func.lower_group));
+    snprintf(func.interface_name,
+             sizeof(func.interface_name),
+             "%s",
+             interface_name ? interface_name : "");
     func.owner_kind = (scope == PARSE_SCOPE_RESOURCE) ? WIT_OWNER_RESOURCE : WIT_OWNER_INTERFACE;
     format_func_trace(&func, func.trace, (int)sizeof(func.trace));
     return registry_add_func(reg, &func);
@@ -1272,7 +1307,8 @@ static int parse_named_func(Scanner *s,
 static int try_parse_named_func(Scanner *s,
                                 WitRegistry *reg,
                                 ParseScope scope,
-                                const char *scope_name)
+                                const char *scope_name,
+                                const char *interface_name)
 {
     Scanner probe = *s;
     char name[MAX_NAME];
@@ -1289,12 +1325,13 @@ static int try_parse_named_func(Scanner *s,
     if (!match_keyword(&probe, "func")) {
         return 0;
     }
-    return parse_named_func(s, reg, scope, scope_name);
+    return parse_named_func(s, reg, scope, scope_name, interface_name);
 }
 
 static int parse_constructor_func(Scanner *s,
                                   WitRegistry *reg,
-                                  const char *scope_name)
+                                  const char *scope_name,
+                                  const char *interface_name)
 {
     WitFunc func;
 
@@ -1303,6 +1340,10 @@ static int parse_constructor_func(Scanner *s,
     func.kind = WIT_FUNC_CONSTRUCTOR;
     func.owner_kind = WIT_OWNER_RESOURCE;
     snprintf(func.owner_name, sizeof(func.owner_name), "%s", scope_name ? scope_name : "");
+    snprintf(func.interface_name,
+             sizeof(func.interface_name),
+             "%s",
+             interface_name ? interface_name : "");
 
     if (!match_keyword(s, "constructor")) return 0;
     if (!parse_param_list(s, func.params, &func.param_count, MAX_FIELDS)) return 0;
@@ -1311,26 +1352,34 @@ static int parse_constructor_func(Scanner *s,
     if (match_arrow(s)) {
         func.result_type = parse_type_expr(s);
         if (func.result_type < 0) return 0;
+    } else if (scope_name && scope_name[0] != '\0') {
+        func.result_type = type_alloc();
+        if (func.result_type < 0) return 0;
+        g_type_pool[func.result_type].kind = TYPE_IDENT;
+        snprintf(g_type_pool[func.result_type].ident,
+                 sizeof(g_type_pool[func.result_type].ident),
+                 "%s",
+                 scope_name);
     }
 
     if (!expect_char(s, ';')) return 0;
-    scanner_clear_pending_attrs(s);
     format_func_trace(&func, func.trace, (int)sizeof(func.trace));
     return registry_add_func(reg, &func);
 }
 
 static int try_parse_constructor_func(Scanner *s,
                                       WitRegistry *reg,
-                                      const char *scope_name)
+                                      const char *scope_name,
+                                      const char *interface_name)
 {
     Scanner probe = *s;
     if (!match_keyword(&probe, "constructor")) {
         return 0;
     }
-    return parse_constructor_func(s, reg, scope_name);
+    return parse_constructor_func(s, reg, scope_name, interface_name);
 }
 
-static int parse_use_decl(Scanner *s, WitRegistry *reg)
+static int parse_use_decl(Scanner *s, WitRegistry *reg, const char *interface_name)
 {
     char raw[512];
     int i = 0;
@@ -1365,7 +1414,7 @@ static int parse_use_decl(Scanner *s, WitRegistry *reg)
             name[j++] = *cursor++;
         }
         name[j] = '\0';
-        if (name[0] != '\0' && !registry_add_resource(reg, name, 1)) {
+        if (name[0] != '\0' && !registry_add_resource(reg, name, interface_name, 1)) {
             return 0;
         }
         while (*cursor && *cursor != ',') {
@@ -1407,60 +1456,47 @@ static int parse_interface_decl(Scanner *s, WitRegistry *reg)
 
     if (!scan_ident(s, name, MAX_NAME)) return 0;
     if (!expect_char(s, '{')) return 0;
-    return parse_scope_items(s, reg, PARSE_SCOPE_INTERFACE, name);
+    return parse_scope_items(s, reg, PARSE_SCOPE_INTERFACE, name, name);
 }
 
-static int parse_resource_decl(Scanner *s, WitRegistry *reg)
+static int parse_resource_decl(Scanner *s,
+                               WitRegistry *reg,
+                               const char *interface_name)
 {
     char name[MAX_NAME];
-    char lower_group[MAX_NAME];
-    int resource_index = -1;
 
     if (!scan_ident(s, name, MAX_NAME)) return 0;
-    scanner_take_pending_lower_group(s, lower_group, (int)sizeof(lower_group));
-    if (!registry_add_resource(reg, name, 0)) return 0;
-    for (int i = 0; i < reg->resource_count; i++) {
-        if (strcmp(reg->resources[i].name, name) == 0) {
-            resource_index = i;
-            break;
-        }
-    }
-    if (resource_index >= 0 && lower_group[0] != '\0') {
-        snprintf(reg->resources[resource_index].lower_group,
-                 sizeof(reg->resources[resource_index].lower_group),
-                 "%s",
-                 lower_group);
-    }
+    if (!registry_add_resource(reg, name, interface_name, 0)) return 0;
 
     skip_whitespace(s);
     if (match_char(s, ';')) {
         return 1;
     }
     if (!expect_char(s, '{')) return 0;
-    if (!parse_scope_items(s, reg, PARSE_SCOPE_RESOURCE, name)) return 0;
+    if (!parse_scope_items(s, reg, PARSE_SCOPE_RESOURCE, name, interface_name)) return 0;
     (void)match_char(s, ';');
     return 1;
 }
 
-static int parse_package_decl(Scanner *s, WitRegistry *reg)
+static int apply_package_decl(WitRegistry *reg, const char *raw_decl)
 {
     char raw[MAX_PACKAGE];
-    int i = 0;
     const char *cursor;
     const char *colon;
     const char *at;
 
-    skip_whitespace(s);
-    while (!scanner_eof(s) && scanner_peek(s) != ';' && i < MAX_PACKAGE - 1) {
-        raw[i++] = scanner_advance(s);
-    }
-    raw[i] = '\0';
-    if (!expect_char(s, ';')) return 0;
+    if (!reg || !raw_decl) return 0;
 
+    snprintf(raw, sizeof(raw), "%s", raw_decl);
     wit_trim(raw);
     if (raw[0] == '\0') {
         codegen_die("package declaration is empty");
     }
+
+    reg->package_full[0] = '\0';
+    reg->package_namespace[0] = '\0';
+    reg->package_name[0] = '\0';
+    reg->package_version[0] = '\0';
 
     snprintf(reg->package_full, sizeof(reg->package_full), "%s", raw);
 
@@ -1488,6 +1524,21 @@ static int parse_package_decl(Scanner *s, WitRegistry *reg)
     }
 
     return 1;
+}
+
+static int parse_package_decl(Scanner *s, WitRegistry *reg)
+{
+    char raw[MAX_PACKAGE];
+    int i = 0;
+
+    skip_whitespace(s);
+    while (!scanner_eof(s) && scanner_peek(s) != ';' && i < MAX_PACKAGE - 1) {
+        raw[i++] = scanner_advance(s);
+    }
+    raw[i] = '\0';
+    if (!expect_char(s, ';')) return 0;
+
+    return apply_package_decl(reg, raw);
 }
 
 static void finalize_package_info(WitRegistry *reg, const char *wit_path)
@@ -1531,10 +1582,74 @@ static void finalize_package_info(WitRegistry *reg, const char *wit_path)
                             (int)sizeof(reg->package_camel));
 }
 
+static int infer_package_decl_from_siblings(WitRegistry *reg, const char *wit_path)
+{
+    char dir_path[MAX_PATH_TEXT];
+    char file_base[MAX_NAME];
+    char discovered[MAX_PACKAGE];
+    DIR *dir;
+    struct dirent *entry;
+
+    if (!reg || !wit_path || wit_path[0] == '\0' || reg->package_name[0] != '\0') {
+        return 1;
+    }
+
+    path_dirname(wit_path, dir_path, (int)sizeof(dir_path));
+    path_basename(wit_path, file_base, (int)sizeof(file_base));
+    discovered[0] = '\0';
+
+    dir = opendir(dir_path[0] != '\0' ? dir_path : ".");
+    if (!dir) {
+        return 1;
+    }
+
+    while ((entry = readdir(dir)) != NULL) {
+        char sibling_path[MAX_PATH_TEXT];
+        char raw_package[MAX_PACKAGE];
+        char *src;
+        long src_len = 0;
+
+        if (!path_has_extension(entry->d_name, ".wit")) {
+            continue;
+        }
+        if (strcmp(entry->d_name, file_base) == 0) {
+            continue;
+        }
+
+        snprintf(sibling_path, sizeof(sibling_path), "%s/%s", dir_path, entry->d_name);
+        src = read_text_file(sibling_path, &src_len);
+        if (!src) {
+            continue;
+        }
+
+        raw_package[0] = '\0';
+        if (scan_source_for_package_decl(src, (int)src_len, raw_package, (int)sizeof(raw_package))) {
+            if (discovered[0] == '\0') {
+                snprintf(discovered, sizeof(discovered), "%s", raw_package);
+            } else if (strcmp(discovered, raw_package) != 0) {
+                closedir(dir);
+                free(src);
+                codegen_die("conflicting sibling package declarations for %s: %s vs %s",
+                            wit_path,
+                            discovered,
+                            raw_package);
+            }
+        }
+        free(src);
+    }
+
+    closedir(dir);
+    if (discovered[0] != '\0') {
+        return apply_package_decl(reg, discovered);
+    }
+    return 1;
+}
+
 static int parse_scope_items(Scanner *s,
                              WitRegistry *reg,
                              ParseScope scope,
-                             const char *scope_name)
+                             const char *scope_name,
+                             const char *interface_name)
 {
     while (!scanner_eof(s)) {
         skip_whitespace(s);
@@ -1544,21 +1659,19 @@ static int parse_scope_items(Scanner *s,
             return 1;
         }
 
-        if (scope == PARSE_SCOPE_RESOURCE && try_parse_constructor_func(s, reg, scope_name)) {
+        if (scope == PARSE_SCOPE_RESOURCE
+                && try_parse_constructor_func(s, reg, scope_name, interface_name)) {
             continue;
         } else if ((scope == PARSE_SCOPE_INTERFACE || scope == PARSE_SCOPE_RESOURCE)
-                && try_parse_named_func(s, reg, scope, scope_name)) {
+                && try_parse_named_func(s, reg, scope, scope_name, interface_name)) {
             continue;
         } else if (match_keyword(s, "package")) {
-            scanner_clear_pending_attrs(s);
             if (!parse_package_decl(s, reg)) return 0;
         } else if (match_keyword(s, "use")) {
-            scanner_clear_pending_attrs(s);
-            if (!parse_use_decl(s, reg)) return 0;
+            if (!parse_use_decl(s, reg, interface_name)) return 0;
         } else if (match_keyword(s, "world")) {
             char world_name[MAX_NAME];
 
-            scanner_clear_pending_attrs(s);
             if (!scan_ident(s, world_name, MAX_NAME)) return 0;
             skip_whitespace(s);
             if (match_char(s, ';')) {
@@ -1566,10 +1679,8 @@ static int parse_scope_items(Scanner *s,
             }
             skip_braced_block(s);
         } else if (match_keyword(s, "interface")) {
-            scanner_clear_pending_attrs(s);
             if (!parse_interface_decl(s, reg)) return 0;
         } else if (match_keyword(s, "export") || match_keyword(s, "import")) {
-            scanner_clear_pending_attrs(s);
             while (!scanner_eof(s) && scanner_peek(s) != '{' && scanner_peek(s) != ';')
                 scanner_advance(s);
             if (match_char(s, ';')) {
@@ -1577,44 +1688,38 @@ static int parse_scope_items(Scanner *s,
             }
             skip_braced_block(s);
         } else if (match_keyword(s, "record")) {
-            scanner_clear_pending_attrs(s);
             if (reg->record_count >= MAX_TYPES) {
                 fprintf(stderr, "wit_codegen: too many records\n"); return 0;
             }
             if (!parse_record(s, &reg->records[reg->record_count])) return 0;
             reg->record_count++;
         } else if (match_keyword(s, "variant")) {
-            scanner_clear_pending_attrs(s);
             if (reg->variant_count >= MAX_TYPES) {
                 fprintf(stderr, "wit_codegen: too many variants\n"); return 0;
             }
             if (!parse_variant(s, &reg->variants[reg->variant_count])) return 0;
             reg->variant_count++;
         } else if (match_keyword(s, "enum")) {
-            scanner_clear_pending_attrs(s);
             if (reg->enum_count >= MAX_TYPES) {
                 fprintf(stderr, "wit_codegen: too many enums\n"); return 0;
             }
             if (!parse_enum(s, &reg->enums[reg->enum_count])) return 0;
             reg->enum_count++;
         } else if (match_keyword(s, "flags")) {
-            scanner_clear_pending_attrs(s);
             if (reg->flags_count >= MAX_TYPES) {
                 fprintf(stderr, "wit_codegen: too many flags\n"); return 0;
             }
             if (!parse_flags(s, &reg->flags[reg->flags_count])) return 0;
             reg->flags_count++;
         } else if (match_keyword(s, "type")) {
-            scanner_clear_pending_attrs(s);
             if (reg->alias_count >= MAX_TYPES) {
                 fprintf(stderr, "wit_codegen: too many aliases\n"); return 0;
             }
             if (!parse_alias(s, &reg->aliases[reg->alias_count])) return 0;
             reg->alias_count++;
         } else if (match_keyword(s, "resource")) {
-            if (!parse_resource_decl(s, reg)) return 0;
+            if (!parse_resource_decl(s, reg, interface_name)) return 0;
         } else {
-            scanner_clear_pending_attrs(s);
             scanner_advance(s);
         }
     }
@@ -1624,7 +1729,40 @@ static int parse_scope_items(Scanner *s,
 static int parse_wit(Scanner *s, WitRegistry *reg)
 {
     memset(reg, 0, sizeof(*reg));
-    return parse_scope_items(s, reg, PARSE_SCOPE_TOP, NULL);
+    return parse_scope_items(s, reg, PARSE_SCOPE_TOP, NULL, NULL);
+}
+
+static int scan_source_for_package_decl(const char *src,
+                                        int len,
+                                        char *out,
+                                        int n)
+{
+    Scanner s;
+
+    if (!src || len < 0 || !out || n <= 0) return 0;
+    out[0] = '\0';
+
+    scanner_init(&s, src, len);
+    while (!scanner_eof(&s)) {
+        skip_whitespace(&s);
+        if (scanner_eof(&s)) {
+            break;
+        }
+        if (match_keyword(&s, "package")) {
+            int i = 0;
+
+            skip_whitespace(&s);
+            while (!scanner_eof(&s) && scanner_peek(&s) != ';' && i < n - 1) {
+                out[i++] = scanner_advance(&s);
+            }
+            out[i] = '\0';
+            wit_trim(out);
+            return out[0] != '\0';
+        }
+        scanner_advance(&s);
+    }
+
+    return 0;
 }
 
 static const WitAlias *find_alias(const WitRegistry *reg, const char *name);
@@ -1653,10 +1791,6 @@ static void lowered_command_name(const char *group_name,
                                  char *out,
                                  int n)
 {
-    if (strcmp(group_name, "types") == 0 || strcmp(group_name, "command") == 0) {
-        snprintf(out, n, "command");
-        return;
-    }
     snprintf(out, n, "%s-command", group_name);
 }
 
@@ -1664,10 +1798,6 @@ static void lowered_reply_name(const char *group_name,
                                char *out,
                                int n)
 {
-    if (strcmp(group_name, "types") == 0 || strcmp(group_name, "command") == 0) {
-        snprintf(out, n, "reply");
-        return;
-    }
     snprintf(out, n, "%s-reply", group_name);
 }
 
@@ -1771,18 +1901,18 @@ static int can_passthrough_record_payload(const WitRegistry *reg,
     return type_expr->kind == TYPE_IDENT && find_record(reg, type_expr->ident);
 }
 
-static const char *wit_func_lower_group(const WitRegistry *reg, const WitFunc *func)
+static const char *wit_func_surface_name(const WitRegistry *reg, const WitFunc *func)
 {
     const WitResource *resource;
 
     if (!func) return "";
-    if (func->lower_group[0] != '\0') {
-        return func->lower_group;
+    if (func->interface_name[0] != '\0') {
+        return func->interface_name;
     }
     if (func->owner_kind == WIT_OWNER_RESOURCE) {
         resource = find_resource(reg, func->owner_name);
-        if (resource && resource->lower_group[0] != '\0') {
-            return resource->lower_group;
+        if (resource && resource->interface_name[0] != '\0') {
+            return resource->interface_name;
         }
     }
     return func->owner_name;
@@ -1905,7 +2035,7 @@ static int lower_operation_group(WitRegistry *reg, const char *group_name)
         int needs_request_record = 0;
         int passthrough_record_payload = 0;
 
-        if (strcmp(wit_func_lower_group(reg, func), group_name) != 0) {
+        if (strcmp(wit_func_surface_name(reg, func), group_name) != 0) {
             continue;
         }
 
@@ -2028,8 +2158,8 @@ static int lower_operations(WitRegistry *reg)
         int seen = 0;
 
         for (int j = 0; j < i; j++) {
-            if (strcmp(wit_func_lower_group(reg, &reg->funcs[i]),
-                       wit_func_lower_group(reg, &reg->funcs[j])) == 0) {
+            if (strcmp(wit_func_surface_name(reg, &reg->funcs[i]),
+                       wit_func_surface_name(reg, &reg->funcs[j])) == 0) {
                 seen = 1;
                 break;
             }
@@ -2037,7 +2167,7 @@ static int lower_operations(WitRegistry *reg)
         if (seen) {
             continue;
         }
-        if (!lower_operation_group(reg, wit_func_lower_group(reg, &reg->funcs[i]))) {
+        if (!lower_operation_group(reg, wit_func_surface_name(reg, &reg->funcs[i]))) {
             return 0;
         }
     }
@@ -4200,19 +4330,12 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    FILE *f = fopen(wit_path, "rb");
-    if (!f) {
+    long fsize = 0;
+    char *src = read_text_file(wit_path, &fsize);
+    if (!src) {
         fprintf(stderr, "wit_codegen: cannot open %s\n", wit_path);
         return 1;
     }
-    fseek(f, 0, SEEK_END);
-    long fsize = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    char *src = malloc(fsize + 1);
-    if (!src) { fclose(f); return 1; }
-    fread(src, 1, fsize, f);
-    src[fsize] = '\0';
-    fclose(f);
 
     Scanner scanner;
     scanner_init(&scanner, src, (int)fsize);
@@ -4225,6 +4348,10 @@ int main(int argc, char **argv)
         return 1;
     }
     if (!lower_operations(&reg)) {
+        free(src);
+        return 1;
+    }
+    if (!infer_package_decl_from_siblings(&reg, wit_path)) {
         free(src);
         return 1;
     }

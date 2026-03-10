@@ -1,6 +1,6 @@
 package lambkin:host-menu@0.1.0;
 
-interface types {
+interface host-menu {
   flags modifiers {
     shift,
     ctrl,
@@ -26,5 +26,5 @@ interface types {
 }
 
 world host-menu {
-  export types;
+  export host-menu;
 }
