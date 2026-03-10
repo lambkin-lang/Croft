@@ -45,19 +45,12 @@ interface types {
   type node-result = result<node, string>;
   type status = result<_, string>;
 
-  variant command {
-    open(open),
-    close(close),
-    create-node(create-node),
-    add-child(add-child),
-    update-frame(update-frame),
-    destroy-node(destroy-node),
-  }
-
-  variant reply {
-    node(node-result),
-    status(status),
-  }
+  open: func(request: open) -> status;
+  close: func(request: close) -> status;
+  create-node: func(request: create-node) -> node-result;
+  add-child: func(request: add-child) -> status;
+  update-frame: func(request: update-frame) -> status;
+  destroy-node: func(request: destroy-node) -> status;
 }
 
 world host-a11y {

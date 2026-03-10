@@ -25,10 +25,7 @@ static int croft_wit_host_gpu2d_valid(const croft_wit_host_gpu2d_runtime* runtim
 
 static void croft_wit_host_gpu2d_reply_zero(SapWitHostGpu2dReply* reply)
 {
-    if (!reply) {
-        return;
-    }
-    memset(reply, 0, sizeof(*reply));
+    sap_wit_zero_host_gpu2d_reply(reply);
 }
 
 static void croft_wit_set_string_view(const char* text,

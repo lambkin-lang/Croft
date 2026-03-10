@@ -3,24 +3,11 @@ package lambkin:host-clipboard@0.1.0;
 interface types {
   type utf8 = list<u8>;
 
-  record get-text {}
-
-  record set-text {
-    utf8: utf8,
-  }
-
   type status = result<_, string>;
   type text-result = result<option<string>, string>;
 
-  variant command {
-    get-text(get-text),
-    set-text(set-text),
-  }
-
-  variant reply {
-    status(status),
-    text(text-result),
-  }
+  get-text: func() -> text-result;
+  set-text: func(utf8: utf8) -> status;
 }
 
 world host-clipboard {

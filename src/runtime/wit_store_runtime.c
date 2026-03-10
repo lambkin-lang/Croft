@@ -65,10 +65,7 @@ static const char* croft_wit_store_error_from_rc(int32_t rc)
 
 static void croft_wit_store_reply_zero(SapWitCommonCoreStoreReply* reply)
 {
-    if (!reply) {
-        return;
-    }
-    memset(reply, 0, sizeof(*reply));
+    sap_wit_zero_common_core_store_reply(reply);
 }
 
 static void croft_wit_store_reply_db_ok(SapWitCommonCoreStoreReply* reply, SapWitCommonCoreDbResource handle)
@@ -148,18 +145,7 @@ static void croft_wit_store_reply_get_err(SapWitCommonCoreStoreReply* reply, con
 
 void croft_wit_store_reply_dispose(SapWitCommonCoreStoreReply* reply)
 {
-    if (!reply) {
-        return;
-    }
-
-    if (reply->case_tag == SAP_WIT_COMMON_CORE_STORE_REPLY_GET
-            && reply->val.get.is_v_ok
-            && reply->val.get.v_val.ok.has_v
-            && reply->val.get.v_val.ok.v_data) {
-        free((void*)reply->val.get.v_val.ok.v_data);
-    }
-
-    memset(reply, 0, sizeof(*reply));
+    sap_wit_dispose_common_core_store_reply(reply);
 }
 
 void croft_wit_store_runtime_config_default(croft_wit_store_runtime_config* config)

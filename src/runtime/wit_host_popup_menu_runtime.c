@@ -31,9 +31,7 @@ static void croft_wit_host_popup_menu_reset(croft_wit_host_popup_menu_runtime* r
 
 static void croft_wit_host_popup_menu_reply_zero(SapWitHostPopupMenuReply* reply)
 {
-    if (reply) {
-        memset(reply, 0, sizeof(*reply));
-    }
+    sap_wit_zero_host_popup_menu_reply(reply);
 }
 
 static void croft_wit_set_string_view(const char* text,

@@ -11,9 +11,7 @@ struct croft_wit_host_clipboard_runtime {
 
 static void croft_wit_host_clipboard_reply_zero(SapWitHostClipboardReply* reply)
 {
-    if (reply) {
-        memset(reply, 0, sizeof(*reply));
-    }
+    sap_wit_zero_host_clipboard_reply(reply);
 }
 
 static void croft_wit_set_string_view(const char* text,
@@ -87,17 +85,7 @@ void croft_wit_host_clipboard_runtime_destroy(croft_wit_host_clipboard_runtime* 
 
 void croft_wit_host_clipboard_reply_dispose(SapWitHostClipboardReply* reply)
 {
-    if (!reply) {
-        return;
-    }
-
-    if (reply->case_tag == SAP_WIT_HOST_CLIPBOARD_REPLY_TEXT
-            && reply->val.text.is_v_ok
-            && reply->val.text.v_val.ok.has_v) {
-        free((void*)reply->val.text.v_val.ok.v_data);
-    }
-
-    memset(reply, 0, sizeof(*reply));
+    sap_wit_dispose_host_clipboard_reply(reply);
 }
 
 int32_t croft_wit_host_clipboard_runtime_dispatch(croft_wit_host_clipboard_runtime* runtime,

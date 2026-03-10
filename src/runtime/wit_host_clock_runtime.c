@@ -11,10 +11,7 @@ struct croft_wit_host_clock_runtime {
 
 static void croft_wit_host_clock_reply_zero(SapWitHostClockReply* reply)
 {
-    if (!reply) {
-        return;
-    }
-    memset(reply, 0, sizeof(*reply));
+    sap_wit_zero_host_clock_reply(reply);
 }
 
 static void croft_wit_host_clock_reply_now_ok(SapWitHostClockReply* reply, uint64_t now_ms)

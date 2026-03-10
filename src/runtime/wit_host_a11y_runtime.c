@@ -20,9 +20,7 @@ struct croft_wit_host_a11y_runtime {
 
 static void croft_wit_host_a11y_reply_zero(SapWitHostA11yReply* reply)
 {
-    if (reply) {
-        memset(reply, 0, sizeof(*reply));
-    }
+    sap_wit_zero_host_a11y_reply(reply);
 }
 
 static void croft_wit_set_string_view(const char* text,

@@ -69,10 +69,7 @@ static const char* croft_wit_text_input_error_from_rc(int32_t rc)
 
 static void croft_wit_text_reply_zero(SapWitCommonCoreTextReply* reply)
 {
-    if (!reply) {
-        return;
-    }
-    memset(reply, 0, sizeof(*reply));
+    sap_wit_zero_common_core_text_reply(reply);
 }
 
 static void croft_wit_text_reply_text_ok(SapWitCommonCoreTextReply* reply, SapWitCommonCoreTextResource handle)
@@ -129,17 +126,7 @@ static void croft_wit_text_reply_export_err(SapWitCommonCoreTextReply* reply, co
 
 void croft_wit_text_reply_dispose(SapWitCommonCoreTextReply* reply)
 {
-    if (!reply) {
-        return;
-    }
-
-    if (reply->case_tag == SAP_WIT_COMMON_CORE_TEXT_REPLY_EXPORT
-            && reply->val.export.is_v_ok
-            && reply->val.export.v_val.ok.v_data) {
-        free((void*)reply->val.export.v_val.ok.v_data);
-    }
-
-    memset(reply, 0, sizeof(*reply));
+    sap_wit_dispose_common_core_text_reply(reply);
 }
 
 void croft_wit_text_runtime_config_default(croft_wit_text_runtime_config* config)

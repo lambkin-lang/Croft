@@ -1,34 +1,6 @@
 package lambkin:host-window@0.1.0;
 
 interface types {
-  resource window;
-
-  record window-open {
-    width: u32,
-    height: u32,
-    title: list<u8>,
-  }
-
-  record window-close {
-    window: window,
-  }
-
-  record window-poll {
-    window: window,
-  }
-
-  record window-next-event {
-    window: window,
-  }
-
-  record window-should-close {
-    window: window,
-  }
-
-  record window-framebuffer-size {
-    window: window,
-  }
-
   record window-size {
     width: u32,
     height: u32,
@@ -73,27 +45,16 @@ interface types {
     zoom(window-zoom-event),
   }
 
-  type window-op-result = result<window, string>;
-  type window-status = result<_, string>;
   type window-event-result = result<option<window-event>, string>;
-  type window-bool-result = result<bool, string>;
   type window-size-result = result<window-size, string>;
 
-  variant window-command {
-    open(window-open),
-    close(window-close),
-    poll(window-poll),
-    next-event(window-next-event),
-    should-close(window-should-close),
-    framebuffer-size(window-framebuffer-size),
-  }
-
-  variant window-reply {
-    window(window-op-result),
-    status(window-status),
-    event(window-event-result),
-    should-close(window-bool-result),
-    size(window-size-result),
+  resource window {
+    open: static func(width: u32, height: u32, title: list<u8>) -> result<window, string>;
+    close: func() -> result<_, string>;
+    poll: func() -> result<_, string>;
+    next-event: func() -> window-event-result;
+    should-close: func() -> result<bool, string>;
+    framebuffer-size: func() -> window-size-result;
   }
 }
 

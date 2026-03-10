@@ -49,10 +49,7 @@ static const char* croft_wit_host_fs_error_from_rc(int32_t rc)
 
 static void croft_wit_host_fs_reply_zero(SapWitHostFsReply* reply)
 {
-    if (!reply) {
-        return;
-    }
-    memset(reply, 0, sizeof(*reply));
+    sap_wit_zero_host_fs_reply(reply);
 }
 
 static void croft_wit_host_fs_reply_file_ok(SapWitHostFsReply* reply, SapWitHostFsFileResource handle)
@@ -107,17 +104,7 @@ static void croft_wit_host_fs_reply_read_err(SapWitHostFsReply* reply, const cha
 
 void croft_wit_host_fs_reply_dispose(SapWitHostFsReply* reply)
 {
-    if (!reply) {
-        return;
-    }
-
-    if (reply->case_tag == SAP_WIT_HOST_FS_REPLY_READ
-            && reply->val.read.is_v_ok
-            && reply->val.read.v_val.ok.v_data) {
-        free((void*)reply->val.read.v_val.ok.v_data);
-    }
-
-    memset(reply, 0, sizeof(*reply));
+    sap_wit_dispose_host_fs_reply(reply);
 }
 
 static int32_t croft_wit_host_fs_slots_reserve(croft_wit_host_fs_runtime* runtime, size_t needed)

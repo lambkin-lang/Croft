@@ -80,29 +80,20 @@ interface types {
   type capabilities-result = result<capabilities, string>;
   type measure-result = result<f32, string>;
 
-  variant command {
-    capabilities(capabilities-query),
-    open(open),
-    drop(surface-op),
-    begin-frame(begin-frame),
-    clear(clear),
-    draw-rect(draw-rect),
-    draw-text(draw-text),
-    measure-text(measure-text),
-    save(surface-op),
-    restore(surface-op),
-    translate(translate),
-    scale(scale),
-    clip-rect(clip-rect),
-    end-frame(surface-op),
-  }
-
-  variant reply {
-    capabilities(capabilities-result),
-    surface(surface-result),
-    status(status),
-    measure(measure-result),
-  }
+  capabilities: func(query: capabilities-query) -> capabilities-result;
+  open: func(request: open) -> surface-result;
+  drop: func(op: surface-op) -> status;
+  begin-frame: func(request: begin-frame) -> status;
+  clear: func(request: clear) -> status;
+  draw-rect: func(request: draw-rect) -> status;
+  draw-text: func(request: draw-text) -> status;
+  measure-text: func(request: measure-text) -> measure-result;
+  save: func(op: surface-op) -> status;
+  restore: func(op: surface-op) -> status;
+  translate: func(request: translate) -> status;
+  scale: func(request: scale) -> status;
+  clip-rect: func(request: clip-rect) -> status;
+  end-frame: func(op: surface-op) -> status;
 }
 
 world host-gpu2d {

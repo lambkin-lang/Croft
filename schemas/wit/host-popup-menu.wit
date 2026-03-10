@@ -1,8 +1,6 @@
 package lambkin:host-popup-menu@0.1.0;
 
 interface types {
-  record begin-popup {}
-
   record show-at {
     x-milli: s32,
     y-milli: s32,
@@ -18,16 +16,9 @@ interface types {
   type status = result<_, string>;
   type action-result = result<option<s32>, string>;
 
-  variant command {
-    begin-popup(begin-popup),
-    add-item(popup-item),
-    show-at(show-at),
-  }
-
-  variant reply {
-    status(status),
-    action(action-result),
-  }
+  begin-popup: func() -> status;
+  add-item: func(item: popup-item) -> status;
+  show-at: func(at: show-at) -> action-result;
 }
 
 world host-popup-menu {

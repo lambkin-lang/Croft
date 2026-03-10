@@ -53,10 +53,7 @@ static const char* croft_wit_mailbox_error_from_rc(int32_t rc)
 
 static void croft_wit_mailbox_reply_zero(SapWitCommonCoreMailboxReply* reply)
 {
-    if (!reply) {
-        return;
-    }
-    memset(reply, 0, sizeof(*reply));
+    sap_wit_zero_common_core_mailbox_reply(reply);
 }
 
 static void croft_wit_mailbox_reply_mailbox_ok(SapWitCommonCoreMailboxReply* reply, SapWitCommonCoreMailboxResource handle)
@@ -124,18 +121,7 @@ static void croft_wit_mailbox_reply_recv_err(SapWitCommonCoreMailboxReply* reply
 
 void croft_wit_mailbox_reply_dispose(SapWitCommonCoreMailboxReply* reply)
 {
-    if (!reply) {
-        return;
-    }
-
-    if (reply->case_tag == SAP_WIT_COMMON_CORE_MAILBOX_REPLY_RECV
-            && reply->val.recv.is_v_ok
-            && reply->val.recv.v_val.ok.has_v
-            && reply->val.recv.v_val.ok.v_data) {
-        free((void*)reply->val.recv.v_val.ok.v_data);
-    }
-
-    memset(reply, 0, sizeof(*reply));
+    sap_wit_dispose_common_core_mailbox_reply(reply);
 }
 
 static void croft_wit_mailbox_slot_clear(croft_wit_mailbox_slot* slot)

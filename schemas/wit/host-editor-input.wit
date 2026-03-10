@@ -26,8 +26,6 @@ interface types {
     action-id: s32,
   }
 
-  record next-action {}
-
   record motion {
     flags: motion-flags,
   }
@@ -63,17 +61,10 @@ interface types {
   type status = result<_, string>;
   type action-result = result<option<editor-action>, string>;
 
-  variant command {
-    window-key(key-event),
-    window-char(char-event),
-    menu-action(menu-action),
-    next-action(next-action),
-  }
-
-  variant reply {
-    status(status),
-    action(action-result),
-  }
+  window-key: func(event: key-event) -> status;
+  window-char: func(event: char-event) -> status;
+  menu-action: func(action: menu-action) -> status;
+  next-action: func() -> action-result;
 }
 
 world host-editor-input {

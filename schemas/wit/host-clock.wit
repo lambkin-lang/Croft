@@ -1,18 +1,9 @@
 package lambkin:host-clock@0.1.0;
 
 interface types {
-  record clock-monotonic-now {
-  }
-
   type clock-now-result = result<u64, string>;
 
-  variant clock-command {
-    monotonic-now(clock-monotonic-now),
-  }
-
-  variant clock-reply {
-    now(clock-now-result),
-  }
+  monotonic-now: func() -> clock-now-result;
 }
 
 world host-clock {

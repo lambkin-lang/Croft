@@ -23,17 +23,9 @@ interface types {
   type fs-status = result<_, string>;
   type fs-file-read-result = result<list<u8>, string>;
 
-  variant fs-command {
-    open(fs-file-open),
-    close(fs-file-close),
-    read-all(fs-file-read-all),
-  }
-
-  variant fs-reply {
-    file(fs-file-op-result),
-    status(fs-status),
-    read(fs-file-read-result),
-  }
+  open: func(request: fs-file-open) -> fs-file-op-result;
+  close: func(request: fs-file-close) -> fs-status;
+  read-all: func(request: fs-file-read-all) -> fs-file-read-result;
 }
 
 world host-fs {

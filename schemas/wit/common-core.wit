@@ -73,37 +73,13 @@ interface types {
     get(kv-get-result),
   }
 
-  record mailbox-open {
-    max-messages: u32,
-  }
-
-  record mailbox-drop {
-    mailbox: mailbox,
-  }
-
-  record mailbox-send {
-    mailbox: mailbox,
-    payload: bytes,
-  }
-
-  record mailbox-recv {
-    mailbox: mailbox,
-  }
-
-  type mailbox-op-result = result<mailbox, string>;
   type mailbox-recv-result = result<option<bytes>, string>;
 
-  variant mailbox-command {
-    open(mailbox-open),
-    drop(mailbox-drop),
-    send(mailbox-send),
-    recv(mailbox-recv),
-  }
-
-  variant mailbox-reply {
-    mailbox(mailbox-op-result),
-    status(status),
-    recv(mailbox-recv-result),
+  resource mailbox {
+    open: static func(max-messages: u32) -> result<mailbox, string>;
+    send: func(payload: bytes) -> status;
+    recv: func() -> mailbox-recv-result;
+    drop: func() -> status;
   }
 }
 

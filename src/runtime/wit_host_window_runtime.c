@@ -21,10 +21,7 @@ static croft_wit_host_window_runtime* g_window_runtime = NULL;
 
 static void croft_wit_host_window_reply_zero(SapWitHostWindowReply* reply)
 {
-    if (!reply) {
-        return;
-    }
-    memset(reply, 0, sizeof(*reply));
+    sap_wit_zero_host_window_reply(reply);
 }
 
 static void croft_wit_set_string_view(const char* text,

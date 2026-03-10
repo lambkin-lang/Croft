@@ -43,9 +43,7 @@ struct croft_wit_host_editor_input_runtime {
 
 static void croft_wit_host_editor_input_reply_zero(SapWitHostEditorInputReply* reply)
 {
-    if (reply) {
-        memset(reply, 0, sizeof(*reply));
-    }
+    sap_wit_zero_host_editor_input_reply(reply);
 }
 
 static void croft_wit_set_string_view(const char* text,

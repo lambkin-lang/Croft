@@ -8,12 +8,6 @@ interface types {
     cmd,
   }
 
-  record begin-update {}
-
-  record commit-update {}
-
-  record next-action {}
-
   record menu-item {
     action-id: s32,
     parent-action-id: s32,
@@ -25,17 +19,10 @@ interface types {
   type status = result<_, string>;
   type action-result = result<option<s32>, string>;
 
-  variant command {
-    begin-update(begin-update),
-    add-item(menu-item),
-    commit-update(commit-update),
-    next-action(next-action),
-  }
-
-  variant reply {
-    status(status),
-    action(action-result),
-  }
+  begin-update: func() -> status;
+  add-item: func(item: menu-item) -> status;
+  commit-update: func() -> status;
+  next-action: func() -> action-result;
 }
 
 world host-menu {
