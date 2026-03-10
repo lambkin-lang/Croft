@@ -5,57 +5,20 @@ interface types {
   type utf8 = list<u8>;
   type offset = u32;
 
-  resource text;
+  resource text {
+    open: static func(initial: utf8) -> result<text, string>;
+    clone: func() -> result<text, string>;
+    insert: func(offset: offset, utf8: utf8) -> result<_, string>;
+    delete: func(start: offset, end: offset) -> result<_, string>;
+    export: func() -> result<utf8, string>;
+    drop: func() -> result<_, string>;
+  }
+
   resource db;
   resource txn;
   resource mailbox;
 
-  record text-open {
-    initial: utf8,
-  }
-
-  record text-clone {
-    source: text,
-  }
-
-  record text-insert {
-    text: text,
-    offset: offset,
-    utf8: utf8,
-  }
-
-  record text-delete {
-    text: text,
-    start: offset,
-    end: offset,
-  }
-
-  record text-export {
-    text: text,
-  }
-
-  record text-drop {
-    text: text,
-  }
-
-  type text-op-result = result<text, string>;
   type status = result<_, string>;
-  type text-export-result = result<utf8, string>;
-
-  variant text-command {
-    open(text-open),
-    clone(text-clone),
-    insert(text-insert),
-    delete(text-delete),
-    export(text-export),
-    drop(text-drop),
-  }
-
-  variant text-reply {
-    text(text-op-result),
-    status(status),
-    export(text-export-result),
-  }
 
   record db-open {
     page-size: u32,
