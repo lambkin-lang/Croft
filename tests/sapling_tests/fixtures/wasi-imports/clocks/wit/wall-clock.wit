@@ -5,4 +5,7 @@ interface wall-clock {
     seconds: u64,
     nanoseconds: u32,
   }
+
+  now: func() -> datetime;
+  resolution: func() -> datetime;
 }

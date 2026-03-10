@@ -1,5 +1,7 @@
 #include "tests/generated/world_inline_command.h"
+#include "croft/wit_world_runtime.h"
 
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -37,39 +39,6 @@ static int expect_str(const char *label, const char *actual, const char *expecte
             expected ? expected : "<null>",
             actual ? actual : "<null>");
     return 0;
-}
-
-static const SapWitInterfaceDescriptor *find_interface_desc(const char *name)
-{
-    for (uint32_t i = 0; i < sap_wit_inline_world_interfaces_count; i++) {
-        if (strcmp(sap_wit_inline_world_interfaces[i].interface_name, name) == 0) {
-            return &sap_wit_inline_world_interfaces[i];
-        }
-    }
-    return NULL;
-}
-
-static const SapWitWorldDescriptor *find_world_desc(const char *name)
-{
-    for (uint32_t i = 0; i < sap_wit_inline_world_worlds_count; i++) {
-        if (strcmp(sap_wit_inline_world_worlds[i].world_name, name) == 0) {
-            return &sap_wit_inline_world_worlds[i];
-        }
-    }
-    return NULL;
-}
-
-static const SapWitWorldBindingDescriptor *find_world_binding_desc(const char *item_name,
-                                                                   SapWitWorldItemKind kind)
-{
-    for (uint32_t i = 0; i < sap_wit_inline_world_world_bindings_count; i++) {
-        if (sap_wit_inline_world_world_bindings[i].kind == kind
-                && strcmp(sap_wit_inline_world_world_bindings[i].world_name, "command") == 0
-                && strcmp(sap_wit_inline_world_world_bindings[i].item_name, item_name) == 0) {
-            return &sap_wit_inline_world_world_bindings[i];
-        }
-    }
-    return NULL;
 }
 
 static int32_t env_get_environment(void *ctx, SapWitInlineWorldEnvironmentReply *reply_out)
@@ -161,6 +130,9 @@ int main(void)
     const SapWitWorldBindingDescriptor *environment_binding = NULL;
     const SapWitWorldBindingDescriptor *run_binding = NULL;
     const SapWitWorldBindingDescriptor *status_check_binding = NULL;
+    const SapWitWorldEndpointDescriptor *environment_endpoint = NULL;
+    const SapWitWorldEndpointDescriptor *run_endpoint = NULL;
+    const SapWitWorldEndpointDescriptor *status_check_endpoint = NULL;
     SapWitInlineWorldEnvironmentCommand environment_command = {0};
     SapWitInlineWorldRunCommand run_command = {0};
     SapWitInlineWorldStatusCheckCommand status_check_command = {0};
@@ -196,15 +168,57 @@ int main(void)
     ok &= expect_u32("interface descriptor count", sap_wit_inline_world_interfaces_count, 4u);
     ok &= expect_u32("world descriptor count", sap_wit_inline_world_worlds_count, 1u);
     ok &= expect_u32("world binding descriptor count", sap_wit_inline_world_world_bindings_count, 3u);
+    ok &= expect_u32("command import endpoint count",
+                     sap_wit_inline_world_command_import_endpoints_count,
+                     1u);
+    ok &= expect_u32("command export endpoint count",
+                     sap_wit_inline_world_command_export_endpoints_count,
+                     2u);
 
-    shared = find_interface_desc("shared");
-    environment = find_interface_desc("environment");
-    run = find_interface_desc("run");
-    status_check = find_interface_desc("status-check");
-    command_world = find_world_desc("command");
-    environment_binding = find_world_binding_desc("environment", SAP_WIT_WORLD_ITEM_IMPORT);
-    run_binding = find_world_binding_desc("run", SAP_WIT_WORLD_ITEM_EXPORT);
-    status_check_binding = find_world_binding_desc("status-check", SAP_WIT_WORLD_ITEM_EXPORT);
+    shared = sap_wit_find_interface_descriptor(sap_wit_inline_world_interfaces,
+                                               sap_wit_inline_world_interfaces_count,
+                                               "shared");
+    environment = sap_wit_find_interface_descriptor(sap_wit_inline_world_interfaces,
+                                                    sap_wit_inline_world_interfaces_count,
+                                                    "environment");
+    run = sap_wit_find_interface_descriptor(sap_wit_inline_world_interfaces,
+                                            sap_wit_inline_world_interfaces_count,
+                                            "run");
+    status_check = sap_wit_find_interface_descriptor(sap_wit_inline_world_interfaces,
+                                                     sap_wit_inline_world_interfaces_count,
+                                                     "status-check");
+    command_world = sap_wit_find_world_descriptor(sap_wit_inline_world_worlds,
+                                                  sap_wit_inline_world_worlds_count,
+                                                  "command");
+    environment_binding = sap_wit_find_world_binding_descriptor(
+        sap_wit_inline_world_world_bindings,
+        sap_wit_inline_world_world_bindings_count,
+        "command",
+        "environment",
+        SAP_WIT_WORLD_ITEM_IMPORT);
+    run_binding = sap_wit_find_world_binding_descriptor(sap_wit_inline_world_world_bindings,
+                                                        sap_wit_inline_world_world_bindings_count,
+                                                        "command",
+                                                        "run",
+                                                        SAP_WIT_WORLD_ITEM_EXPORT);
+    status_check_binding = sap_wit_find_world_binding_descriptor(
+        sap_wit_inline_world_world_bindings,
+        sap_wit_inline_world_world_bindings_count,
+        "command",
+        "status-check",
+        SAP_WIT_WORLD_ITEM_EXPORT);
+    environment_endpoint =
+        sap_wit_find_world_endpoint_descriptor(sap_wit_inline_world_command_import_endpoints,
+                                              sap_wit_inline_world_command_import_endpoints_count,
+                                              "environment");
+    run_endpoint =
+        sap_wit_find_world_endpoint_descriptor(sap_wit_inline_world_command_export_endpoints,
+                                              sap_wit_inline_world_command_export_endpoints_count,
+                                              "run");
+    status_check_endpoint =
+        sap_wit_find_world_endpoint_descriptor(sap_wit_inline_world_command_export_endpoints,
+                                              sap_wit_inline_world_command_export_endpoints_count,
+                                              "status-check");
 
     ok &= shared != NULL;
     ok &= environment != NULL;
@@ -214,6 +228,9 @@ int main(void)
     ok &= environment_binding != NULL;
     ok &= run_binding != NULL;
     ok &= status_check_binding != NULL;
+    ok &= environment_endpoint != NULL;
+    ok &= run_endpoint != NULL;
+    ok &= status_check_endpoint != NULL;
 
     if (shared) {
         ok &= expect_str("shared.origin_world_name", shared->origin_world_name, "");
@@ -255,6 +272,54 @@ int main(void)
         ok &= expect_str("status_check_binding.target_name", status_check_binding->target_name, "status-check");
         ok &= expect_str("status_check_binding.lowered_name", status_check_binding->lowered_name, "status-check");
     }
+    if (environment_endpoint) {
+        ok &= expect_u32("environment_endpoint.target_kind",
+                         environment_endpoint->target_kind,
+                         SAP_WIT_WORLD_TARGET_INTERFACE);
+        ok &= expect_str("environment_endpoint.bindings_c_type",
+                         environment_endpoint->bindings_c_type,
+                         "SapWitInlineWorldCommandWorldImports");
+        ok &= expect_str("environment_endpoint.ops_c_type",
+                         environment_endpoint->ops_c_type,
+                         "SapWitInlineWorldEnvironmentDispatchOps");
+        ok &= expect_u32("environment_endpoint.ctx_offset",
+                         (uint32_t)environment_endpoint->ctx_offset,
+                         (uint32_t)offsetof(SapWitInlineWorldCommandWorldImports, environment_ctx));
+        ok &= expect_u32("environment_endpoint.ops_offset",
+                         (uint32_t)environment_endpoint->ops_offset,
+                         (uint32_t)offsetof(SapWitInlineWorldCommandWorldImports, environment_ops));
+    }
+    if (run_endpoint) {
+        ok &= expect_u32("run_endpoint.target_kind",
+                         run_endpoint->target_kind,
+                         SAP_WIT_WORLD_TARGET_FUNCTION);
+        ok &= expect_str("run_endpoint.bindings_c_type",
+                         run_endpoint->bindings_c_type,
+                         "SapWitInlineWorldCommandWorldExports");
+        ok &= expect_str("run_endpoint.ops_c_type",
+                         run_endpoint->ops_c_type,
+                         "SapWitInlineWorldRunDispatchOps");
+        ok &= expect_u32("run_endpoint.ctx_offset",
+                         (uint32_t)run_endpoint->ctx_offset,
+                         (uint32_t)offsetof(SapWitInlineWorldCommandWorldExports, run_ctx));
+        ok &= expect_u32("run_endpoint.ops_offset",
+                         (uint32_t)run_endpoint->ops_offset,
+                         (uint32_t)offsetof(SapWitInlineWorldCommandWorldExports, run_ops));
+    }
+    if (status_check_endpoint) {
+        ok &= expect_u32("status_check_endpoint.target_kind",
+                         status_check_endpoint->target_kind,
+                         SAP_WIT_WORLD_TARGET_INTERFACE);
+        ok &= expect_str("status_check_endpoint.ops_c_type",
+                         status_check_endpoint->ops_c_type,
+                         "SapWitInlineWorldStatusCheckDispatchOps");
+        ok &= expect_u32("status_check_endpoint.ctx_offset",
+                         (uint32_t)status_check_endpoint->ctx_offset,
+                         (uint32_t)offsetof(SapWitInlineWorldCommandWorldExports, status_check_ctx));
+        ok &= expect_u32("status_check_endpoint.ops_offset",
+                         (uint32_t)status_check_endpoint->ops_offset,
+                         (uint32_t)offsetof(SapWitInlineWorldCommandWorldExports, status_check_ops));
+    }
 
     {
         SapWitInlineWorldEnvironmentDispatchOps environment_ops = {
@@ -266,16 +331,39 @@ int main(void)
         SapWitInlineWorldStatusCheckDispatchOps status_check_ops = {
             .current = status_check_current,
         };
-        SapWitInlineWorldCommandWorldImports imports = {
-            .environment_ctx = &import_calls,
-            .environment_ops = &environment_ops,
-        };
-        SapWitInlineWorldCommandWorldExports exports = {
-            .run_ctx = &run_calls,
-            .run_ops = &run_ops,
-            .status_check_ctx = &status_check_calls,
-            .status_check_ops = &status_check_ops,
-        };
+        SapWitInlineWorldCommandWorldImports imports = {0};
+        SapWitInlineWorldCommandWorldExports exports = {0};
+
+        ok &= expect_u32("bind inline environment",
+                         (uint32_t)sap_wit_world_endpoint_bind(&imports,
+                                                               environment_endpoint,
+                                                               &import_calls,
+                                                               &environment_ops),
+                         0u);
+        ok &= expect_u32("bind inline run",
+                         (uint32_t)sap_wit_world_endpoint_bind(&exports,
+                                                               run_endpoint,
+                                                               &run_calls,
+                                                               &run_ops),
+                         0u);
+        ok &= expect_u32("bind inline status-check",
+                         (uint32_t)sap_wit_world_endpoint_bind(&exports,
+                                                               status_check_endpoint,
+                                                               &status_check_calls,
+                                                               &status_check_ops),
+                         0u);
+        ok &= expect_u32("inline environment ctx getter",
+                         (uint32_t)(sap_wit_world_endpoint_ctx(&imports, environment_endpoint)
+                                        == &import_calls),
+                         1u);
+        ok &= expect_u32("inline run ctx getter",
+                         (uint32_t)(sap_wit_world_endpoint_ctx(&exports, run_endpoint)
+                                        == &run_calls),
+                         1u);
+        ok &= expect_u32("inline status-check ctx getter",
+                         (uint32_t)(sap_wit_world_endpoint_ctx(&exports, status_check_endpoint)
+                                        == &status_check_calls),
+                         1u);
 
         ok &= expect_u32("environment wrapper rc",
                          (uint32_t)sap_wit_world_inline_world_command_import_environment(&imports,
@@ -304,6 +392,35 @@ int main(void)
         ok &= expect_u32("status-check reply case",
                          status_check_reply.case_tag,
                          SAP_WIT_INLINE_WORLD_STATUS_CHECK_REPLY_STATUS);
+
+        import_calls = 0u;
+        run_calls = 0u;
+        status_check_calls = 0u;
+        memset(&environment_reply, 0, sizeof(environment_reply));
+        memset(&run_reply, 0, sizeof(run_reply));
+        memset(&status_check_reply, 0, sizeof(status_check_reply));
+
+        ok &= expect_u32("environment endpoint invoke rc",
+                         (uint32_t)sap_wit_world_endpoint_invoke(environment_endpoint,
+                                                                 &imports,
+                                                                 &environment_command,
+                                                                 &environment_reply),
+                         0u);
+        ok &= expect_u32("run endpoint invoke rc",
+                         (uint32_t)sap_wit_world_endpoint_invoke(run_endpoint,
+                                                                 &exports,
+                                                                 &run_command,
+                                                                 &run_reply),
+                         0u);
+        ok &= expect_u32("status-check endpoint invoke rc",
+                         (uint32_t)sap_wit_world_endpoint_invoke(status_check_endpoint,
+                                                                 &exports,
+                                                                 &status_check_command,
+                                                                 &status_check_reply),
+                         0u);
+        ok &= expect_u32("environment endpoint callback count", import_calls, 1u);
+        ok &= expect_u32("run endpoint callback count", run_calls, 1u);
+        ok &= expect_u32("status-check endpoint callback count", status_check_calls, 1u);
     }
 
     free(manifest);

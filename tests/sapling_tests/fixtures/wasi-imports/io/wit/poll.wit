@@ -1,5 +1,10 @@
 package wasi:io@0.2.9;
 
 interface poll {
-  resource pollable;
+  resource pollable {
+    ready: func() -> bool;
+    block: func();
+  }
+
+  poll: func(in: list<borrow<pollable>>) -> list<u32>;
 }

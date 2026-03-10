@@ -1,0 +1,326 @@
+#include "croft/wit_world_runtime.h"
+#include "generated/wit_wasi_cli_command.h"
+#include "generated/wit_wasi_clocks_world.h"
+#include "generated/wit_wasi_io_world.h"
+#include "generated/wit_wasi_random_world.h"
+
+#include <stdio.h>
+
+static int expect_u32(const char *label, uint32_t actual, uint32_t expected)
+{
+    if (actual == expected) {
+        return 1;
+    }
+    fprintf(stderr, "%s: expected %u, got %u\n", label, expected, actual);
+    return 0;
+}
+
+static int expect_ptr(const char *label, const void *actual, const void *expected)
+{
+    if (actual == expected) {
+        return 1;
+    }
+    fprintf(stderr, "%s: expected %p, got %p\n", label, expected, actual);
+    return 0;
+}
+
+static int expect_true(const char *label, int actual)
+{
+    if (actual) {
+        return 1;
+    }
+    fprintf(stderr, "%s: expected true\n", label);
+    return 0;
+}
+
+static int32_t random_get_random_u64(void *ctx, SapWitRandomReply *reply_out)
+{
+    uint32_t *calls = (uint32_t *)ctx;
+
+    if (calls) {
+        (*calls)++;
+    }
+    sap_wit_zero_random_reply(reply_out);
+    reply_out->case_tag = SAP_WIT_RANDOM_REPLY_GET_RANDOM_U64;
+    reply_out->val.get_random_u64 = 77u;
+    return 0;
+}
+
+static int32_t monotonic_now(void *ctx, SapWitClocksMonotonicClockReply *reply_out)
+{
+    uint32_t *calls = (uint32_t *)ctx;
+
+    if (calls) {
+        (*calls)++;
+    }
+    sap_wit_zero_clocks_monotonic_clock_reply(reply_out);
+    reply_out->case_tag = SAP_WIT_CLOCKS_MONOTONIC_CLOCK_REPLY_NOW;
+    reply_out->val.now = 123u;
+    return 0;
+}
+
+static int32_t cli_get_arguments(void *ctx, SapWitCliEnvironmentReply *reply_out)
+{
+    uint32_t *calls = (uint32_t *)ctx;
+
+    if (calls) {
+        (*calls)++;
+    }
+    sap_wit_zero_cli_environment_reply(reply_out);
+    reply_out->case_tag = SAP_WIT_CLI_ENVIRONMENT_REPLY_GET_ARGUMENTS;
+    reply_out->val.get_arguments.data = (const uint8_t *)"";
+    reply_out->val.get_arguments.len = 0u;
+    reply_out->val.get_arguments.byte_len = 0u;
+    return 0;
+}
+
+static int32_t cli_run(void *ctx, SapWitCliRunReply *reply_out)
+{
+    uint32_t *calls = (uint32_t *)ctx;
+
+    if (calls) {
+        (*calls)++;
+    }
+    sap_wit_zero_cli_run_reply(reply_out);
+    reply_out->case_tag = SAP_WIT_CLI_RUN_REPLY_STATUS;
+    reply_out->val.status.is_v_ok = 1u;
+    return 0;
+}
+
+int main(void)
+{
+    const SapWitWorldDescriptor *random_world = NULL;
+    const SapWitWorldBindingDescriptor *random_binding = NULL;
+    const SapWitWorldEndpointDescriptor *random_endpoint = NULL;
+    const SapWitWorldDescriptor *clocks_world = NULL;
+    const SapWitWorldBindingDescriptor *clocks_binding = NULL;
+    const SapWitWorldEndpointDescriptor *clocks_endpoint = NULL;
+    const SapWitWorldDescriptor *io_world = NULL;
+    const SapWitWorldBindingDescriptor *io_binding = NULL;
+    const SapWitWorldEndpointDescriptor *io_endpoint = NULL;
+    const SapWitWorldDescriptor *cli_command_world = NULL;
+    const SapWitWorldDescriptor *cli_imports_world = NULL;
+    const SapWitWorldBindingDescriptor *cli_import_binding = NULL;
+    const SapWitWorldBindingDescriptor *cli_export_binding = NULL;
+    const SapWitWorldEndpointDescriptor *cli_environment_endpoint = NULL;
+    const SapWitWorldEndpointDescriptor *cli_run_endpoint = NULL;
+    SapWitRandomImportsWorldImports random_imports = {0};
+    SapWitClocksImportsWorldImports clocks_imports = {0};
+    SapWitCliCommandWorldImports cli_imports = {0};
+    SapWitCliCommandWorldExports cli_exports = {0};
+    SapWitRandomDispatchOps random_ops = {
+        .get_random_u64 = random_get_random_u64,
+    };
+    SapWitClocksMonotonicClockDispatchOps monotonic_ops = {
+        .now = monotonic_now,
+    };
+    SapWitCliEnvironmentDispatchOps cli_environment_ops = {
+        .get_arguments = cli_get_arguments,
+    };
+    SapWitCliRunDispatchOps cli_run_ops = {
+        .run = cli_run,
+    };
+    SapWitRandomCommand random_command = {0};
+    SapWitRandomReply random_reply = {0};
+    SapWitClocksMonotonicClockCommand clocks_command = {0};
+    SapWitClocksMonotonicClockReply clocks_reply = {0};
+    SapWitCliEnvironmentCommand cli_environment_command = {0};
+    SapWitCliEnvironmentReply cli_environment_reply = {0};
+    SapWitCliRunCommand cli_run_command = {0};
+    SapWitCliRunReply cli_run_reply = {0};
+    uint32_t random_calls = 0u;
+    uint32_t clocks_calls = 0u;
+    uint32_t cli_environment_calls = 0u;
+    uint32_t cli_run_calls = 0u;
+    int ok = 1;
+
+    ok &= expect_u32("random worlds", sap_wit_random_worlds_count, 1u);
+    ok &= expect_u32("random world bindings", sap_wit_random_world_bindings_count, 3u);
+    ok &= expect_u32("random import endpoints", sap_wit_random_imports_import_endpoints_count, 3u);
+
+    ok &= expect_u32("clocks worlds", sap_wit_clocks_worlds_count, 1u);
+    ok &= expect_u32("clocks world bindings", sap_wit_clocks_world_bindings_count, 3u);
+    ok &= expect_u32("clocks import endpoints", sap_wit_clocks_imports_import_endpoints_count, 3u);
+
+    ok &= expect_u32("io worlds", sap_wit_io_worlds_count, 1u);
+    ok &= expect_u32("io world bindings", sap_wit_io_world_bindings_count, 2u);
+    ok &= expect_u32("io import endpoints", sap_wit_io_imports_import_endpoints_count, 1u);
+
+    ok &= expect_u32("cli worlds", sap_wit_cli_worlds_count, 2u);
+    ok &= expect_u32("cli world bindings", sap_wit_cli_world_bindings_count, 3u);
+    ok &= expect_u32("cli import endpoints", sap_wit_cli_command_import_endpoints_count, 1u);
+    ok &= expect_u32("cli export endpoints", sap_wit_cli_command_export_endpoints_count, 1u);
+
+    random_world = sap_wit_find_world_descriptor(sap_wit_random_worlds,
+                                                 sap_wit_random_worlds_count,
+                                                 "imports");
+    random_binding = sap_wit_find_world_binding_descriptor(sap_wit_random_world_bindings,
+                                                           sap_wit_random_world_bindings_count,
+                                                           "imports",
+                                                           "random",
+                                                           SAP_WIT_WORLD_ITEM_IMPORT);
+    random_endpoint = sap_wit_find_world_endpoint_descriptor(sap_wit_random_imports_import_endpoints,
+                                                             sap_wit_random_imports_import_endpoints_count,
+                                                             "random");
+    clocks_world = sap_wit_find_world_descriptor(sap_wit_clocks_worlds,
+                                                 sap_wit_clocks_worlds_count,
+                                                 "imports");
+    clocks_binding = sap_wit_find_world_binding_descriptor(sap_wit_clocks_world_bindings,
+                                                           sap_wit_clocks_world_bindings_count,
+                                                           "imports",
+                                                           "monotonic-clock",
+                                                           SAP_WIT_WORLD_ITEM_IMPORT);
+    clocks_endpoint = sap_wit_find_world_endpoint_descriptor(sap_wit_clocks_imports_import_endpoints,
+                                                             sap_wit_clocks_imports_import_endpoints_count,
+                                                             "monotonic-clock");
+    io_world = sap_wit_find_world_descriptor(sap_wit_io_worlds,
+                                             sap_wit_io_worlds_count,
+                                             "imports");
+    io_binding = sap_wit_find_world_binding_descriptor(sap_wit_io_world_bindings,
+                                                       sap_wit_io_world_bindings_count,
+                                                       "imports",
+                                                       "poll",
+                                                       SAP_WIT_WORLD_ITEM_IMPORT);
+    io_endpoint = sap_wit_find_world_endpoint_descriptor(sap_wit_io_imports_import_endpoints,
+                                                         sap_wit_io_imports_import_endpoints_count,
+                                                         "poll");
+    cli_command_world = sap_wit_find_world_descriptor(sap_wit_cli_worlds,
+                                                      sap_wit_cli_worlds_count,
+                                                      "command");
+    cli_imports_world = sap_wit_find_world_descriptor(sap_wit_cli_worlds,
+                                                      sap_wit_cli_worlds_count,
+                                                      "imports");
+    cli_import_binding = sap_wit_find_world_binding_descriptor(sap_wit_cli_world_bindings,
+                                                               sap_wit_cli_world_bindings_count,
+                                                               "imports",
+                                                               "environment",
+                                                               SAP_WIT_WORLD_ITEM_IMPORT);
+    cli_export_binding = sap_wit_find_world_binding_descriptor(sap_wit_cli_world_bindings,
+                                                               sap_wit_cli_world_bindings_count,
+                                                               "command",
+                                                               "run",
+                                                               SAP_WIT_WORLD_ITEM_EXPORT);
+    cli_environment_endpoint =
+        sap_wit_find_world_endpoint_descriptor(sap_wit_cli_command_import_endpoints,
+                                              sap_wit_cli_command_import_endpoints_count,
+                                              "environment");
+    cli_run_endpoint =
+        sap_wit_find_world_endpoint_descriptor(sap_wit_cli_command_export_endpoints,
+                                              sap_wit_cli_command_export_endpoints_count,
+                                              "run");
+
+    ok &= expect_true("random world descriptor", random_world != NULL);
+    ok &= expect_true("random binding descriptor", random_binding != NULL);
+    ok &= expect_true("random endpoint descriptor", random_endpoint != NULL);
+    ok &= expect_true("clocks world descriptor", clocks_world != NULL);
+    ok &= expect_true("clocks binding descriptor", clocks_binding != NULL);
+    ok &= expect_true("clocks endpoint descriptor", clocks_endpoint != NULL);
+    ok &= expect_true("io world descriptor", io_world != NULL);
+    ok &= expect_true("io binding descriptor", io_binding != NULL);
+    ok &= expect_true("io endpoint descriptor", io_endpoint != NULL);
+    ok &= expect_true("cli command world descriptor", cli_command_world != NULL);
+    ok &= expect_true("cli imports world descriptor", cli_imports_world != NULL);
+    ok &= expect_true("cli import binding descriptor", cli_import_binding != NULL);
+    ok &= expect_true("cli export binding descriptor", cli_export_binding != NULL);
+    ok &= expect_true("cli environment endpoint", cli_environment_endpoint != NULL);
+    ok &= expect_true("cli run endpoint", cli_run_endpoint != NULL);
+
+    if (!random_world || !random_binding || !random_endpoint || !clocks_world || !clocks_binding
+            || !clocks_endpoint || !io_world || !io_binding || !io_endpoint || !cli_command_world
+            || !cli_imports_world || !cli_import_binding || !cli_export_binding
+            || !cli_environment_endpoint || !cli_run_endpoint) {
+        return 1;
+    }
+
+    random_command.case_tag = SAP_WIT_RANDOM_COMMAND_GET_RANDOM_U64;
+    clocks_command.case_tag = SAP_WIT_CLOCKS_MONOTONIC_CLOCK_COMMAND_NOW;
+    cli_environment_command.case_tag = SAP_WIT_CLI_ENVIRONMENT_COMMAND_GET_ARGUMENTS;
+    cli_run_command.case_tag = SAP_WIT_CLI_RUN_COMMAND_RUN;
+
+    ok &= expect_u32("bind random endpoint",
+                     (uint32_t)sap_wit_world_endpoint_bind(&random_imports,
+                                                           random_endpoint,
+                                                           &random_calls,
+                                                           &random_ops),
+                     0u);
+    ok &= expect_u32("bind clocks endpoint",
+                     (uint32_t)sap_wit_world_endpoint_bind(&clocks_imports,
+                                                           clocks_endpoint,
+                                                           &clocks_calls,
+                                                           &monotonic_ops),
+                     0u);
+    ok &= expect_u32("bind cli import endpoint",
+                     (uint32_t)sap_wit_world_endpoint_bind(&cli_imports,
+                                                           cli_environment_endpoint,
+                                                           &cli_environment_calls,
+                                                           &cli_environment_ops),
+                     0u);
+    ok &= expect_u32("bind cli export endpoint",
+                     (uint32_t)sap_wit_world_endpoint_bind(&cli_exports,
+                                                           cli_run_endpoint,
+                                                           &cli_run_calls,
+                                                           &cli_run_ops),
+                     0u);
+    ok &= expect_ptr("random endpoint ctx",
+                     sap_wit_world_endpoint_ctx(&random_imports, random_endpoint),
+                     &random_calls);
+    ok &= expect_ptr("random endpoint ops",
+                     sap_wit_world_endpoint_ops(&random_imports, random_endpoint),
+                     &random_ops);
+    ok &= expect_ptr("clocks endpoint ctx",
+                     sap_wit_world_endpoint_ctx(&clocks_imports, clocks_endpoint),
+                     &clocks_calls);
+    ok &= expect_ptr("cli import endpoint ctx",
+                     sap_wit_world_endpoint_ctx(&cli_imports, cli_environment_endpoint),
+                     &cli_environment_calls);
+    ok &= expect_ptr("cli export endpoint ctx",
+                     sap_wit_world_endpoint_ctx(&cli_exports, cli_run_endpoint),
+                     &cli_run_calls);
+
+    ok &= expect_u32("invoke random endpoint",
+                     (uint32_t)sap_wit_world_endpoint_invoke(random_endpoint,
+                                                             &random_imports,
+                                                             &random_command,
+                                                             &random_reply),
+                     0u);
+    ok &= expect_u32("invoke clocks endpoint",
+                     (uint32_t)sap_wit_world_endpoint_invoke(clocks_endpoint,
+                                                             &clocks_imports,
+                                                             &clocks_command,
+                                                             &clocks_reply),
+                     0u);
+    ok &= expect_u32("invoke cli import endpoint",
+                     (uint32_t)sap_wit_world_endpoint_invoke(cli_environment_endpoint,
+                                                             &cli_imports,
+                                                             &cli_environment_command,
+                                                             &cli_environment_reply),
+                     0u);
+    ok &= expect_u32("invoke cli export endpoint",
+                     (uint32_t)sap_wit_world_endpoint_invoke(cli_run_endpoint,
+                                                             &cli_exports,
+                                                             &cli_run_command,
+                                                             &cli_run_reply),
+                     0u);
+
+    ok &= expect_u32("random calls", random_calls, 1u);
+    ok &= expect_u32("clocks calls", clocks_calls, 1u);
+    ok &= expect_u32("cli environment calls", cli_environment_calls, 1u);
+    ok &= expect_u32("cli run calls", cli_run_calls, 1u);
+    ok &= expect_u32("random reply case",
+                     random_reply.case_tag,
+                     SAP_WIT_RANDOM_REPLY_GET_RANDOM_U64);
+    ok &= expect_u32("random reply value", (uint32_t)random_reply.val.get_random_u64, 77u);
+    ok &= expect_u32("clocks reply case",
+                     clocks_reply.case_tag,
+                     SAP_WIT_CLOCKS_MONOTONIC_CLOCK_REPLY_NOW);
+    ok &= expect_u32("clocks reply value", (uint32_t)clocks_reply.val.now, 123u);
+    ok &= expect_u32("cli environment reply case",
+                     cli_environment_reply.case_tag,
+                     SAP_WIT_CLI_ENVIRONMENT_REPLY_GET_ARGUMENTS);
+    ok &= expect_u32("cli run reply case",
+                     cli_run_reply.case_tag,
+                     SAP_WIT_CLI_RUN_REPLY_STATUS);
+    ok &= expect_u32("cli run reply ok", cli_run_reply.val.status.is_v_ok, 1u);
+
+    return ok ? 0 : 1;
+}

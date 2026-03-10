@@ -1,5 +1,7 @@
 #include "tests/generated/world_meta_command.h"
+#include "croft/wit_world_runtime.h"
 
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -37,40 +39,6 @@ static int expect_str(const char *label, const char *actual, const char *expecte
             expected ? expected : "<null>",
             actual ? actual : "<null>");
     return 0;
-}
-
-static const SapWitInterfaceDescriptor *find_interface_desc(const char *name)
-{
-    for (uint32_t i = 0; i < sap_wit_cli_interfaces_count; i++) {
-        if (strcmp(sap_wit_cli_interfaces[i].interface_name, name) == 0) {
-            return &sap_wit_cli_interfaces[i];
-        }
-    }
-    return NULL;
-}
-
-static const SapWitWorldDescriptor *find_world_desc(const char *name)
-{
-    for (uint32_t i = 0; i < sap_wit_cli_worlds_count; i++) {
-        if (strcmp(sap_wit_cli_worlds[i].world_name, name) == 0) {
-            return &sap_wit_cli_worlds[i];
-        }
-    }
-    return NULL;
-}
-
-static const SapWitWorldBindingDescriptor *find_world_binding_desc(const char *world_name,
-                                                                   const char *item_name,
-                                                                   SapWitWorldItemKind kind)
-{
-    for (uint32_t i = 0; i < sap_wit_cli_world_bindings_count; i++) {
-        if (sap_wit_cli_world_bindings[i].kind == kind
-                && strcmp(sap_wit_cli_world_bindings[i].world_name, world_name) == 0
-                && strcmp(sap_wit_cli_world_bindings[i].item_name, item_name) == 0) {
-            return &sap_wit_cli_world_bindings[i];
-        }
-    }
-    return NULL;
 }
 
 static int32_t world_import_get_environment(void *ctx, SapWitCliEnvironmentReply *reply_out)
@@ -150,6 +118,8 @@ int main(void)
     const SapWitWorldBindingDescriptor *include_imports = NULL;
     const SapWitWorldBindingDescriptor *import_environment = NULL;
     const SapWitWorldBindingDescriptor *export_run = NULL;
+    const SapWitWorldEndpointDescriptor *import_environment_endpoint = NULL;
+    const SapWitWorldEndpointDescriptor *export_run_endpoint = NULL;
     SapWitCliEnvironmentReply env_reply = {0};
     SapWitCliRunReply run_reply = {0};
     uint32_t import_calls = 0u;
@@ -177,14 +147,44 @@ int main(void)
     ok &= expect_u32("interface descriptor count", sap_wit_cli_interfaces_count, 2u);
     ok &= expect_u32("world descriptor count", sap_wit_cli_worlds_count, 2u);
     ok &= expect_u32("world binding descriptor count", sap_wit_cli_world_bindings_count, 3u);
+    ok &= expect_u32("command import endpoint count", sap_wit_cli_command_import_endpoints_count, 1u);
+    ok &= expect_u32("command export endpoint count", sap_wit_cli_command_export_endpoints_count, 1u);
 
-    environment = find_interface_desc("environment");
-    run = find_interface_desc("run");
-    command_world = find_world_desc("command");
-    imports_world = find_world_desc("imports");
-    include_imports = find_world_binding_desc("command", "imports", SAP_WIT_WORLD_ITEM_INCLUDE);
-    import_environment = find_world_binding_desc("imports", "environment", SAP_WIT_WORLD_ITEM_IMPORT);
-    export_run = find_world_binding_desc("command", "run", SAP_WIT_WORLD_ITEM_EXPORT);
+    environment = sap_wit_find_interface_descriptor(sap_wit_cli_interfaces,
+                                                    sap_wit_cli_interfaces_count,
+                                                    "environment");
+    run = sap_wit_find_interface_descriptor(sap_wit_cli_interfaces,
+                                            sap_wit_cli_interfaces_count,
+                                            "run");
+    command_world = sap_wit_find_world_descriptor(sap_wit_cli_worlds,
+                                                  sap_wit_cli_worlds_count,
+                                                  "command");
+    imports_world = sap_wit_find_world_descriptor(sap_wit_cli_worlds,
+                                                  sap_wit_cli_worlds_count,
+                                                  "imports");
+    include_imports = sap_wit_find_world_binding_descriptor(sap_wit_cli_world_bindings,
+                                                            sap_wit_cli_world_bindings_count,
+                                                            "command",
+                                                            "imports",
+                                                            SAP_WIT_WORLD_ITEM_INCLUDE);
+    import_environment = sap_wit_find_world_binding_descriptor(sap_wit_cli_world_bindings,
+                                                               sap_wit_cli_world_bindings_count,
+                                                               "imports",
+                                                               "environment",
+                                                               SAP_WIT_WORLD_ITEM_IMPORT);
+    export_run = sap_wit_find_world_binding_descriptor(sap_wit_cli_world_bindings,
+                                                       sap_wit_cli_world_bindings_count,
+                                                       "command",
+                                                       "run",
+                                                       SAP_WIT_WORLD_ITEM_EXPORT);
+    import_environment_endpoint =
+        sap_wit_find_world_endpoint_descriptor(sap_wit_cli_command_import_endpoints,
+                                              sap_wit_cli_command_import_endpoints_count,
+                                              "environment");
+    export_run_endpoint =
+        sap_wit_find_world_endpoint_descriptor(sap_wit_cli_command_export_endpoints,
+                                              sap_wit_cli_command_export_endpoints_count,
+                                              "run");
 
     ok &= environment != NULL;
     ok &= run != NULL;
@@ -193,6 +193,8 @@ int main(void)
     ok &= include_imports != NULL;
     ok &= import_environment != NULL;
     ok &= export_run != NULL;
+    ok &= import_environment_endpoint != NULL;
+    ok &= export_run_endpoint != NULL;
 
     if (environment) {
         ok &= expect_str("environment.package_id", environment->package_id, "demo:cli@0.1.0");
@@ -248,6 +250,58 @@ int main(void)
         ok &= expect_str("export_run.target_name", export_run->target_name, "run");
         ok &= expect_u32("export_run.imported", export_run->imported, 0u);
     }
+    if (import_environment_endpoint) {
+        ok &= expect_u32("import_environment_endpoint.kind",
+                         import_environment_endpoint->kind,
+                         SAP_WIT_WORLD_ITEM_IMPORT);
+        ok &= expect_u32("import_environment_endpoint.target_kind",
+                         import_environment_endpoint->target_kind,
+                         SAP_WIT_WORLD_TARGET_INTERFACE);
+        ok &= expect_str("import_environment_endpoint.bindings_c_type",
+                         import_environment_endpoint->bindings_c_type,
+                         "SapWitCliCommandWorldImports");
+        ok &= expect_str("import_environment_endpoint.ops_c_type",
+                         import_environment_endpoint->ops_c_type,
+                         "SapWitCliEnvironmentDispatchOps");
+        ok &= expect_str("import_environment_endpoint.command_c_type",
+                         import_environment_endpoint->command_c_type,
+                         "SapWitCliEnvironmentCommand");
+        ok &= expect_str("import_environment_endpoint.reply_c_type",
+                         import_environment_endpoint->reply_c_type,
+                         "SapWitCliEnvironmentReply");
+        ok &= expect_u32("import_environment_endpoint.ctx_offset",
+                         (uint32_t)import_environment_endpoint->ctx_offset,
+                         (uint32_t)offsetof(SapWitCliCommandWorldImports, environment_ctx));
+        ok &= expect_u32("import_environment_endpoint.ops_offset",
+                         (uint32_t)import_environment_endpoint->ops_offset,
+                         (uint32_t)offsetof(SapWitCliCommandWorldImports, environment_ops));
+    }
+    if (export_run_endpoint) {
+        ok &= expect_u32("export_run_endpoint.kind",
+                         export_run_endpoint->kind,
+                         SAP_WIT_WORLD_ITEM_EXPORT);
+        ok &= expect_u32("export_run_endpoint.target_kind",
+                         export_run_endpoint->target_kind,
+                         SAP_WIT_WORLD_TARGET_INTERFACE);
+        ok &= expect_str("export_run_endpoint.bindings_c_type",
+                         export_run_endpoint->bindings_c_type,
+                         "SapWitCliCommandWorldExports");
+        ok &= expect_str("export_run_endpoint.ops_c_type",
+                         export_run_endpoint->ops_c_type,
+                         "SapWitCliRunDispatchOps");
+        ok &= expect_str("export_run_endpoint.command_c_type",
+                         export_run_endpoint->command_c_type,
+                         "SapWitCliRunCommand");
+        ok &= expect_str("export_run_endpoint.reply_c_type",
+                         export_run_endpoint->reply_c_type,
+                         "SapWitCliRunReply");
+        ok &= expect_u32("export_run_endpoint.ctx_offset",
+                         (uint32_t)export_run_endpoint->ctx_offset,
+                         (uint32_t)offsetof(SapWitCliCommandWorldExports, run_ctx));
+        ok &= expect_u32("export_run_endpoint.ops_offset",
+                         (uint32_t)export_run_endpoint->ops_offset,
+                         (uint32_t)offsetof(SapWitCliCommandWorldExports, run_ops));
+    }
 
     {
         SapWitCliEnvironmentDispatchOps env_ops = {
@@ -256,14 +310,41 @@ int main(void)
         SapWitCliRunDispatchOps run_ops = {
             .start = world_export_start,
         };
-        SapWitCliCommandWorldImports command_imports = {
-            .environment_ctx = &import_calls,
-            .environment_ops = &env_ops,
-        };
-        SapWitCliCommandWorldExports command_exports = {
-            .run_ctx = &export_calls,
-            .run_ops = &run_ops,
-        };
+        SapWitCliCommandWorldImports command_imports = {0};
+        SapWitCliCommandWorldExports command_exports = {0};
+
+        ok &= expect_u32("bind import environment",
+                         (uint32_t)sap_wit_world_endpoint_bind(&command_imports,
+                                                               import_environment_endpoint,
+                                                               &import_calls,
+                                                               &env_ops),
+                         0u);
+        ok &= expect_u32("bind export run",
+                         (uint32_t)sap_wit_world_endpoint_bind(&command_exports,
+                                                               export_run_endpoint,
+                                                               &export_calls,
+                                                               &run_ops),
+                         0u);
+        ok &= expect_u32("import ctx getter",
+                         (uint32_t)(sap_wit_world_endpoint_ctx(&command_imports,
+                                                               import_environment_endpoint)
+                                        == &import_calls),
+                         1u);
+        ok &= expect_u32("export ctx getter",
+                         (uint32_t)(sap_wit_world_endpoint_ctx(&command_exports,
+                                                               export_run_endpoint)
+                                        == &export_calls),
+                         1u);
+        ok &= expect_u32("import ops getter",
+                         (uint32_t)(sap_wit_world_endpoint_ops(&command_imports,
+                                                               import_environment_endpoint)
+                                        == &env_ops),
+                         1u);
+        ok &= expect_u32("export ops getter",
+                         (uint32_t)(sap_wit_world_endpoint_ops(&command_exports,
+                                                               export_run_endpoint)
+                                        == &run_ops),
+                         1u);
 
         ok &= expect_u32("world import wrapper rc",
                          (uint32_t)sap_wit_world_cli_command_import_environment(&command_imports,
@@ -284,6 +365,26 @@ int main(void)
                          run_reply.case_tag,
                          SAP_WIT_CLI_RUN_REPLY_STATUS);
         ok &= expect_u32("world export reply ok", run_reply.val.status.is_v_ok, 1u);
+
+        import_calls = 0u;
+        export_calls = 0u;
+        memset(&env_reply, 0, sizeof(env_reply));
+        memset(&run_reply, 0, sizeof(run_reply));
+
+        ok &= expect_u32("world import endpoint invoke rc",
+                         (uint32_t)sap_wit_world_endpoint_invoke(import_environment_endpoint,
+                                                                 &command_imports,
+                                                                 &env_command,
+                                                                 &env_reply),
+                         0u);
+        ok &= expect_u32("world export endpoint invoke rc",
+                         (uint32_t)sap_wit_world_endpoint_invoke(export_run_endpoint,
+                                                                 &command_exports,
+                                                                 &run_command,
+                                                                 &run_reply),
+                         0u);
+        ok &= expect_u32("world import endpoint callback count", import_calls, 1u);
+        ok &= expect_u32("world export endpoint callback count", export_calls, 1u);
     }
 
     free(manifest);

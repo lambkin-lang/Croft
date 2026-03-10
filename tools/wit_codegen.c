@@ -5949,6 +5949,90 @@ static void wit_world_binding_call_name(const WitRegistry *reg,
     }
 }
 
+static void wit_world_endpoint_adapter_name(const WitRegistry *reg,
+                                            const char *package_full,
+                                            const char *world_name,
+                                            const char *direction,
+                                            const char *item_name,
+                                            char *out,
+                                            int n)
+{
+    char wrapper_name[MAX_NAME * 2];
+
+    if (!out || n <= 0) return;
+    out[0] = '\0';
+
+    wit_world_binding_call_name(reg,
+                                package_full,
+                                world_name,
+                                direction,
+                                item_name,
+                                wrapper_name,
+                                (int)sizeof(wrapper_name));
+    if (wrapper_name[0] != '\0') {
+        snprintf(out, n, "%s_erased", wrapper_name);
+    }
+}
+
+static void wit_world_endpoint_array_symbol(const WitRegistry *reg,
+                                            const char *package_full,
+                                            const char *world_name,
+                                            const char *direction,
+                                            char *out,
+                                            int n)
+{
+    char package_snake[MAX_NAME];
+    char world_display[MAX_SYMBOL];
+    char world_snake[MAX_SYMBOL];
+
+    if (!out || n <= 0) return;
+    out[0] = '\0';
+
+    wit_package_ident_from_full(package_full,
+                                wit_name_to_snake_ident,
+                                package_snake,
+                                (int)sizeof(package_snake));
+    wit_world_display_name(reg, package_full, world_name, world_display, (int)sizeof(world_display));
+    wit_name_to_snake_ident(world_display, world_snake, (int)sizeof(world_snake));
+
+    if (package_snake[0] != '\0') {
+        snprintf(out,
+                 n,
+                 "sap_wit_%s_%s_%s_endpoints",
+                 package_snake,
+                 world_snake[0] != '\0' ? world_snake : "world",
+                 direction ? direction : "bind");
+    } else {
+        snprintf(out,
+                 n,
+                 "sap_wit_%s_%s_endpoints",
+                 world_snake[0] != '\0' ? world_snake : "world",
+                 direction ? direction : "bind");
+    }
+}
+
+static void wit_world_endpoint_count_symbol(const WitRegistry *reg,
+                                            const char *package_full,
+                                            const char *world_name,
+                                            const char *direction,
+                                            char *out,
+                                            int n)
+{
+    char array_symbol[MAX_NAME * 2];
+
+    if (!out || n <= 0) return;
+    out[0] = '\0';
+    wit_world_endpoint_array_symbol(reg,
+                                    package_full,
+                                    world_name,
+                                    direction,
+                                    array_symbol,
+                                    (int)sizeof(array_symbol));
+    if (array_symbol[0] != '\0') {
+        snprintf(out, n, "%s_count", array_symbol);
+    }
+}
+
 static const WitVariant *find_interface_command_variant(const WitRegistry *reg,
                                                         const char *package_full,
                                                         const char *interface_name)
@@ -6847,6 +6931,25 @@ static void emit_header(FILE *out, const WitRegistry *reg,
                         command_type,
                         reply_type);
             }
+            {
+                char endpoints_symbol[MAX_NAME * 2];
+                char endpoints_count_symbol[MAX_NAME * 2];
+
+                wit_world_endpoint_array_symbol(reg,
+                                                reg->worlds[i].package_full,
+                                                reg->worlds[i].name,
+                                                "import",
+                                                endpoints_symbol,
+                                                (int)sizeof(endpoints_symbol));
+                wit_world_endpoint_count_symbol(reg,
+                                                reg->worlds[i].package_full,
+                                                reg->worlds[i].name,
+                                                "import",
+                                                endpoints_count_symbol,
+                                                (int)sizeof(endpoints_count_symbol));
+                fprintf(out, "extern const SapWitWorldEndpointDescriptor %s[];\n", endpoints_symbol);
+                fprintf(out, "extern const uint32_t %s;\n", endpoints_count_symbol);
+            }
             fprintf(out, "\n");
         }
 
@@ -6898,6 +7001,25 @@ static void emit_header(FILE *out, const WitRegistry *reg,
                         exports_type,
                         command_type,
                         reply_type);
+            }
+            {
+                char endpoints_symbol[MAX_NAME * 2];
+                char endpoints_count_symbol[MAX_NAME * 2];
+
+                wit_world_endpoint_array_symbol(reg,
+                                                reg->worlds[i].package_full,
+                                                reg->worlds[i].name,
+                                                "export",
+                                                endpoints_symbol,
+                                                (int)sizeof(endpoints_symbol));
+                wit_world_endpoint_count_symbol(reg,
+                                                reg->worlds[i].package_full,
+                                                reg->worlds[i].name,
+                                                "export",
+                                                endpoints_count_symbol,
+                                                (int)sizeof(endpoints_count_symbol));
+                fprintf(out, "extern const SapWitWorldEndpointDescriptor %s[];\n", endpoints_symbol);
+                fprintf(out, "extern const uint32_t %s;\n", endpoints_count_symbol);
             }
             fprintf(out, "\n");
         }
@@ -8008,6 +8130,7 @@ static void emit_source(FILE *out, const WitRegistry *reg,
     fprintf(out, " * WIT package: %s\n", reg->package_full[0] ? reg->package_full : "<none>");
     fprintf(out, " */\n");
     fprintf(out, "#include \"%s\"\n", header_include);
+    fprintf(out, "#include <stddef.h>\n");
     fprintf(out, "#include <stdlib.h>\n");
     fprintf(out, "#include <string.h>\n\n");
 
@@ -8192,6 +8315,7 @@ static void emit_source(FILE *out, const WitRegistry *reg,
                 char reply_type[MAX_NAME * 2];
                 char dispatch_name[MAX_NAME * 2];
                 char wrapper_name[MAX_NAME * 2];
+                char adapter_name[MAX_NAME * 2];
                 char field_name[MAX_NAME];
 
                 wit_type_c_typename(reg,
@@ -8213,6 +8337,13 @@ static void emit_source(FILE *out, const WitRegistry *reg,
                                             imports[j].item->name,
                                             wrapper_name,
                                             (int)sizeof(wrapper_name));
+                wit_world_endpoint_adapter_name(reg,
+                                                reg->worlds[i].package_full,
+                                                reg->worlds[i].name,
+                                                "import",
+                                                imports[j].item->name,
+                                                adapter_name,
+                                                (int)sizeof(adapter_name));
                 wit_name_to_snake_ident(imports[j].item->name, field_name, (int)sizeof(field_name));
 
                 fprintf(out,
@@ -8230,6 +8361,103 @@ static void emit_source(FILE *out, const WitRegistry *reg,
                         field_name,
                         field_name);
                 fprintf(out, "}\n\n");
+
+                fprintf(out,
+                        "static int32_t %s(const void *bindings, const void *command, void *reply_out)\n{\n",
+                        adapter_name);
+                fprintf(out,
+                        "    return %s((const %s *)bindings,\n"
+                        "             (const %s *)command,\n"
+                        "             (%s *)reply_out);\n",
+                        wrapper_name,
+                        imports_type,
+                        command_type,
+                        reply_type);
+                fprintf(out, "}\n\n");
+            }
+
+            {
+                char endpoints_symbol[MAX_NAME * 2];
+                char endpoints_count_symbol[MAX_NAME * 2];
+
+                wit_world_endpoint_array_symbol(reg,
+                                                reg->worlds[i].package_full,
+                                                reg->worlds[i].name,
+                                                "import",
+                                                endpoints_symbol,
+                                                (int)sizeof(endpoints_symbol));
+                wit_world_endpoint_count_symbol(reg,
+                                                reg->worlds[i].package_full,
+                                                reg->worlds[i].name,
+                                                "import",
+                                                endpoints_count_symbol,
+                                                (int)sizeof(endpoints_count_symbol));
+                fprintf(out, "const SapWitWorldEndpointDescriptor %s[] = {\n", endpoints_symbol);
+                for (int j = 0; j < import_count; j++) {
+                    char command_type[MAX_NAME * 2];
+                    char reply_type[MAX_NAME * 2];
+                    char ops_type[MAX_NAME * 2];
+                    char adapter_name[MAX_NAME * 2];
+                    char field_name[MAX_NAME];
+
+                    wit_type_c_typename(reg,
+                                        wit_variant_symbol_name(imports[j].command_variant),
+                                        command_type,
+                                        (int)sizeof(command_type));
+                    wit_type_c_typename(reg,
+                                        wit_variant_symbol_name(imports[j].reply_variant),
+                                        reply_type,
+                                        (int)sizeof(reply_type));
+                    wit_dispatch_ops_typename(reg,
+                                              wit_variant_symbol_name(imports[j].command_variant),
+                                              ops_type,
+                                              (int)sizeof(ops_type));
+                    wit_world_endpoint_adapter_name(reg,
+                                                    reg->worlds[i].package_full,
+                                                    reg->worlds[i].name,
+                                                    "import",
+                                                    imports[j].item->name,
+                                                    adapter_name,
+                                                    (int)sizeof(adapter_name));
+                    wit_name_to_snake_ident(imports[j].item->name, field_name, (int)sizeof(field_name));
+
+                    fprintf(out, "    {%s, %s, ",
+                            wit_world_item_kind_macro(WIT_WORLD_ITEM_IMPORT),
+                            wit_world_target_kind_macro(imports[j].item->target_kind));
+                    emit_c_string_literal(out, reg->worlds[i].package_full);
+                    fprintf(out, ", ");
+                    emit_c_string_literal(out, reg->worlds[i].name);
+                    fprintf(out, ", ");
+                    emit_c_string_literal(out, imports[j].item->name);
+                    fprintf(out, ", ");
+                    emit_c_string_literal(out, imports[j].item->target_package_full);
+                    fprintf(out, ", ");
+                    emit_c_string_literal(out, imports[j].item->target_name);
+                    fprintf(out, ", ");
+                    emit_c_string_literal(out, wit_world_item_effective_target_package(reg, imports[j].item));
+                    fprintf(out, ", ");
+                    emit_c_string_literal(out, wit_world_item_effective_target_name(imports[j].item));
+                    fprintf(out, ", ");
+                    emit_c_string_literal(out, imports_type);
+                    fprintf(out, ", ");
+                    emit_c_string_literal(out, ops_type);
+                    fprintf(out, ", ");
+                    emit_c_string_literal(out, command_type);
+                    fprintf(out, ", ");
+                    emit_c_string_literal(out, reply_type);
+                    fprintf(out,
+                            ", offsetof(%s, %s_ctx), offsetof(%s, %s_ops), %s},\n",
+                            imports_type,
+                            field_name,
+                            imports_type,
+                            field_name,
+                            adapter_name);
+                }
+                fprintf(out, "};\n");
+                fprintf(out, "const uint32_t %s =\n", endpoints_count_symbol);
+                fprintf(out, "    (uint32_t)(sizeof(%s) / sizeof(%s[0]));\n\n",
+                        endpoints_symbol,
+                        endpoints_symbol);
             }
         }
 
@@ -8245,6 +8473,7 @@ static void emit_source(FILE *out, const WitRegistry *reg,
                 char reply_type[MAX_NAME * 2];
                 char dispatch_name[MAX_NAME * 2];
                 char wrapper_name[MAX_NAME * 2];
+                char adapter_name[MAX_NAME * 2];
                 char field_name[MAX_NAME];
 
                 wit_type_c_typename(reg,
@@ -8266,6 +8495,13 @@ static void emit_source(FILE *out, const WitRegistry *reg,
                                             exports[j].item->name,
                                             wrapper_name,
                                             (int)sizeof(wrapper_name));
+                wit_world_endpoint_adapter_name(reg,
+                                                reg->worlds[i].package_full,
+                                                reg->worlds[i].name,
+                                                "export",
+                                                exports[j].item->name,
+                                                adapter_name,
+                                                (int)sizeof(adapter_name));
                 wit_name_to_snake_ident(exports[j].item->name, field_name, (int)sizeof(field_name));
 
                 fprintf(out,
@@ -8283,6 +8519,103 @@ static void emit_source(FILE *out, const WitRegistry *reg,
                         field_name,
                         field_name);
                 fprintf(out, "}\n\n");
+
+                fprintf(out,
+                        "static int32_t %s(const void *bindings, const void *command, void *reply_out)\n{\n",
+                        adapter_name);
+                fprintf(out,
+                        "    return %s((const %s *)bindings,\n"
+                        "             (const %s *)command,\n"
+                        "             (%s *)reply_out);\n",
+                        wrapper_name,
+                        exports_type,
+                        command_type,
+                        reply_type);
+                fprintf(out, "}\n\n");
+            }
+
+            {
+                char endpoints_symbol[MAX_NAME * 2];
+                char endpoints_count_symbol[MAX_NAME * 2];
+
+                wit_world_endpoint_array_symbol(reg,
+                                                reg->worlds[i].package_full,
+                                                reg->worlds[i].name,
+                                                "export",
+                                                endpoints_symbol,
+                                                (int)sizeof(endpoints_symbol));
+                wit_world_endpoint_count_symbol(reg,
+                                                reg->worlds[i].package_full,
+                                                reg->worlds[i].name,
+                                                "export",
+                                                endpoints_count_symbol,
+                                                (int)sizeof(endpoints_count_symbol));
+                fprintf(out, "const SapWitWorldEndpointDescriptor %s[] = {\n", endpoints_symbol);
+                for (int j = 0; j < export_count; j++) {
+                    char command_type[MAX_NAME * 2];
+                    char reply_type[MAX_NAME * 2];
+                    char ops_type[MAX_NAME * 2];
+                    char adapter_name[MAX_NAME * 2];
+                    char field_name[MAX_NAME];
+
+                    wit_type_c_typename(reg,
+                                        wit_variant_symbol_name(exports[j].command_variant),
+                                        command_type,
+                                        (int)sizeof(command_type));
+                    wit_type_c_typename(reg,
+                                        wit_variant_symbol_name(exports[j].reply_variant),
+                                        reply_type,
+                                        (int)sizeof(reply_type));
+                    wit_dispatch_ops_typename(reg,
+                                              wit_variant_symbol_name(exports[j].command_variant),
+                                              ops_type,
+                                              (int)sizeof(ops_type));
+                    wit_world_endpoint_adapter_name(reg,
+                                                    reg->worlds[i].package_full,
+                                                    reg->worlds[i].name,
+                                                    "export",
+                                                    exports[j].item->name,
+                                                    adapter_name,
+                                                    (int)sizeof(adapter_name));
+                    wit_name_to_snake_ident(exports[j].item->name, field_name, (int)sizeof(field_name));
+
+                    fprintf(out, "    {%s, %s, ",
+                            wit_world_item_kind_macro(WIT_WORLD_ITEM_EXPORT),
+                            wit_world_target_kind_macro(exports[j].item->target_kind));
+                    emit_c_string_literal(out, reg->worlds[i].package_full);
+                    fprintf(out, ", ");
+                    emit_c_string_literal(out, reg->worlds[i].name);
+                    fprintf(out, ", ");
+                    emit_c_string_literal(out, exports[j].item->name);
+                    fprintf(out, ", ");
+                    emit_c_string_literal(out, exports[j].item->target_package_full);
+                    fprintf(out, ", ");
+                    emit_c_string_literal(out, exports[j].item->target_name);
+                    fprintf(out, ", ");
+                    emit_c_string_literal(out, wit_world_item_effective_target_package(reg, exports[j].item));
+                    fprintf(out, ", ");
+                    emit_c_string_literal(out, wit_world_item_effective_target_name(exports[j].item));
+                    fprintf(out, ", ");
+                    emit_c_string_literal(out, exports_type);
+                    fprintf(out, ", ");
+                    emit_c_string_literal(out, ops_type);
+                    fprintf(out, ", ");
+                    emit_c_string_literal(out, command_type);
+                    fprintf(out, ", ");
+                    emit_c_string_literal(out, reply_type);
+                    fprintf(out,
+                            ", offsetof(%s, %s_ctx), offsetof(%s, %s_ops), %s},\n",
+                            exports_type,
+                            field_name,
+                            exports_type,
+                            field_name,
+                            adapter_name);
+                }
+                fprintf(out, "};\n");
+                fprintf(out, "const uint32_t %s =\n", endpoints_count_symbol);
+                fprintf(out, "    (uint32_t)(sizeof(%s) / sizeof(%s[0]));\n\n",
+                        endpoints_symbol,
+                        endpoints_symbol);
             }
         }
     }

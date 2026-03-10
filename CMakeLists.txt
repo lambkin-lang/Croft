@@ -240,25 +240,75 @@ croft_select_wasi_wit(WASI_CLI_ENVIRONMENT_WIT_PATH
     "tests/sapling_tests/fixtures/wasi/cli/environment.wit")
 croft_collect_wit_dir_depends(WASI_CLI_ENVIRONMENT_WIT_DEPENDS "${WASI_CLI_ENVIRONMENT_WIT_PATH}")
 
+croft_select_wasi_wit(WASI_CLI_RUN_WIT_PATH
+    "cli/wit/run.wit"
+    "tests/sapling_tests/fixtures/wasi/cli/run.wit")
+croft_collect_wit_dir_depends(WASI_CLI_RUN_WIT_DEPENDS "${WASI_CLI_RUN_WIT_PATH}")
+
+croft_select_wasi_wit(WASI_CLI_IMPORTS_WIT_PATH
+    "cli/wit/imports.wit"
+    "tests/sapling_tests/fixtures/wasi/cli/imports.wit")
+croft_collect_wit_dir_depends(WASI_CLI_IMPORTS_WIT_DEPENDS "${WASI_CLI_IMPORTS_WIT_PATH}")
+
+croft_select_wasi_wit(WASI_CLI_COMMAND_WIT_PATH
+    "cli/wit/command.wit"
+    "tests/sapling_tests/fixtures/wasi/cli/command.wit")
+croft_collect_wit_dir_depends(WASI_CLI_COMMAND_WIT_DEPENDS "${WASI_CLI_COMMAND_WIT_PATH}")
+
+croft_select_wasi_wit(WASI_RANDOM_RANDOM_WIT_PATH
+    "random/wit/random.wit"
+    "tests/sapling_tests/fixtures/wasi/random/random.wit")
+croft_collect_wit_dir_depends(WASI_RANDOM_RANDOM_WIT_DEPENDS "${WASI_RANDOM_RANDOM_WIT_PATH}")
+
 croft_select_wasi_wit(WASI_RANDOM_INSECURE_WIT_PATH
     "random/wit/insecure.wit"
     "tests/sapling_tests/fixtures/wasi/random/insecure.wit")
 croft_collect_wit_dir_depends(WASI_RANDOM_INSECURE_WIT_DEPENDS "${WASI_RANDOM_INSECURE_WIT_PATH}")
+
+croft_select_wasi_wit(WASI_RANDOM_INSECURE_SEED_WIT_PATH
+    "random/wit/insecure-seed.wit"
+    "tests/sapling_tests/fixtures/wasi/random/insecure-seed.wit")
+croft_collect_wit_dir_depends(WASI_RANDOM_INSECURE_SEED_WIT_DEPENDS "${WASI_RANDOM_INSECURE_SEED_WIT_PATH}")
+
+croft_select_wasi_wit(WASI_RANDOM_WORLD_WIT_PATH
+    "random/wit/world.wit"
+    "tests/sapling_tests/fixtures/wasi/random/world.wit")
+croft_collect_wit_dir_depends(WASI_RANDOM_WORLD_WIT_DEPENDS "${WASI_RANDOM_WORLD_WIT_PATH}")
 
 croft_select_wasi_wit(WASI_CLOCKS_TIMEZONE_WIT_PATH
     "clocks/wit/timezone.wit"
     "tests/sapling_tests/fixtures/wasi-imports/clocks/wit/timezone.wit")
 croft_collect_wit_dir_depends(WASI_CLOCKS_TIMEZONE_WIT_DEPENDS "${WASI_CLOCKS_TIMEZONE_WIT_PATH}")
 
+croft_select_wasi_wit(WASI_CLOCKS_WALL_CLOCK_WIT_PATH
+    "clocks/wit/wall-clock.wit"
+    "tests/sapling_tests/fixtures/wasi-imports/clocks/wit/wall-clock.wit")
+croft_collect_wit_dir_depends(WASI_CLOCKS_WALL_CLOCK_WIT_DEPENDS "${WASI_CLOCKS_WALL_CLOCK_WIT_PATH}")
+
 croft_select_wasi_wit(WASI_IO_POLL_WIT_PATH
     "io/wit/poll.wit"
     "tests/sapling_tests/fixtures/wasi-imports/io/wit/poll.wit")
 croft_collect_wit_dir_depends(WASI_IO_POLL_WIT_DEPENDS "${WASI_IO_POLL_WIT_PATH}")
 
+croft_select_wasi_wit(WASI_IO_STREAMS_WIT_PATH
+    "io/wit/streams.wit"
+    "tests/sapling_tests/fixtures/wasi-imports/io/wit/streams.wit")
+croft_collect_wit_dir_depends(WASI_IO_STREAMS_WIT_DEPENDS "${WASI_IO_STREAMS_WIT_PATH}")
+
+croft_select_wasi_wit(WASI_IO_WORLD_WIT_PATH
+    "io/wit/world.wit"
+    "tests/sapling_tests/fixtures/wasi-imports/io/wit/world.wit")
+croft_collect_wit_dir_depends(WASI_IO_WORLD_WIT_DEPENDS "${WASI_IO_WORLD_WIT_PATH}")
+
 croft_select_wasi_wit(WASI_CLOCKS_MONOTONIC_CLOCK_WIT_PATH
     "clocks/wit/monotonic-clock.wit"
     "tests/sapling_tests/fixtures/wasi-imports/clocks/wit/monotonic-clock.wit")
 croft_collect_wit_dir_depends(WASI_CLOCKS_MONOTONIC_CLOCK_WIT_DEPENDS "${WASI_CLOCKS_MONOTONIC_CLOCK_WIT_PATH}")
+
+croft_select_wasi_wit(WASI_CLOCKS_WORLD_WIT_PATH
+    "clocks/wit/world.wit"
+    "tests/sapling_tests/fixtures/wasi-imports/clocks/wit/world.wit")
+croft_collect_wit_dir_depends(WASI_CLOCKS_WORLD_WIT_DEPENDS "${WASI_CLOCKS_WORLD_WIT_PATH}")
 
 set(WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_schema_dbis.h")
 set(WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_schema_dbis.c")
@@ -312,21 +362,61 @@ set(WASI_CLI_ENVIRONMENT_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/
 set(WASI_CLI_ENVIRONMENT_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_cli_environment.c")
 set(WASI_CLI_ENVIRONMENT_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_cli_environment.manifest")
 
+set(WASI_CLI_RUN_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_cli_run.h")
+set(WASI_CLI_RUN_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_cli_run.c")
+set(WASI_CLI_RUN_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_cli_run.manifest")
+
+set(WASI_CLI_IMPORTS_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_cli_imports.h")
+set(WASI_CLI_IMPORTS_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_cli_imports.c")
+set(WASI_CLI_IMPORTS_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_cli_imports.manifest")
+
+set(WASI_CLI_COMMAND_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_cli_command.h")
+set(WASI_CLI_COMMAND_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_cli_command.c")
+set(WASI_CLI_COMMAND_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_cli_command.manifest")
+
+set(WASI_RANDOM_RANDOM_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_random_random.h")
+set(WASI_RANDOM_RANDOM_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_random_random.c")
+set(WASI_RANDOM_RANDOM_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_random_random.manifest")
+
 set(WASI_RANDOM_INSECURE_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_random_insecure.h")
 set(WASI_RANDOM_INSECURE_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_random_insecure.c")
 set(WASI_RANDOM_INSECURE_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_random_insecure.manifest")
+
+set(WASI_RANDOM_INSECURE_SEED_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_random_insecure_seed.h")
+set(WASI_RANDOM_INSECURE_SEED_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_random_insecure_seed.c")
+set(WASI_RANDOM_INSECURE_SEED_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_random_insecure_seed.manifest")
+
+set(WASI_RANDOM_WORLD_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_random_world.h")
+set(WASI_RANDOM_WORLD_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_random_world.c")
+set(WASI_RANDOM_WORLD_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_random_world.manifest")
 
 set(WASI_CLOCKS_TIMEZONE_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_clocks_timezone.h")
 set(WASI_CLOCKS_TIMEZONE_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_clocks_timezone.c")
 set(WASI_CLOCKS_TIMEZONE_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_clocks_timezone.manifest")
 
+set(WASI_CLOCKS_WALL_CLOCK_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_clocks_wall_clock.h")
+set(WASI_CLOCKS_WALL_CLOCK_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_clocks_wall_clock.c")
+set(WASI_CLOCKS_WALL_CLOCK_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_clocks_wall_clock.manifest")
+
 set(WASI_IO_POLL_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_io_poll.h")
 set(WASI_IO_POLL_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_io_poll.c")
 set(WASI_IO_POLL_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_io_poll.manifest")
 
+set(WASI_IO_STREAMS_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_io_streams.h")
+set(WASI_IO_STREAMS_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_io_streams.c")
+set(WASI_IO_STREAMS_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_io_streams.manifest")
+
+set(WASI_IO_WORLD_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_io_world.h")
+set(WASI_IO_WORLD_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_io_world.c")
+set(WASI_IO_WORLD_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_io_world.manifest")
+
 set(WASI_CLOCKS_MONOTONIC_CLOCK_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_clocks_monotonic_clock.h")
 set(WASI_CLOCKS_MONOTONIC_CLOCK_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_clocks_monotonic_clock.c")
 set(WASI_CLOCKS_MONOTONIC_CLOCK_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_clocks_monotonic_clock.manifest")
+
+set(WASI_CLOCKS_WORLD_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_clocks_world.h")
+set(WASI_CLOCKS_WORLD_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_clocks_world.c")
+set(WASI_CLOCKS_WORLD_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_clocks_world.manifest")
 
 set(SCOPED_NAMES_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/scoped_names.h")
 set(SCOPED_NAMES_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/scoped_names.c")
@@ -500,6 +590,62 @@ add_custom_target(wasi_cli_environment_wit_schema_gen
             ${WASI_CLI_ENVIRONMENT_WIT_GENERATED_C}
             ${WASI_CLI_ENVIRONMENT_WIT_GENERATED_MANIFEST})
 
+# WASI CLI run bindings
+add_custom_command(
+    OUTPUT ${WASI_CLI_RUN_WIT_GENERATED_H} ${WASI_CLI_RUN_WIT_GENERATED_C} ${WASI_CLI_RUN_WIT_GENERATED_MANIFEST}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
+    COMMAND wit_codegen --wit "${WASI_CLI_RUN_WIT_PATH}"
+                        --header "${WASI_CLI_RUN_WIT_GENERATED_H}" --source "${WASI_CLI_RUN_WIT_GENERATED_C}" --manifest "${WASI_CLI_RUN_WIT_GENERATED_MANIFEST}"
+    DEPENDS wit_codegen ${WASI_CLI_RUN_WIT_DEPENDS}
+    COMMENT "Generating WASI CLI run bindings..."
+)
+add_custom_target(wasi_cli_run_wit_schema_gen
+    DEPENDS ${WASI_CLI_RUN_WIT_GENERATED_H}
+            ${WASI_CLI_RUN_WIT_GENERATED_C}
+            ${WASI_CLI_RUN_WIT_GENERATED_MANIFEST})
+
+# WASI CLI imports world bindings
+add_custom_command(
+    OUTPUT ${WASI_CLI_IMPORTS_WIT_GENERATED_H} ${WASI_CLI_IMPORTS_WIT_GENERATED_C} ${WASI_CLI_IMPORTS_WIT_GENERATED_MANIFEST}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
+    COMMAND wit_codegen --wit "${WASI_CLI_IMPORTS_WIT_PATH}"
+                        --header "${WASI_CLI_IMPORTS_WIT_GENERATED_H}" --source "${WASI_CLI_IMPORTS_WIT_GENERATED_C}" --manifest "${WASI_CLI_IMPORTS_WIT_GENERATED_MANIFEST}"
+    DEPENDS wit_codegen ${WASI_CLI_IMPORTS_WIT_DEPENDS}
+    COMMENT "Generating WASI CLI imports world bindings..."
+)
+add_custom_target(wasi_cli_imports_wit_schema_gen
+    DEPENDS ${WASI_CLI_IMPORTS_WIT_GENERATED_H}
+            ${WASI_CLI_IMPORTS_WIT_GENERATED_C}
+            ${WASI_CLI_IMPORTS_WIT_GENERATED_MANIFEST})
+
+# WASI CLI command world bindings
+add_custom_command(
+    OUTPUT ${WASI_CLI_COMMAND_WIT_GENERATED_H} ${WASI_CLI_COMMAND_WIT_GENERATED_C} ${WASI_CLI_COMMAND_WIT_GENERATED_MANIFEST}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
+    COMMAND wit_codegen --wit "${WASI_CLI_COMMAND_WIT_PATH}"
+                        --header "${WASI_CLI_COMMAND_WIT_GENERATED_H}" --source "${WASI_CLI_COMMAND_WIT_GENERATED_C}" --manifest "${WASI_CLI_COMMAND_WIT_GENERATED_MANIFEST}"
+    DEPENDS wit_codegen ${WASI_CLI_COMMAND_WIT_DEPENDS}
+    COMMENT "Generating WASI CLI command world bindings..."
+)
+add_custom_target(wasi_cli_command_wit_schema_gen
+    DEPENDS ${WASI_CLI_COMMAND_WIT_GENERATED_H}
+            ${WASI_CLI_COMMAND_WIT_GENERATED_C}
+            ${WASI_CLI_COMMAND_WIT_GENERATED_MANIFEST})
+
+# WASI random bindings
+add_custom_command(
+    OUTPUT ${WASI_RANDOM_RANDOM_WIT_GENERATED_H} ${WASI_RANDOM_RANDOM_WIT_GENERATED_C} ${WASI_RANDOM_RANDOM_WIT_GENERATED_MANIFEST}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
+    COMMAND wit_codegen --wit "${WASI_RANDOM_RANDOM_WIT_PATH}"
+                        --header "${WASI_RANDOM_RANDOM_WIT_GENERATED_H}" --source "${WASI_RANDOM_RANDOM_WIT_GENERATED_C}" --manifest "${WASI_RANDOM_RANDOM_WIT_GENERATED_MANIFEST}"
+    DEPENDS wit_codegen ${WASI_RANDOM_RANDOM_WIT_DEPENDS}
+    COMMENT "Generating WASI random bindings..."
+)
+add_custom_target(wasi_random_random_wit_schema_gen
+    DEPENDS ${WASI_RANDOM_RANDOM_WIT_GENERATED_H}
+            ${WASI_RANDOM_RANDOM_WIT_GENERATED_C}
+            ${WASI_RANDOM_RANDOM_WIT_GENERATED_MANIFEST})
+
 # WASI random insecure bindings
 add_custom_command(
     OUTPUT ${WASI_RANDOM_INSECURE_WIT_GENERATED_H} ${WASI_RANDOM_INSECURE_WIT_GENERATED_C} ${WASI_RANDOM_INSECURE_WIT_GENERATED_MANIFEST}
@@ -513,6 +659,34 @@ add_custom_target(wasi_random_insecure_wit_schema_gen
     DEPENDS ${WASI_RANDOM_INSECURE_WIT_GENERATED_H}
             ${WASI_RANDOM_INSECURE_WIT_GENERATED_C}
             ${WASI_RANDOM_INSECURE_WIT_GENERATED_MANIFEST})
+
+# WASI random insecure-seed bindings
+add_custom_command(
+    OUTPUT ${WASI_RANDOM_INSECURE_SEED_WIT_GENERATED_H} ${WASI_RANDOM_INSECURE_SEED_WIT_GENERATED_C} ${WASI_RANDOM_INSECURE_SEED_WIT_GENERATED_MANIFEST}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
+    COMMAND wit_codegen --wit "${WASI_RANDOM_INSECURE_SEED_WIT_PATH}"
+                        --header "${WASI_RANDOM_INSECURE_SEED_WIT_GENERATED_H}" --source "${WASI_RANDOM_INSECURE_SEED_WIT_GENERATED_C}" --manifest "${WASI_RANDOM_INSECURE_SEED_WIT_GENERATED_MANIFEST}"
+    DEPENDS wit_codegen ${WASI_RANDOM_INSECURE_SEED_WIT_DEPENDS}
+    COMMENT "Generating WASI random insecure-seed bindings..."
+)
+add_custom_target(wasi_random_insecure_seed_wit_schema_gen
+    DEPENDS ${WASI_RANDOM_INSECURE_SEED_WIT_GENERATED_H}
+            ${WASI_RANDOM_INSECURE_SEED_WIT_GENERATED_C}
+            ${WASI_RANDOM_INSECURE_SEED_WIT_GENERATED_MANIFEST})
+
+# WASI random imports world bindings
+add_custom_command(
+    OUTPUT ${WASI_RANDOM_WORLD_WIT_GENERATED_H} ${WASI_RANDOM_WORLD_WIT_GENERATED_C} ${WASI_RANDOM_WORLD_WIT_GENERATED_MANIFEST}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
+    COMMAND wit_codegen --wit "${WASI_RANDOM_WORLD_WIT_PATH}"
+                        --header "${WASI_RANDOM_WORLD_WIT_GENERATED_H}" --source "${WASI_RANDOM_WORLD_WIT_GENERATED_C}" --manifest "${WASI_RANDOM_WORLD_WIT_GENERATED_MANIFEST}"
+    DEPENDS wit_codegen ${WASI_RANDOM_WORLD_WIT_DEPENDS}
+    COMMENT "Generating WASI random imports world bindings..."
+)
+add_custom_target(wasi_random_world_wit_schema_gen
+    DEPENDS ${WASI_RANDOM_WORLD_WIT_GENERATED_H}
+            ${WASI_RANDOM_WORLD_WIT_GENERATED_C}
+            ${WASI_RANDOM_WORLD_WIT_GENERATED_MANIFEST})
 
 # WASI clocks timezone bindings
 add_custom_command(
@@ -528,6 +702,20 @@ add_custom_target(wasi_clocks_timezone_wit_schema_gen
             ${WASI_CLOCKS_TIMEZONE_WIT_GENERATED_C}
             ${WASI_CLOCKS_TIMEZONE_WIT_GENERATED_MANIFEST})
 
+# WASI clocks wall-clock bindings
+add_custom_command(
+    OUTPUT ${WASI_CLOCKS_WALL_CLOCK_WIT_GENERATED_H} ${WASI_CLOCKS_WALL_CLOCK_WIT_GENERATED_C} ${WASI_CLOCKS_WALL_CLOCK_WIT_GENERATED_MANIFEST}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
+    COMMAND wit_codegen --wit "${WASI_CLOCKS_WALL_CLOCK_WIT_PATH}"
+                        --header "${WASI_CLOCKS_WALL_CLOCK_WIT_GENERATED_H}" --source "${WASI_CLOCKS_WALL_CLOCK_WIT_GENERATED_C}" --manifest "${WASI_CLOCKS_WALL_CLOCK_WIT_GENERATED_MANIFEST}"
+    DEPENDS wit_codegen ${WASI_CLOCKS_WALL_CLOCK_WIT_DEPENDS}
+    COMMENT "Generating WASI clocks wall-clock bindings..."
+)
+add_custom_target(wasi_clocks_wall_clock_wit_schema_gen
+    DEPENDS ${WASI_CLOCKS_WALL_CLOCK_WIT_GENERATED_H}
+            ${WASI_CLOCKS_WALL_CLOCK_WIT_GENERATED_C}
+            ${WASI_CLOCKS_WALL_CLOCK_WIT_GENERATED_MANIFEST})
+
 # WASI io/poll bindings
 add_custom_command(
     OUTPUT ${WASI_IO_POLL_WIT_GENERATED_H} ${WASI_IO_POLL_WIT_GENERATED_C} ${WASI_IO_POLL_WIT_GENERATED_MANIFEST}
@@ -541,6 +729,34 @@ add_custom_target(wasi_io_poll_wit_schema_gen
     DEPENDS ${WASI_IO_POLL_WIT_GENERATED_H}
             ${WASI_IO_POLL_WIT_GENERATED_C}
             ${WASI_IO_POLL_WIT_GENERATED_MANIFEST})
+
+# WASI io/streams bindings
+add_custom_command(
+    OUTPUT ${WASI_IO_STREAMS_WIT_GENERATED_H} ${WASI_IO_STREAMS_WIT_GENERATED_C} ${WASI_IO_STREAMS_WIT_GENERATED_MANIFEST}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
+    COMMAND wit_codegen --wit "${WASI_IO_STREAMS_WIT_PATH}"
+                        --header "${WASI_IO_STREAMS_WIT_GENERATED_H}" --source "${WASI_IO_STREAMS_WIT_GENERATED_C}" --manifest "${WASI_IO_STREAMS_WIT_GENERATED_MANIFEST}"
+    DEPENDS wit_codegen ${WASI_IO_STREAMS_WIT_DEPENDS}
+    COMMENT "Generating WASI io/streams bindings..."
+)
+add_custom_target(wasi_io_streams_wit_schema_gen
+    DEPENDS ${WASI_IO_STREAMS_WIT_GENERATED_H}
+            ${WASI_IO_STREAMS_WIT_GENERATED_C}
+            ${WASI_IO_STREAMS_WIT_GENERATED_MANIFEST})
+
+# WASI io imports world bindings
+add_custom_command(
+    OUTPUT ${WASI_IO_WORLD_WIT_GENERATED_H} ${WASI_IO_WORLD_WIT_GENERATED_C} ${WASI_IO_WORLD_WIT_GENERATED_MANIFEST}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
+    COMMAND wit_codegen --wit "${WASI_IO_WORLD_WIT_PATH}"
+                        --header "${WASI_IO_WORLD_WIT_GENERATED_H}" --source "${WASI_IO_WORLD_WIT_GENERATED_C}" --manifest "${WASI_IO_WORLD_WIT_GENERATED_MANIFEST}"
+    DEPENDS wit_codegen ${WASI_IO_WORLD_WIT_DEPENDS}
+    COMMENT "Generating WASI io imports world bindings..."
+)
+add_custom_target(wasi_io_world_wit_schema_gen
+    DEPENDS ${WASI_IO_WORLD_WIT_GENERATED_H}
+            ${WASI_IO_WORLD_WIT_GENERATED_C}
+            ${WASI_IO_WORLD_WIT_GENERATED_MANIFEST})
 
 # WASI clocks monotonic-clock bindings
 add_custom_command(
@@ -557,6 +773,22 @@ add_custom_target(wasi_clocks_monotonic_clock_wit_schema_gen
     DEPENDS ${WASI_CLOCKS_MONOTONIC_CLOCK_WIT_GENERATED_H}
             ${WASI_CLOCKS_MONOTONIC_CLOCK_WIT_GENERATED_C}
             ${WASI_CLOCKS_MONOTONIC_CLOCK_WIT_GENERATED_MANIFEST})
+
+# WASI clocks imports world bindings
+add_custom_command(
+    OUTPUT ${WASI_CLOCKS_WORLD_WIT_GENERATED_H} ${WASI_CLOCKS_WORLD_WIT_GENERATED_C} ${WASI_CLOCKS_WORLD_WIT_GENERATED_MANIFEST}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
+    COMMAND wit_codegen --wit "${WASI_CLOCKS_WORLD_WIT_PATH}"
+                        --header "${WASI_CLOCKS_WORLD_WIT_GENERATED_H}" --source "${WASI_CLOCKS_WORLD_WIT_GENERATED_C}" --manifest "${WASI_CLOCKS_WORLD_WIT_GENERATED_MANIFEST}"
+    DEPENDS wit_codegen
+            ${WASI_CLOCKS_WORLD_WIT_DEPENDS}
+            "${WASI_IO_POLL_WIT_PATH}"
+    COMMENT "Generating WASI clocks imports world bindings..."
+)
+add_custom_target(wasi_clocks_world_wit_schema_gen
+    DEPENDS ${WASI_CLOCKS_WORLD_WIT_GENERATED_H}
+            ${WASI_CLOCKS_WORLD_WIT_GENERATED_C}
+            ${WASI_CLOCKS_WORLD_WIT_GENERATED_MANIFEST})
 
 # Scoped-name regression fixture
 add_custom_command(
@@ -969,12 +1201,66 @@ croft_register_artifact(croft_wit_wasi_cli_environment wit
     DEPENDS croft_thatch_core
 )
 
+add_library(croft_wit_wasi_cli_run STATIC ${WASI_CLI_RUN_WIT_GENERATED_C})
+add_dependencies(croft_wit_wasi_cli_run wasi_cli_run_wit_schema_gen)
+croft_apply_public_includes(croft_wit_wasi_cli_run)
+target_link_libraries(croft_wit_wasi_cli_run PUBLIC croft_thatch_core)
+croft_register_artifact(croft_wit_wasi_cli_run wit
+    TAGS wit wasi cli run service metadata current-machine unix
+    DEPENDS croft_thatch_core
+)
+
+add_library(croft_wit_wasi_cli_imports STATIC ${WASI_CLI_IMPORTS_WIT_GENERATED_C})
+add_dependencies(croft_wit_wasi_cli_imports wasi_cli_imports_wit_schema_gen)
+croft_apply_public_includes(croft_wit_wasi_cli_imports)
+target_link_libraries(croft_wit_wasi_cli_imports PUBLIC croft_thatch_core)
+croft_register_artifact(croft_wit_wasi_cli_imports wit
+    TAGS wit wasi cli world imports metadata current-machine unix
+    DEPENDS croft_thatch_core
+)
+
+add_library(croft_wit_wasi_cli_command STATIC ${WASI_CLI_COMMAND_WIT_GENERATED_C})
+add_dependencies(croft_wit_wasi_cli_command wasi_cli_command_wit_schema_gen)
+croft_apply_public_includes(croft_wit_wasi_cli_command)
+target_link_libraries(croft_wit_wasi_cli_command PUBLIC croft_thatch_core)
+croft_register_artifact(croft_wit_wasi_cli_command wit
+    TAGS wit wasi cli world command metadata current-machine unix
+    DEPENDS croft_thatch_core
+)
+
+add_library(croft_wit_wasi_random_random STATIC ${WASI_RANDOM_RANDOM_WIT_GENERATED_C})
+add_dependencies(croft_wit_wasi_random_random wasi_random_random_wit_schema_gen)
+croft_apply_public_includes(croft_wit_wasi_random_random)
+target_link_libraries(croft_wit_wasi_random_random PUBLIC croft_thatch_core)
+croft_register_artifact(croft_wit_wasi_random_random wit
+    TAGS wit wasi random service metadata current-machine
+    DEPENDS croft_thatch_core
+)
+
 add_library(croft_wit_wasi_random_insecure STATIC ${WASI_RANDOM_INSECURE_WIT_GENERATED_C})
 add_dependencies(croft_wit_wasi_random_insecure wasi_random_insecure_wit_schema_gen)
 croft_apply_public_includes(croft_wit_wasi_random_insecure)
 target_link_libraries(croft_wit_wasi_random_insecure PUBLIC croft_thatch_core)
 croft_register_artifact(croft_wit_wasi_random_insecure wit
     TAGS wit wasi random insecure service metadata current-machine
+    DEPENDS croft_thatch_core
+)
+
+add_library(croft_wit_wasi_random_insecure_seed STATIC ${WASI_RANDOM_INSECURE_SEED_WIT_GENERATED_C})
+add_dependencies(croft_wit_wasi_random_insecure_seed wasi_random_insecure_seed_wit_schema_gen)
+croft_apply_public_includes(croft_wit_wasi_random_insecure_seed)
+target_link_libraries(croft_wit_wasi_random_insecure_seed PUBLIC croft_thatch_core)
+croft_register_artifact(croft_wit_wasi_random_insecure_seed wit
+    TAGS wit wasi random insecure-seed service metadata current-machine
+    DEPENDS croft_thatch_core
+)
+
+add_library(croft_wit_wasi_random_world STATIC ${WASI_RANDOM_WORLD_WIT_GENERATED_C})
+add_dependencies(croft_wit_wasi_random_world wasi_random_world_wit_schema_gen)
+croft_apply_public_includes(croft_wit_wasi_random_world)
+target_link_libraries(croft_wit_wasi_random_world PUBLIC croft_thatch_core)
+croft_register_artifact(croft_wit_wasi_random_world wit
+    TAGS wit wasi random world imports metadata current-machine
     DEPENDS croft_thatch_core
 )
 
@@ -987,12 +1273,39 @@ croft_register_artifact(croft_wit_wasi_clocks_timezone wit
     DEPENDS croft_thatch_core
 )
 
+add_library(croft_wit_wasi_clocks_wall_clock STATIC ${WASI_CLOCKS_WALL_CLOCK_WIT_GENERATED_C})
+add_dependencies(croft_wit_wasi_clocks_wall_clock wasi_clocks_wall_clock_wit_schema_gen)
+croft_apply_public_includes(croft_wit_wasi_clocks_wall_clock)
+target_link_libraries(croft_wit_wasi_clocks_wall_clock PUBLIC croft_thatch_core)
+croft_register_artifact(croft_wit_wasi_clocks_wall_clock wit
+    TAGS wit wasi clocks wall-clock service metadata current-machine unix
+    DEPENDS croft_thatch_core
+)
+
 add_library(croft_wit_wasi_io_poll STATIC ${WASI_IO_POLL_WIT_GENERATED_C})
 add_dependencies(croft_wit_wasi_io_poll wasi_io_poll_wit_schema_gen)
 croft_apply_public_includes(croft_wit_wasi_io_poll)
 target_link_libraries(croft_wit_wasi_io_poll PUBLIC croft_thatch_core)
 croft_register_artifact(croft_wit_wasi_io_poll wit
     TAGS wit wasi io poll resource-handles metadata current-machine unix
+    DEPENDS croft_thatch_core
+)
+
+add_library(croft_wit_wasi_io_streams STATIC ${WASI_IO_STREAMS_WIT_GENERATED_C})
+add_dependencies(croft_wit_wasi_io_streams wasi_io_streams_wit_schema_gen)
+croft_apply_public_includes(croft_wit_wasi_io_streams)
+target_link_libraries(croft_wit_wasi_io_streams PUBLIC croft_thatch_core)
+croft_register_artifact(croft_wit_wasi_io_streams wit
+    TAGS wit wasi io streams resource-handles metadata current-machine unix
+    DEPENDS croft_thatch_core
+)
+
+add_library(croft_wit_wasi_io_world STATIC ${WASI_IO_WORLD_WIT_GENERATED_C})
+add_dependencies(croft_wit_wasi_io_world wasi_io_world_wit_schema_gen)
+croft_apply_public_includes(croft_wit_wasi_io_world)
+target_link_libraries(croft_wit_wasi_io_world PUBLIC croft_thatch_core)
+croft_register_artifact(croft_wit_wasi_io_world wit
+    TAGS wit wasi io world imports metadata current-machine unix
     DEPENDS croft_thatch_core
 )
 
@@ -1003,6 +1316,15 @@ target_link_libraries(croft_wit_wasi_clocks_monotonic_clock PUBLIC croft_thatch_
 croft_register_artifact(croft_wit_wasi_clocks_monotonic_clock wit
     TAGS wit wasi clocks monotonic-clock poll service metadata current-machine unix
     DEPENDS croft_thatch_core croft_wit_wasi_io_poll
+)
+
+add_library(croft_wit_wasi_clocks_world STATIC ${WASI_CLOCKS_WORLD_WIT_GENERATED_C})
+add_dependencies(croft_wit_wasi_clocks_world wasi_clocks_world_wit_schema_gen)
+croft_apply_public_includes(croft_wit_wasi_clocks_world)
+target_link_libraries(croft_wit_wasi_clocks_world PUBLIC croft_thatch_core)
+croft_register_artifact(croft_wit_wasi_clocks_world wit
+    TAGS wit wasi clocks world imports metadata current-machine unix
+    DEPENDS croft_thatch_core
 )
 
 add_library(croft_wit_scoped_names STATIC ${SCOPED_NAMES_WIT_GENERATED_C})
@@ -1272,6 +1594,12 @@ croft_link_libraries_checked(croft_editor_document PUBLIC croft_editor_document_
 croft_register_artifact(croft_editor_document editor
     TAGS tier8 editor document compatibility aggregate
     DEPENDS croft_editor_document_core croft_editor_document_fs
+)
+
+add_library(croft_wit_world_runtime STATIC src/runtime/wit_world_runtime.c)
+croft_apply_public_includes(croft_wit_world_runtime)
+croft_register_artifact(croft_wit_world_runtime wit
+    TAGS tier8 wit world runtime metadata generated-glue
 )
 
 add_library(croft_wit_text_runtime STATIC src/runtime/wit_text_runtime.c)
@@ -2321,6 +2649,15 @@ if(CROFT_BUILD_TESTS)
                 croft_wit_wasi_clocks_monotonic_clock
             )
         endif()
+        if(test_name STREQUAL "wasi_wit_worlds_smoke")
+            target_link_libraries(${test_name} PRIVATE
+                croft_wit_world_runtime
+                croft_wit_wasi_cli_command
+                croft_wit_wasi_io_world
+                croft_wit_wasi_random_world
+                croft_wit_wasi_clocks_world
+            )
+        endif()
         if(test_name STREQUAL "test_wit_scoped_names_smoke")
             target_link_libraries(${test_name} PRIVATE croft_wit_scoped_names)
         endif()
@@ -2331,10 +2668,16 @@ if(CROFT_BUILD_TESTS)
             target_link_libraries(${test_name} PRIVATE croft_wit_use_reexports_types)
         endif()
         if(test_name STREQUAL "test_wit_world_manifest_smoke")
-            target_link_libraries(${test_name} PRIVATE croft_wit_world_meta_command)
+            target_link_libraries(${test_name} PRIVATE
+                croft_wit_world_runtime
+                croft_wit_world_meta_command
+            )
         endif()
         if(test_name STREQUAL "test_wit_inline_world_smoke")
-            target_link_libraries(${test_name} PRIVATE croft_wit_world_inline_command)
+            target_link_libraries(${test_name} PRIVATE
+                croft_wit_world_runtime
+                croft_wit_world_inline_command
+            )
         endif()
         target_compile_definitions(${test_name} PRIVATE SAPLING_HAMT_TESTING)
         if(test_name STREQUAL "test_wit_thatch_codegen")
@@ -2353,6 +2696,15 @@ if(CROFT_BUILD_TESTS)
                 wasi_io_poll_wit_schema_gen
                 wasi_clocks_timezone_wit_schema_gen
                 wasi_clocks_monotonic_clock_wit_schema_gen
+            )
+            target_include_directories(${test_name} PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
+        endif()
+        if(test_name STREQUAL "wasi_wit_worlds_smoke")
+            add_dependencies(${test_name}
+                wasi_cli_command_wit_schema_gen
+                wasi_io_world_wit_schema_gen
+                wasi_random_world_wit_schema_gen
+                wasi_clocks_world_wit_schema_gen
             )
             target_include_directories(${test_name} PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
         endif()
@@ -2410,10 +2762,20 @@ set(CROFT_PUBLIC_GENERATED_HEADERS
     ${HOST_EDITOR_INPUT_WIT_GENERATED_H}
     ${HOST_A11Y_WIT_GENERATED_H}
     ${WASI_CLI_ENVIRONMENT_WIT_GENERATED_H}
+    ${WASI_CLI_RUN_WIT_GENERATED_H}
+    ${WASI_CLI_IMPORTS_WIT_GENERATED_H}
+    ${WASI_CLI_COMMAND_WIT_GENERATED_H}
+    ${WASI_RANDOM_RANDOM_WIT_GENERATED_H}
     ${WASI_RANDOM_INSECURE_WIT_GENERATED_H}
+    ${WASI_RANDOM_INSECURE_SEED_WIT_GENERATED_H}
+    ${WASI_RANDOM_WORLD_WIT_GENERATED_H}
     ${WASI_CLOCKS_TIMEZONE_WIT_GENERATED_H}
+    ${WASI_CLOCKS_WALL_CLOCK_WIT_GENERATED_H}
     ${WASI_IO_POLL_WIT_GENERATED_H}
+    ${WASI_IO_STREAMS_WIT_GENERATED_H}
+    ${WASI_IO_WORLD_WIT_GENERATED_H}
     ${WASI_CLOCKS_MONOTONIC_CLOCK_WIT_GENERATED_H}
+    ${WASI_CLOCKS_WORLD_WIT_GENERATED_H}
 )
 set(CROFT_PUBLIC_GENERATED_MANIFESTS
     ${WIT_GENERATED_MANIFEST}
@@ -2428,10 +2790,20 @@ set(CROFT_PUBLIC_GENERATED_MANIFESTS
     ${HOST_EDITOR_INPUT_WIT_GENERATED_MANIFEST}
     ${HOST_A11Y_WIT_GENERATED_MANIFEST}
     ${WASI_CLI_ENVIRONMENT_WIT_GENERATED_MANIFEST}
+    ${WASI_CLI_RUN_WIT_GENERATED_MANIFEST}
+    ${WASI_CLI_IMPORTS_WIT_GENERATED_MANIFEST}
+    ${WASI_CLI_COMMAND_WIT_GENERATED_MANIFEST}
+    ${WASI_RANDOM_RANDOM_WIT_GENERATED_MANIFEST}
     ${WASI_RANDOM_INSECURE_WIT_GENERATED_MANIFEST}
+    ${WASI_RANDOM_INSECURE_SEED_WIT_GENERATED_MANIFEST}
+    ${WASI_RANDOM_WORLD_WIT_GENERATED_MANIFEST}
     ${WASI_CLOCKS_TIMEZONE_WIT_GENERATED_MANIFEST}
+    ${WASI_CLOCKS_WALL_CLOCK_WIT_GENERATED_MANIFEST}
     ${WASI_IO_POLL_WIT_GENERATED_MANIFEST}
+    ${WASI_IO_STREAMS_WIT_GENERATED_MANIFEST}
+    ${WASI_IO_WORLD_WIT_GENERATED_MANIFEST}
     ${WASI_CLOCKS_MONOTONIC_CLOCK_WIT_GENERATED_MANIFEST}
+    ${WASI_CLOCKS_WORLD_WIT_GENERATED_MANIFEST}
 )
 if(TARGET croft_menu_macos)
     list(APPEND CROFT_PUBLIC_GENERATED_HEADERS ${MENU_WIT_GENERATED_H})

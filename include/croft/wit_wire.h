@@ -1,6 +1,7 @@
 #ifndef CROFT_WIT_WIRE_H
 #define CROFT_WIT_WIRE_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #include "sapling/thatch.h"
@@ -82,6 +83,29 @@ typedef struct {
     const char           *lowered_package_id;
     const char           *lowered_name;
 } SapWitWorldBindingDescriptor;
+
+typedef int32_t (*SapWitWorldEndpointInvokeFn)(const void *bindings,
+                                               const void *command,
+                                               void *reply_out);
+
+typedef struct {
+    SapWitWorldItemKind        kind;
+    SapWitWorldTargetKind      target_kind;
+    const char                *package_id;
+    const char                *world_name;
+    const char                *item_name;
+    const char                *target_package_id;
+    const char                *target_name;
+    const char                *lowered_package_id;
+    const char                *lowered_name;
+    const char                *bindings_c_type;
+    const char                *ops_c_type;
+    const char                *command_c_type;
+    const char                *reply_c_type;
+    size_t                     ctx_offset;
+    size_t                     ops_offset;
+    SapWitWorldEndpointInvokeFn invoke;
+} SapWitWorldEndpointDescriptor;
 
 int sap_wit_skip_value(const ThatchRegion* region, ThatchCursor* cursor);
 
