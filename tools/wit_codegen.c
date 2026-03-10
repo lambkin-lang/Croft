@@ -50,6 +50,8 @@ typedef struct {
 static WitTypeExpr g_type_pool[MAX_TYPE_NODES];
 static int         g_type_pool_count = 0;
 
+typedef struct WitRegistry WitRegistry;
+
 static int type_alloc(void)
 {
     if (g_type_pool_count >= MAX_TYPE_NODES) {
@@ -98,6 +100,77 @@ static int type_to_str(int idx, char *buf, int bufsize)
     }
     n += snprintf(buf + n, bufsize - n, ">");
     return (n < bufsize) ? n : bufsize - 1;
+}
+
+static int type_to_display_str(const WitRegistry *reg,
+                               const char *scope_interface_name,
+                               int idx,
+                               char *buf,
+                               int bufsize)
+{
+    if (bufsize <= 0) return 0;
+    if (idx < 0) {
+        int n = snprintf(buf, bufsize, "_");
+        return (n < bufsize) ? n : bufsize - 1;
+    }
+
+    WitTypeExpr *t = &g_type_pool[idx];
+    if (t->kind == TYPE_IDENT) {
+        if (strstr(t->ident, "::") != NULL) {
+            const char *sep = strstr(t->ident, "::");
+            char interface_name[MAX_NAME];
+            char local_name[MAX_NAME];
+            size_t interface_len = (size_t)(sep - t->ident);
+
+            if (interface_len >= sizeof(interface_name)) interface_len = sizeof(interface_name) - 1u;
+            memcpy(interface_name, t->ident, interface_len);
+            interface_name[interface_len] = '\0';
+            snprintf(local_name, sizeof(local_name), "%s", sep + 2);
+
+            if (scope_interface_name && scope_interface_name[0] != '\0'
+                    && strcmp(scope_interface_name, interface_name) == 0) {
+                int n = snprintf(buf, bufsize, "%s", local_name);
+                return (n < bufsize) ? n : bufsize - 1;
+            }
+
+            {
+                (void)reg;
+                int n = snprintf(buf, bufsize, "%s-%s", interface_name, local_name);
+                return (n < bufsize) ? n : bufsize - 1;
+            }
+        }
+
+        {
+            int n = snprintf(buf, bufsize, "%s", t->ident);
+            return (n < bufsize) ? n : bufsize - 1;
+        }
+    }
+
+    {
+        const char *name = NULL;
+        int n = 0;
+
+        switch (t->kind) {
+        case TYPE_IDENT:  name = "?";      break;
+        case TYPE_OPTION: name = "option"; break;
+        case TYPE_LIST:   name = "list";   break;
+        case TYPE_TUPLE:  name = "tuple";  break;
+        case TYPE_RESULT: name = "result"; break;
+        case TYPE_BORROW: name = "borrow"; break;
+        }
+
+        n = snprintf(buf, bufsize, "%s<", name);
+        for (int i = 0; i < t->param_count; i++) {
+            if (i > 0) n += snprintf(buf + n, bufsize - n, ", ");
+            n += type_to_display_str(reg,
+                                     scope_interface_name,
+                                     t->params[i],
+                                     buf + n,
+                                     bufsize - n);
+        }
+        n += snprintf(buf + n, bufsize - n, ">");
+        return (n < bufsize) ? n : bufsize - 1;
+    }
 }
 
 static void codegen_die(const char *fmt, ...)
@@ -322,6 +395,8 @@ typedef struct {
 
 typedef struct {
     char     name[MAX_NAME];
+    char     interface_name[MAX_NAME];
+    char     symbol_name[MAX_NAME * 2];
     WitField fields[MAX_FIELDS];
     int      field_count;
 } WitRecord;
@@ -334,24 +409,32 @@ typedef struct {
 
 typedef struct {
     char           name[MAX_NAME];
+    char           interface_name[MAX_NAME];
+    char           symbol_name[MAX_NAME * 2];
     WitVariantCase cases[MAX_CASES];
     int            case_count;
 } WitVariant;
 
 typedef struct {
     char name[MAX_NAME];
+    char interface_name[MAX_NAME];
+    char symbol_name[MAX_NAME * 2];
     char cases[MAX_CASES][MAX_NAME];
     int  case_count;
 } WitEnum;
 
 typedef struct {
     char name[MAX_NAME];
+    char interface_name[MAX_NAME];
+    char symbol_name[MAX_NAME * 2];
     char bits[MAX_CASES][MAX_NAME];
     int  bit_count;
 } WitFlags;
 
 typedef struct {
     char name[MAX_NAME];
+    char interface_name[MAX_NAME];
+    char symbol_name[MAX_NAME * 2];
     int  target; /* index into g_type_pool */
 } WitAlias;
 
@@ -370,6 +453,7 @@ typedef enum {
 typedef struct {
     char        name[MAX_NAME];
     char        owner_name[MAX_NAME];
+    char        owner_symbol_name[MAX_NAME * 2];
     char        interface_name[MAX_NAME];
     WitFuncKind kind;
     WitOwnerKind owner_kind;
@@ -382,10 +466,11 @@ typedef struct {
 typedef struct {
     char name[MAX_NAME];
     char interface_name[MAX_NAME];
+    char symbol_name[MAX_NAME * 2];
     int  imported;
 } WitResource;
 
-typedef struct {
+struct WitRegistry {
     char      package_full[MAX_PACKAGE];
     char      package_namespace[MAX_NAME];
     char      package_name[MAX_NAME];
@@ -408,7 +493,7 @@ typedef struct {
     int         resource_count;
     WitFunc     funcs[MAX_FUNCS];
     int         func_count;
-} WitRegistry;
+};
 
 /* ------------------------------------------------------------------ */
 /* Scanner (lexical only — no bracket balancing)                      */
@@ -919,13 +1004,64 @@ static void path_to_project_relative(const char *path, char *out, int n)
     else                 snprintf(out, n, "%s", project_name);
 }
 
+static int wit_symbol_has_scope(const char *name)
+{
+    return name && strstr(name, "::") != NULL;
+}
+
+static void wit_build_scoped_symbol_name(const char *interface_name,
+                                         const char *local_name,
+                                         char *out,
+                                         int n)
+{
+    if (!out || n <= 0) return;
+    if (!local_name || local_name[0] == '\0') {
+        out[0] = '\0';
+        return;
+    }
+    if (interface_name && interface_name[0] != '\0') {
+        snprintf(out, n, "%s::%s", interface_name, local_name);
+    } else {
+        snprintf(out, n, "%s", local_name);
+    }
+}
+
+static const char *wit_symbol_local_name(const char *name)
+{
+    const char *sep;
+
+    if (!name) return "";
+    sep = strstr(name, "::");
+    return (sep && sep[2] != '\0') ? (sep + 2) : name;
+}
+
+static const char *wit_symbol_interface_name(const char *name)
+{
+    static char buf[MAX_NAME];
+    const char *sep;
+    size_t len;
+
+    if (!name) return "";
+    sep = strstr(name, "::");
+    if (!sep) return "";
+    len = (size_t)(sep - name);
+    if (len >= sizeof(buf)) len = sizeof(buf) - 1u;
+    memcpy(buf, name, len);
+    buf[len] = '\0';
+    return buf;
+}
+
 static void emit_trace_comment(FILE *out, const char *indent, const char *trace)
 {
     if (!out || !trace || trace[0] == '\0') return;
     fprintf(out, "%s/* %s */\n", indent ? indent : "", trace);
 }
 
-static void format_field_trace(const WitField *field, char *out, int n)
+static void format_field_trace(const WitRegistry *reg,
+                               const char *scope_interface_name,
+                               const WitField *field,
+                               char *out,
+                               int n)
 {
     char typebuf[256];
 
@@ -933,7 +1069,7 @@ static void format_field_trace(const WitField *field, char *out, int n)
     out[0] = '\0';
     if (!field) return;
 
-    type_to_str(field->wit_type, typebuf, (int)sizeof(typebuf));
+    type_to_display_str(reg, scope_interface_name, field->wit_type, typebuf, (int)sizeof(typebuf));
     snprintf(out, n, "%s: %s", field->name, typebuf);
 }
 
@@ -974,7 +1110,11 @@ static void format_func_trace(const WitFunc *func, char *out, int n)
     }
 }
 
-static void format_variant_case_trace(const WitVariantCase *variant_case, char *out, int n)
+static void format_variant_case_trace(const WitRegistry *reg,
+                                      const char *scope_interface_name,
+                                      const WitVariantCase *variant_case,
+                                      char *out,
+                                      int n)
 {
     char typebuf[256];
 
@@ -987,7 +1127,11 @@ static void format_variant_case_trace(const WitVariantCase *variant_case, char *
     }
 
     if (variant_case->payload_type >= 0) {
-        type_to_str(variant_case->payload_type, typebuf, (int)sizeof(typebuf));
+        type_to_display_str(reg,
+                            scope_interface_name,
+                            variant_case->payload_type,
+                            typebuf,
+                            (int)sizeof(typebuf));
         snprintf(out, n, "%s(%s)", variant_case->name, typebuf);
     } else {
         snprintf(out, n, "%s", variant_case->name);
@@ -1182,16 +1326,10 @@ static int registry_add_resource(WitRegistry *reg,
     }
 
     for (int i = 0; i < reg->resource_count; i++) {
-        if (strcmp(reg->resources[i].name, name) == 0) {
+        if (strcmp(reg->resources[i].name, name) == 0
+                && strcmp(reg->resources[i].interface_name, interface_name ? interface_name : "") == 0) {
             if (imported) {
                 reg->resources[i].imported = 1;
-            }
-            if (interface_name && interface_name[0] != '\0'
-                    && reg->resources[i].interface_name[0] == '\0') {
-                snprintf(reg->resources[i].interface_name,
-                         sizeof(reg->resources[i].interface_name),
-                         "%s",
-                         interface_name);
             }
             return 1;
         }
@@ -1213,6 +1351,10 @@ static int registry_add_resource(WitRegistry *reg,
                  "%s",
                  interface_name);
     }
+    wit_build_scoped_symbol_name(interface_name,
+                                 name,
+                                 reg->resources[reg->resource_count].symbol_name,
+                                 (int)sizeof(reg->resources[reg->resource_count].symbol_name));
     reg->resources[reg->resource_count].imported = imported ? 1 : 0;
     reg->resource_count++;
     return 1;
@@ -1295,6 +1437,10 @@ static int parse_named_func(Scanner *s,
     if (!expect_char(s, ';')) return 0;
 
     snprintf(func.owner_name, sizeof(func.owner_name), "%s", scope_name ? scope_name : "");
+    wit_build_scoped_symbol_name((scope == PARSE_SCOPE_RESOURCE) ? interface_name : NULL,
+                                 scope_name ? scope_name : "",
+                                 func.owner_symbol_name,
+                                 (int)sizeof(func.owner_symbol_name));
     snprintf(func.interface_name,
              sizeof(func.interface_name),
              "%s",
@@ -1340,6 +1486,10 @@ static int parse_constructor_func(Scanner *s,
     func.kind = WIT_FUNC_CONSTRUCTOR;
     func.owner_kind = WIT_OWNER_RESOURCE;
     snprintf(func.owner_name, sizeof(func.owner_name), "%s", scope_name ? scope_name : "");
+    wit_build_scoped_symbol_name(interface_name,
+                                 scope_name ? scope_name : "",
+                                 func.owner_symbol_name,
+                                 (int)sizeof(func.owner_symbol_name));
     snprintf(func.interface_name,
              sizeof(func.interface_name),
              "%s",
@@ -1692,30 +1842,70 @@ static int parse_scope_items(Scanner *s,
                 fprintf(stderr, "wit_codegen: too many records\n"); return 0;
             }
             if (!parse_record(s, &reg->records[reg->record_count])) return 0;
+            snprintf(reg->records[reg->record_count].interface_name,
+                     sizeof(reg->records[reg->record_count].interface_name),
+                     "%s",
+                     interface_name ? interface_name : "");
+            wit_build_scoped_symbol_name(interface_name,
+                                         reg->records[reg->record_count].name,
+                                         reg->records[reg->record_count].symbol_name,
+                                         (int)sizeof(reg->records[reg->record_count].symbol_name));
             reg->record_count++;
         } else if (match_keyword(s, "variant")) {
             if (reg->variant_count >= MAX_TYPES) {
                 fprintf(stderr, "wit_codegen: too many variants\n"); return 0;
             }
             if (!parse_variant(s, &reg->variants[reg->variant_count])) return 0;
+            snprintf(reg->variants[reg->variant_count].interface_name,
+                     sizeof(reg->variants[reg->variant_count].interface_name),
+                     "%s",
+                     interface_name ? interface_name : "");
+            wit_build_scoped_symbol_name(interface_name,
+                                         reg->variants[reg->variant_count].name,
+                                         reg->variants[reg->variant_count].symbol_name,
+                                         (int)sizeof(reg->variants[reg->variant_count].symbol_name));
             reg->variant_count++;
         } else if (match_keyword(s, "enum")) {
             if (reg->enum_count >= MAX_TYPES) {
                 fprintf(stderr, "wit_codegen: too many enums\n"); return 0;
             }
             if (!parse_enum(s, &reg->enums[reg->enum_count])) return 0;
+            snprintf(reg->enums[reg->enum_count].interface_name,
+                     sizeof(reg->enums[reg->enum_count].interface_name),
+                     "%s",
+                     interface_name ? interface_name : "");
+            wit_build_scoped_symbol_name(interface_name,
+                                         reg->enums[reg->enum_count].name,
+                                         reg->enums[reg->enum_count].symbol_name,
+                                         (int)sizeof(reg->enums[reg->enum_count].symbol_name));
             reg->enum_count++;
         } else if (match_keyword(s, "flags")) {
             if (reg->flags_count >= MAX_TYPES) {
                 fprintf(stderr, "wit_codegen: too many flags\n"); return 0;
             }
             if (!parse_flags(s, &reg->flags[reg->flags_count])) return 0;
+            snprintf(reg->flags[reg->flags_count].interface_name,
+                     sizeof(reg->flags[reg->flags_count].interface_name),
+                     "%s",
+                     interface_name ? interface_name : "");
+            wit_build_scoped_symbol_name(interface_name,
+                                         reg->flags[reg->flags_count].name,
+                                         reg->flags[reg->flags_count].symbol_name,
+                                         (int)sizeof(reg->flags[reg->flags_count].symbol_name));
             reg->flags_count++;
         } else if (match_keyword(s, "type")) {
             if (reg->alias_count >= MAX_TYPES) {
                 fprintf(stderr, "wit_codegen: too many aliases\n"); return 0;
             }
             if (!parse_alias(s, &reg->aliases[reg->alias_count])) return 0;
+            snprintf(reg->aliases[reg->alias_count].interface_name,
+                     sizeof(reg->aliases[reg->alias_count].interface_name),
+                     "%s",
+                     interface_name ? interface_name : "");
+            wit_build_scoped_symbol_name(interface_name,
+                                         reg->aliases[reg->alias_count].name,
+                                         reg->aliases[reg->alias_count].symbol_name,
+                                         (int)sizeof(reg->aliases[reg->alias_count].symbol_name));
             reg->alias_count++;
         } else if (match_keyword(s, "resource")) {
             if (!parse_resource_decl(s, reg, interface_name)) return 0;
@@ -1774,6 +1964,8 @@ static const WitResource *find_resource(const WitRegistry *reg, const char *name
 static int resolve_type(const WitRegistry *reg, int type_idx);
 static int unwrap_borrow_type(const WitRegistry *reg, int type_idx);
 static const char *prim_c_type(const char *name);
+static int is_primitive(const char *name);
+static int resolve_registry_symbol_scopes(WitRegistry *reg);
 
 static int same_type_shape(const WitRegistry *reg, int a, int b)
 {
@@ -1910,7 +2102,10 @@ static const char *wit_func_surface_name(const WitRegistry *reg, const WitFunc *
         return func->interface_name;
     }
     if (func->owner_kind == WIT_OWNER_RESOURCE) {
-        resource = find_resource(reg, func->owner_name);
+        resource = find_resource(reg,
+                                 func->owner_symbol_name[0] != '\0'
+                                     ? func->owner_symbol_name
+                                     : func->owner_name);
         if (resource && resource->interface_name[0] != '\0') {
             return resource->interface_name;
         }
@@ -1964,9 +2159,12 @@ static void lowered_reply_case_name(const WitRegistry *reg,
     ok_resolved = unwrap_borrow_type(reg, ok_type);
     if (ok_resolved >= 0) {
         ok_expr = &g_type_pool[ok_resolved];
-        if (ok_expr->kind == TYPE_IDENT && find_resource(reg, ok_expr->ident)) {
-            snprintf(out, n, "%s", ok_expr->ident);
-            return;
+        if (ok_expr->kind == TYPE_IDENT) {
+            const WitResource *resource = find_resource(reg, ok_expr->ident);
+            if (resource) {
+                snprintf(out, n, "%s", resource->name);
+                return;
+            }
         }
     }
 
@@ -2072,7 +2270,9 @@ static int lower_operation_group(WitRegistry *reg, const char *group_name)
                 snprintf(g_type_pool[request_record.fields[field_count].wit_type].ident,
                          sizeof(g_type_pool[request_record.fields[field_count].wit_type].ident),
                          "%s",
-                         func->owner_name);
+                         func->owner_symbol_name[0] != '\0'
+                             ? func->owner_symbol_name
+                             : func->owner_name);
                 field_count++;
             }
 
@@ -2180,50 +2380,98 @@ static int lower_operations(WitRegistry *reg)
 
 static const WitAlias *find_alias(const WitRegistry *reg, const char *name)
 {
+    const WitAlias *local_match = NULL;
+    int local_count = 0;
+
     for (int i = 0; i < reg->alias_count; i++)
-        if (strcmp(reg->aliases[i].name, name) == 0)
+        if (reg->aliases[i].symbol_name[0] != '\0' && strcmp(reg->aliases[i].symbol_name, name) == 0)
             return &reg->aliases[i];
-    return NULL;
+    for (int i = 0; i < reg->alias_count; i++)
+        if (strcmp(reg->aliases[i].name, name) == 0) {
+            local_match = &reg->aliases[i];
+            local_count++;
+        }
+    return (local_count == 1) ? local_match : NULL;
 }
 
 static const WitRecord *find_record(const WitRegistry *reg, const char *name)
 {
+    const WitRecord *local_match = NULL;
+    int local_count = 0;
+
     for (int i = 0; i < reg->record_count; i++)
-        if (strcmp(reg->records[i].name, name) == 0)
+        if (reg->records[i].symbol_name[0] != '\0' && strcmp(reg->records[i].symbol_name, name) == 0)
             return &reg->records[i];
-    return NULL;
+    for (int i = 0; i < reg->record_count; i++)
+        if (strcmp(reg->records[i].name, name) == 0) {
+            local_match = &reg->records[i];
+            local_count++;
+        }
+    return (local_count == 1) ? local_match : NULL;
 }
 
 static const WitVariant *find_variant(const WitRegistry *reg, const char *name)
 {
+    const WitVariant *local_match = NULL;
+    int local_count = 0;
+
     for (int i = 0; i < reg->variant_count; i++)
-        if (strcmp(reg->variants[i].name, name) == 0)
+        if (reg->variants[i].symbol_name[0] != '\0' && strcmp(reg->variants[i].symbol_name, name) == 0)
             return &reg->variants[i];
-    return NULL;
+    for (int i = 0; i < reg->variant_count; i++)
+        if (strcmp(reg->variants[i].name, name) == 0) {
+            local_match = &reg->variants[i];
+            local_count++;
+        }
+    return (local_count == 1) ? local_match : NULL;
 }
 
 static const WitEnum *find_enum(const WitRegistry *reg, const char *name)
 {
+    const WitEnum *local_match = NULL;
+    int local_count = 0;
+
     for (int i = 0; i < reg->enum_count; i++)
-        if (strcmp(reg->enums[i].name, name) == 0)
+        if (reg->enums[i].symbol_name[0] != '\0' && strcmp(reg->enums[i].symbol_name, name) == 0)
             return &reg->enums[i];
-    return NULL;
+    for (int i = 0; i < reg->enum_count; i++)
+        if (strcmp(reg->enums[i].name, name) == 0) {
+            local_match = &reg->enums[i];
+            local_count++;
+        }
+    return (local_count == 1) ? local_match : NULL;
 }
 
 static const WitFlags *find_flags(const WitRegistry *reg, const char *name)
 {
+    const WitFlags *local_match = NULL;
+    int local_count = 0;
+
     for (int i = 0; i < reg->flags_count; i++)
-        if (strcmp(reg->flags[i].name, name) == 0)
+        if (reg->flags[i].symbol_name[0] != '\0' && strcmp(reg->flags[i].symbol_name, name) == 0)
             return &reg->flags[i];
-    return NULL;
+    for (int i = 0; i < reg->flags_count; i++)
+        if (strcmp(reg->flags[i].name, name) == 0) {
+            local_match = &reg->flags[i];
+            local_count++;
+        }
+    return (local_count == 1) ? local_match : NULL;
 }
 
 static const WitResource *find_resource(const WitRegistry *reg, const char *name)
 {
+    const WitResource *local_match = NULL;
+    int local_count = 0;
+
     for (int i = 0; i < reg->resource_count; i++)
-        if (strcmp(reg->resources[i].name, name) == 0)
+        if (reg->resources[i].symbol_name[0] != '\0' && strcmp(reg->resources[i].symbol_name, name) == 0)
             return &reg->resources[i];
-    return NULL;
+    for (int i = 0; i < reg->resource_count; i++)
+        if (strcmp(reg->resources[i].name, name) == 0) {
+            local_match = &reg->resources[i];
+            local_count++;
+        }
+    return (local_count == 1) ? local_match : NULL;
 }
 
 /* Resolve a type-expression index through aliases.
@@ -2255,6 +2503,154 @@ static int unwrap_borrow_type(const WitRegistry *reg, int type_idx)
         type_idx = g_type_pool[resolved].params[0];
     }
     return resolve_type(reg, type_idx);
+}
+
+static int is_builtin_ident(const char *name)
+{
+    return name && (strcmp(name, "string") == 0 || is_primitive(name));
+}
+
+static int lookup_scoped_symbol_name(const WitRegistry *reg,
+                                     const char *interface_name,
+                                     const char *local_name,
+                                     char *out,
+                                     int n)
+{
+    const char *scope = interface_name ? interface_name : "";
+    const char *match = NULL;
+
+    if (!reg || !local_name || local_name[0] == '\0') return 0;
+
+#define CHECK_SCOPE_MATCH(sym_interface, sym_local, sym_name) \
+    do { \
+        if (strcmp((sym_interface), scope) == 0 && strcmp((sym_local), local_name) == 0) { \
+            if (match && strcmp(match, (sym_name)) != 0) { \
+                codegen_die("ambiguous scoped WIT name %s in interface %s", \
+                            local_name, scope[0] ? scope : "<top-level>"); \
+            } \
+            match = (sym_name); \
+        } \
+    } while (0)
+
+    for (int i = 0; i < reg->alias_count; i++)
+        CHECK_SCOPE_MATCH(reg->aliases[i].interface_name, reg->aliases[i].name, reg->aliases[i].symbol_name);
+    for (int i = 0; i < reg->record_count; i++)
+        CHECK_SCOPE_MATCH(reg->records[i].interface_name, reg->records[i].name, reg->records[i].symbol_name);
+    for (int i = 0; i < reg->variant_count; i++)
+        CHECK_SCOPE_MATCH(reg->variants[i].interface_name, reg->variants[i].name, reg->variants[i].symbol_name);
+    for (int i = 0; i < reg->enum_count; i++)
+        CHECK_SCOPE_MATCH(reg->enums[i].interface_name, reg->enums[i].name, reg->enums[i].symbol_name);
+    for (int i = 0; i < reg->flags_count; i++)
+        CHECK_SCOPE_MATCH(reg->flags[i].interface_name, reg->flags[i].name, reg->flags[i].symbol_name);
+    for (int i = 0; i < reg->resource_count; i++)
+        CHECK_SCOPE_MATCH(reg->resources[i].interface_name, reg->resources[i].name, reg->resources[i].symbol_name);
+
+#undef CHECK_SCOPE_MATCH
+
+    if (!match && scope[0] != '\0') {
+        return lookup_scoped_symbol_name(reg, "", local_name, out, n);
+    }
+    if (!match) {
+        return 0;
+    }
+
+    if (out && n > 0) {
+        snprintf(out, n, "%s", match);
+    }
+    return 1;
+}
+
+static int qualify_type_expr_symbols(const WitRegistry *reg,
+                                     int type_idx,
+                                     const char *interface_name)
+{
+    WitTypeExpr *t;
+
+    if (!reg || type_idx < 0) return 1;
+    t = &g_type_pool[type_idx];
+
+    if (t->kind == TYPE_IDENT) {
+        char symbol_name[MAX_NAME * 2];
+
+        if (t->ident[0] == '\0' || is_builtin_ident(t->ident) || wit_symbol_has_scope(t->ident)) {
+            return 1;
+        }
+        if (lookup_scoped_symbol_name(reg, interface_name, t->ident, symbol_name, (int)sizeof(symbol_name))) {
+            snprintf(t->ident, sizeof(t->ident), "%s", symbol_name);
+        }
+        return 1;
+    }
+
+    for (int i = 0; i < t->param_count; i++) {
+        if (t->params[i] >= 0 && !qualify_type_expr_symbols(reg, t->params[i], interface_name)) {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int resolve_registry_symbol_scopes(WitRegistry *reg)
+{
+    char owner_symbol[MAX_NAME * 2];
+
+    if (!reg) return 0;
+
+    for (int i = 0; i < reg->alias_count; i++) {
+        if (!qualify_type_expr_symbols(reg, reg->aliases[i].target, reg->aliases[i].interface_name)) {
+            return 0;
+        }
+    }
+    for (int i = 0; i < reg->record_count; i++) {
+        for (int j = 0; j < reg->records[i].field_count; j++) {
+            if (!qualify_type_expr_symbols(reg,
+                                           reg->records[i].fields[j].wit_type,
+                                           reg->records[i].interface_name)) {
+                return 0;
+            }
+        }
+    }
+    for (int i = 0; i < reg->variant_count; i++) {
+        for (int j = 0; j < reg->variants[i].case_count; j++) {
+            if (reg->variants[i].cases[j].payload_type >= 0
+                    && !qualify_type_expr_symbols(reg,
+                                                  reg->variants[i].cases[j].payload_type,
+                                                  reg->variants[i].interface_name)) {
+                return 0;
+            }
+        }
+    }
+    for (int i = 0; i < reg->func_count; i++) {
+        for (int j = 0; j < reg->funcs[i].param_count; j++) {
+            if (!qualify_type_expr_symbols(reg,
+                                           reg->funcs[i].params[j].wit_type,
+                                           reg->funcs[i].interface_name)) {
+                return 0;
+            }
+        }
+        if (reg->funcs[i].result_type >= 0
+                && !qualify_type_expr_symbols(reg,
+                                              reg->funcs[i].result_type,
+                                              reg->funcs[i].interface_name)) {
+            return 0;
+        }
+        if (reg->funcs[i].owner_kind == WIT_OWNER_RESOURCE) {
+            if (!lookup_scoped_symbol_name(reg,
+                                           reg->funcs[i].interface_name,
+                                           reg->funcs[i].owner_name,
+                                           owner_symbol,
+                                           (int)sizeof(owner_symbol))) {
+                codegen_die("unknown resource %s in interface %s",
+                            reg->funcs[i].owner_name,
+                            reg->funcs[i].interface_name);
+            }
+            snprintf(reg->funcs[i].owner_symbol_name,
+                     sizeof(reg->funcs[i].owner_symbol_name),
+                     "%s",
+                     owner_symbol);
+        }
+    }
+
+    return 1;
 }
 
 /* Check if a type expression is a WIT primitive. */
@@ -2378,12 +2774,101 @@ static void wit_trim_leading_package_tail(const WitRegistry *reg,
     snprintf(out, n, "%s", wit_name);
 }
 
+static int wit_local_name_occurrences(const WitRegistry *reg, const char *local_name)
+{
+    int count = 0;
+
+    if (!reg || !local_name || local_name[0] == '\0') return 0;
+
+    for (int i = 0; i < reg->record_count; i++)
+        if (strcmp(reg->records[i].name, local_name) == 0) count++;
+    for (int i = 0; i < reg->variant_count; i++)
+        if (strcmp(reg->variants[i].name, local_name) == 0) count++;
+    for (int i = 0; i < reg->enum_count; i++)
+        if (strcmp(reg->enums[i].name, local_name) == 0) count++;
+    for (int i = 0; i < reg->flags_count; i++)
+        if (strcmp(reg->flags[i].name, local_name) == 0) count++;
+    for (int i = 0; i < reg->alias_count; i++)
+        if (strcmp(reg->aliases[i].name, local_name) == 0) count++;
+    for (int i = 0; i < reg->resource_count; i++)
+        if (strcmp(reg->resources[i].name, local_name) == 0) count++;
+
+    return count;
+}
+
+static void wit_emit_name_from_symbol(const WitRegistry *reg,
+                                      const char *wit_name,
+                                      char *out,
+                                      int n)
+{
+    const char *sep;
+    char interface_name[MAX_NAME];
+    char local_name[MAX_NAME];
+
+    if (!out || n <= 0) return;
+    out[0] = '\0';
+    if (!wit_name) return;
+
+    sep = strstr(wit_name, "::");
+    if (!sep) {
+        snprintf(out, n, "%s", wit_name);
+        return;
+    }
+
+    {
+        size_t interface_len = (size_t)(sep - wit_name);
+        size_t local_len = strlen(sep + 2);
+
+        if (interface_len >= sizeof(interface_name)) interface_len = sizeof(interface_name) - 1u;
+        if (local_len >= sizeof(local_name)) local_len = sizeof(local_name) - 1u;
+        memcpy(interface_name, wit_name, interface_len);
+        interface_name[interface_len] = '\0';
+        memcpy(local_name, sep + 2, local_len);
+        local_name[local_len] = '\0';
+    }
+
+    if (wit_local_name_occurrences(reg, local_name) <= 1) {
+        snprintf(out, n, "%s", local_name);
+    } else {
+        snprintf(out, n, "%s-%s", interface_name, local_name);
+    }
+}
+
+static const char *wit_record_symbol_name(const WitRecord *rec)
+{
+    return (rec && rec->symbol_name[0] != '\0') ? rec->symbol_name : (rec ? rec->name : "");
+}
+
+static const char *wit_variant_symbol_name(const WitVariant *var)
+{
+    return (var && var->symbol_name[0] != '\0') ? var->symbol_name : (var ? var->name : "");
+}
+
+static const char *wit_enum_symbol_name(const WitEnum *en)
+{
+    return (en && en->symbol_name[0] != '\0') ? en->symbol_name : (en ? en->name : "");
+}
+
+static const char *wit_flags_symbol_name(const WitFlags *fl)
+{
+    return (fl && fl->symbol_name[0] != '\0') ? fl->symbol_name : (fl ? fl->name : "");
+}
+
+static const char *wit_resource_symbol_name(const WitResource *resource)
+{
+    return (resource && resource->symbol_name[0] != '\0')
+        ? resource->symbol_name
+        : (resource ? resource->name : "");
+}
+
 static void wit_type_c_typename(const WitRegistry *reg, const char *wit_name, char *out, int n)
 {
+    char emitted[MAX_NAME * 2];
     char normalized[MAX_NAME];
     char camel[MAX_NAME];
 
-    wit_trim_leading_package_tail(reg, wit_name, normalized, (int)sizeof(normalized));
+    wit_emit_name_from_symbol(reg, wit_name, emitted, (int)sizeof(emitted));
+    wit_trim_leading_package_tail(reg, emitted, normalized, (int)sizeof(normalized));
     if (normalized[0] != '\0') {
         wit_name_to_camel_ident(normalized, camel, (int)sizeof(camel));
     } else {
@@ -2408,10 +2893,12 @@ static void wit_resource_c_typename(const WitRegistry *reg, const char *resource
 
 static void wit_macro_name(const WitRegistry *reg, const char *wit_name, char *out, int n)
 {
+    char emitted[MAX_NAME * 2];
     char normalized[MAX_NAME];
     char upper[MAX_NAME];
 
-    wit_trim_leading_package_tail(reg, wit_name, normalized, (int)sizeof(normalized));
+    wit_emit_name_from_symbol(reg, wit_name, emitted, (int)sizeof(emitted));
+    wit_trim_leading_package_tail(reg, emitted, normalized, (int)sizeof(normalized));
     if (normalized[0] != '\0') {
         wit_name_to_upper_ident(normalized, upper, (int)sizeof(upper));
     } else {
@@ -2427,10 +2914,12 @@ static void wit_macro_name(const WitRegistry *reg, const char *wit_name, char *o
 
 static void wit_function_suffix(const WitRegistry *reg, const char *wit_name, char *out, int n)
 {
+    char emitted[MAX_NAME * 2];
     char normalized[MAX_NAME];
     char snake[MAX_NAME];
 
-    wit_trim_leading_package_tail(reg, wit_name, normalized, (int)sizeof(normalized));
+    wit_emit_name_from_symbol(reg, wit_name, emitted, (int)sizeof(emitted));
+    wit_trim_leading_package_tail(reg, emitted, normalized, (int)sizeof(normalized));
     if (normalized[0] != '\0') {
         wit_name_to_snake_ident(normalized, snake, (int)sizeof(snake));
     } else {
@@ -2783,7 +3272,7 @@ static int topo_sort_types(const WitRegistry *reg, const char **order, int max_o
     int n = 0;
 
     for (int i = 0; i < reg->record_count; i++) {
-        names[n] = reg->records[i].name;
+        names[n] = wit_record_symbol_name(&reg->records[i]);
         dep_cnt[n] = 0;
         for (int j = 0; j < reg->records[i].field_count; j++)
             collect_struct_deps(reg, reg->records[i].fields[j].wit_type,
@@ -2791,7 +3280,7 @@ static int topo_sort_types(const WitRegistry *reg, const char **order, int max_o
         n++;
     }
     for (int i = 0; i < reg->variant_count; i++) {
-        names[n] = reg->variants[i].name;
+        names[n] = wit_variant_symbol_name(&reg->variants[i]);
         dep_cnt[n] = 0;
         for (int j = 0; j < reg->variants[i].case_count; j++)
             if (reg->variants[i].cases[j].payload_type >= 0)
@@ -3110,8 +3599,14 @@ static void emit_header(FILE *out, const WitRegistry *reg,
     if (reg->resource_count > 0) {
         fprintf(out, "/* Resource handle typedefs traced back to WIT `resource` items. */\n");
         for (int i = 0; i < reg->resource_count; i++) {
-            wit_macro_name(reg, reg->resources[i].name, macro_name, (int)sizeof(macro_name));
-            wit_resource_c_typename(reg, reg->resources[i].name, type_name, (int)sizeof(type_name));
+            wit_macro_name(reg,
+                           wit_resource_symbol_name(&reg->resources[i]),
+                           macro_name,
+                           (int)sizeof(macro_name));
+            wit_resource_c_typename(reg,
+                                    wit_resource_symbol_name(&reg->resources[i]),
+                                    type_name,
+                                    (int)sizeof(type_name));
             fprintf(out, "/* WIT resource %s. */\n", reg->resources[i].name);
             fprintf(out, "typedef uint32_t %s;\n", type_name);
             fprintf(out, "#define %s_RESOURCE_INVALID ((%s)0u)\n",
@@ -3130,7 +3625,7 @@ static void emit_header(FILE *out, const WitRegistry *reg,
     }
     for (int i = 0; i < reg->enum_count; i++) {
         const WitEnum *en = &reg->enums[i];
-        wit_macro_name(reg, en->name, macro_name, (int)sizeof(macro_name));
+        wit_macro_name(reg, wit_enum_symbol_name(en), macro_name, (int)sizeof(macro_name));
         fprintf(out, "/* WIT enum %s. */\n", en->name);
         for (int j = 0; j < en->case_count; j++) {
             char case_upper[MAX_NAME];
@@ -3142,7 +3637,7 @@ static void emit_header(FILE *out, const WitRegistry *reg,
     }
     for (int i = 0; i < reg->flags_count; i++) {
         const WitFlags *fl = &reg->flags[i];
-        wit_macro_name(reg, fl->name, macro_name, (int)sizeof(macro_name));
+        wit_macro_name(reg, wit_flags_symbol_name(fl), macro_name, (int)sizeof(macro_name));
         fprintf(out, "/* WIT flags %s. */\n", fl->name);
         for (int j = 0; j < fl->bit_count; j++) {
             char bit_upper[MAX_NAME];
@@ -3154,13 +3649,17 @@ static void emit_header(FILE *out, const WitRegistry *reg,
     }
     for (int i = 0; i < reg->variant_count; i++) {
         const WitVariant *var = &reg->variants[i];
-        wit_macro_name(reg, var->name, macro_name, (int)sizeof(macro_name));
+        wit_macro_name(reg, wit_variant_symbol_name(var), macro_name, (int)sizeof(macro_name));
         fprintf(out, "/* WIT variant %s case tags. */\n", var->name);
         for (int j = 0; j < var->case_count; j++) {
             char case_upper[MAX_NAME];
             char case_trace[256];
             wit_name_to_upper_ident(var->cases[j].name, case_upper, (int)sizeof(case_upper));
-            format_variant_case_trace(&var->cases[j], case_trace, (int)sizeof(case_trace));
+            format_variant_case_trace(reg,
+                                      var->interface_name,
+                                      &var->cases[j],
+                                      case_trace,
+                                      (int)sizeof(case_trace));
             emit_trace_comment(out, "", case_trace);
             fprintf(out, "#define %s_%s %d\n", macro_name, case_upper, j);
         }
@@ -3175,13 +3674,17 @@ static void emit_header(FILE *out, const WitRegistry *reg,
         const WitRecord *rec = find_record(reg, tname);
         if (rec) {
             wit_type_c_typename(reg, tname, type_name, (int)sizeof(type_name));
-            fprintf(out, "/* WIT record %s -> %s. */\n", tname, type_name);
+            fprintf(out, "/* WIT record %s -> %s. */\n", rec->name, type_name);
             fprintf(out, "typedef struct {\n");
             for (int j = 0; j < rec->field_count; j++) {
                 char field_name[MAX_NAME];
                 char field_trace[256];
                 wit_name_to_snake_ident(rec->fields[j].name, field_name, (int)sizeof(field_name));
-                format_field_trace(&rec->fields[j], field_trace, (int)sizeof(field_trace));
+                format_field_trace(reg,
+                                   rec->interface_name,
+                                   &rec->fields[j],
+                                   field_trace,
+                                   (int)sizeof(field_trace));
                 emit_trace_comment(out, "    ", field_trace);
                 emit_c_fields(out, reg, rec->fields[j].wit_type, field_name, "    ");
             }
@@ -3191,7 +3694,7 @@ static void emit_header(FILE *out, const WitRegistry *reg,
         const WitVariant *var = find_variant(reg, tname);
         if (var) {
             wit_type_c_typename(reg, tname, type_name, (int)sizeof(type_name));
-            fprintf(out, "/* WIT variant %s -> %s. */\n", tname, type_name);
+            fprintf(out, "/* WIT variant %s -> %s. */\n", var->name, type_name);
             fprintf(out, "typedef struct {\n");
             fprintf(out, "    uint8_t case_tag;\n");
             int has_payload = 0;
@@ -3204,7 +3707,11 @@ static void emit_header(FILE *out, const WitRegistry *reg,
                     char case_name[MAX_NAME];
                     char case_trace[256];
                     wit_name_to_snake_ident(var->cases[j].name, case_name, (int)sizeof(case_name));
-                    format_variant_case_trace(&var->cases[j], case_trace, (int)sizeof(case_trace));
+                    format_variant_case_trace(reg,
+                                              var->interface_name,
+                                              &var->cases[j],
+                                              case_trace,
+                                              (int)sizeof(case_trace));
                     emit_trace_comment(out, "        ", case_trace);
                     emit_variant_payload(out, reg, var->cases[j].payload_type, case_name);
                 }
@@ -3239,9 +3746,9 @@ static void emit_header(FILE *out, const WitRegistry *reg,
         char dispose_name[MAX_NAME * 2];
 
         if (!var || !wit_is_reply_variant(var->name)) continue;
-        wit_type_c_typename(reg, var->name, type_name, (int)sizeof(type_name));
-        wit_zero_name(reg, var->name, zero_name, (int)sizeof(zero_name));
-        wit_dispose_name(reg, var->name, dispose_name, (int)sizeof(dispose_name));
+        wit_type_c_typename(reg, wit_variant_symbol_name(var), type_name, (int)sizeof(type_name));
+        wit_zero_name(reg, wit_variant_symbol_name(var), zero_name, (int)sizeof(zero_name));
+        wit_dispose_name(reg, wit_variant_symbol_name(var), dispose_name, (int)sizeof(dispose_name));
         fprintf(out, "void %s(%s *out);\n", zero_name, type_name);
         fprintf(out, "void %s(%s *out);\n", dispose_name, type_name);
     }
@@ -3346,55 +3853,70 @@ static void emit_manifest(FILE *out, const WitRegistry *reg,
     fprintf(out, "# Columns: kind\twit-name\tnormalized\tc-name\tmacro-or-function\n");
 
     for (int i = 0; i < reg->resource_count; i++) {
-        wit_trim_leading_package_tail(reg, reg->resources[i].name, normalized, (int)sizeof(normalized));
-        wit_resource_c_typename(reg, reg->resources[i].name, c_name, (int)sizeof(c_name));
-        wit_macro_name(reg, reg->resources[i].name, macro_name, (int)sizeof(macro_name));
+        wit_emit_name_from_symbol(reg,
+                                  wit_resource_symbol_name(&reg->resources[i]),
+                                  normalized,
+                                  (int)sizeof(normalized));
+        wit_resource_c_typename(reg, wit_resource_symbol_name(&reg->resources[i]), c_name, (int)sizeof(c_name));
+        wit_macro_name(reg, wit_resource_symbol_name(&reg->resources[i]), macro_name, (int)sizeof(macro_name));
         fprintf(out, "resource\t%s\t%s\t%s\t%s_RESOURCE_INVALID\n",
-                reg->resources[i].name,
+                wit_resource_symbol_name(&reg->resources[i]),
                 normalized[0] ? normalized : "<exact-package>",
                 c_name,
                 macro_name);
     }
 
     for (int i = 0; i < reg->record_count; i++) {
-        wit_trim_leading_package_tail(reg, reg->records[i].name, normalized, (int)sizeof(normalized));
-        wit_type_c_typename(reg, reg->records[i].name, c_name, (int)sizeof(c_name));
-        wit_writer_name(reg, reg->records[i].name, fn_name, (int)sizeof(fn_name));
+        wit_emit_name_from_symbol(reg,
+                                  wit_record_symbol_name(&reg->records[i]),
+                                  normalized,
+                                  (int)sizeof(normalized));
+        wit_type_c_typename(reg, wit_record_symbol_name(&reg->records[i]), c_name, (int)sizeof(c_name));
+        wit_writer_name(reg, wit_record_symbol_name(&reg->records[i]), fn_name, (int)sizeof(fn_name));
         fprintf(out, "record\t%s\t%s\t%s\t%s\n",
-                reg->records[i].name,
+                wit_record_symbol_name(&reg->records[i]),
                 normalized[0] ? normalized : "<exact-package>",
                 c_name,
                 fn_name);
     }
 
     for (int i = 0; i < reg->variant_count; i++) {
-        wit_trim_leading_package_tail(reg, reg->variants[i].name, normalized, (int)sizeof(normalized));
-        wit_type_c_typename(reg, reg->variants[i].name, c_name, (int)sizeof(c_name));
-        wit_macro_name(reg, reg->variants[i].name, macro_name, (int)sizeof(macro_name));
+        wit_emit_name_from_symbol(reg,
+                                  wit_variant_symbol_name(&reg->variants[i]),
+                                  normalized,
+                                  (int)sizeof(normalized));
+        wit_type_c_typename(reg, wit_variant_symbol_name(&reg->variants[i]), c_name, (int)sizeof(c_name));
+        wit_macro_name(reg, wit_variant_symbol_name(&reg->variants[i]), macro_name, (int)sizeof(macro_name));
         fprintf(out, "variant\t%s\t%s\t%s\t%s\n",
-                reg->variants[i].name,
+                wit_variant_symbol_name(&reg->variants[i]),
                 normalized[0] ? normalized : "<exact-package>",
                 c_name,
                 macro_name);
     }
 
     for (int i = 0; i < reg->enum_count; i++) {
-        wit_trim_leading_package_tail(reg, reg->enums[i].name, normalized, (int)sizeof(normalized));
-        wit_type_c_typename(reg, reg->enums[i].name, c_name, (int)sizeof(c_name));
-        wit_macro_name(reg, reg->enums[i].name, macro_name, (int)sizeof(macro_name));
+        wit_emit_name_from_symbol(reg,
+                                  wit_enum_symbol_name(&reg->enums[i]),
+                                  normalized,
+                                  (int)sizeof(normalized));
+        wit_type_c_typename(reg, wit_enum_symbol_name(&reg->enums[i]), c_name, (int)sizeof(c_name));
+        wit_macro_name(reg, wit_enum_symbol_name(&reg->enums[i]), macro_name, (int)sizeof(macro_name));
         fprintf(out, "enum\t%s\t%s\t%s\t%s\n",
-                reg->enums[i].name,
+                wit_enum_symbol_name(&reg->enums[i]),
                 normalized[0] ? normalized : "<exact-package>",
                 c_name,
                 macro_name);
     }
 
     for (int i = 0; i < reg->flags_count; i++) {
-        wit_trim_leading_package_tail(reg, reg->flags[i].name, normalized, (int)sizeof(normalized));
-        wit_type_c_typename(reg, reg->flags[i].name, c_name, (int)sizeof(c_name));
-        wit_macro_name(reg, reg->flags[i].name, macro_name, (int)sizeof(macro_name));
+        wit_emit_name_from_symbol(reg,
+                                  wit_flags_symbol_name(&reg->flags[i]),
+                                  normalized,
+                                  (int)sizeof(normalized));
+        wit_type_c_typename(reg, wit_flags_symbol_name(&reg->flags[i]), c_name, (int)sizeof(c_name));
+        wit_macro_name(reg, wit_flags_symbol_name(&reg->flags[i]), macro_name, (int)sizeof(macro_name));
         fprintf(out, "flags\t%s\t%s\t%s\t%s\n",
-                reg->flags[i].name,
+                wit_flags_symbol_name(&reg->flags[i]),
                 normalized[0] ? normalized : "<exact-package>",
                 c_name,
                 macro_name);
@@ -3603,8 +4125,8 @@ static void emit_write_record(FILE *out, const WitRegistry *reg,
     char fn_name[MAX_NAME * 2];
     char type_name[MAX_NAME * 2];
 
-    wit_writer_name(reg, rec->name, fn_name, (int)sizeof(fn_name));
-    wit_type_c_typename(reg, rec->name, type_name, (int)sizeof(type_name));
+    wit_writer_name(reg, wit_record_symbol_name(rec), fn_name, (int)sizeof(fn_name));
+    wit_type_c_typename(reg, wit_record_symbol_name(rec), type_name, (int)sizeof(type_name));
 
     fprintf(out, "/* WIT record writer for %s. */\n", rec->name);
     fprintf(out, "int %s(ThatchRegion *region, const %s *val)\n{\n", fn_name, type_name);
@@ -3651,9 +4173,9 @@ static void emit_write_variant(FILE *out, const WitRegistry *reg,
     char type_name[MAX_NAME * 2];
     char macro_name[MAX_NAME * 2];
 
-    wit_writer_name(reg, var->name, fn_name, (int)sizeof(fn_name));
-    wit_type_c_typename(reg, var->name, type_name, (int)sizeof(type_name));
-    wit_macro_name(reg, var->name, macro_name, (int)sizeof(macro_name));
+    wit_writer_name(reg, wit_variant_symbol_name(var), fn_name, (int)sizeof(fn_name));
+    wit_type_c_typename(reg, wit_variant_symbol_name(var), type_name, (int)sizeof(type_name));
+    wit_macro_name(reg, wit_variant_symbol_name(var), macro_name, (int)sizeof(macro_name));
 
     fprintf(out, "/* WIT variant writer for %s. */\n", var->name);
     fprintf(out, "int %s(ThatchRegion *region, const %s *val)\n{\n", fn_name, type_name);
@@ -3903,8 +4425,8 @@ static void emit_read_record(FILE *out, const WitRegistry *reg,
     char fn_name[MAX_NAME * 2];
     char type_name[MAX_NAME * 2];
 
-    wit_reader_name(reg, rec->name, fn_name, (int)sizeof(fn_name));
-    wit_type_c_typename(reg, rec->name, type_name, (int)sizeof(type_name));
+    wit_reader_name(reg, wit_record_symbol_name(rec), fn_name, (int)sizeof(fn_name));
+    wit_type_c_typename(reg, wit_record_symbol_name(rec), type_name, (int)sizeof(type_name));
 
     fprintf(out, "/* WIT record reader for %s. */\n", rec->name);
     fprintf(out, "int %s(const ThatchRegion *region, ThatchCursor *cursor, %s *out)\n{\n",
@@ -3957,9 +4479,9 @@ static void emit_read_variant(FILE *out, const WitRegistry *reg,
     char type_name[MAX_NAME * 2];
     char macro_name[MAX_NAME * 2];
 
-    wit_reader_name(reg, var->name, fn_name, (int)sizeof(fn_name));
-    wit_type_c_typename(reg, var->name, type_name, (int)sizeof(type_name));
-    wit_macro_name(reg, var->name, macro_name, (int)sizeof(macro_name));
+    wit_reader_name(reg, wit_variant_symbol_name(var), fn_name, (int)sizeof(fn_name));
+    wit_type_c_typename(reg, wit_variant_symbol_name(var), type_name, (int)sizeof(type_name));
+    wit_macro_name(reg, wit_variant_symbol_name(var), macro_name, (int)sizeof(macro_name));
 
     fprintf(out, "/* WIT variant reader for %s. */\n", var->name);
     fprintf(out, "int %s(const ThatchRegion *region, ThatchCursor *cursor, %s *out)\n{\n",
@@ -4143,10 +4665,10 @@ static void emit_reply_helper_functions(FILE *out, const WitRegistry *reg,
         return;
     }
 
-    wit_type_c_typename(reg, var->name, type_name, (int)sizeof(type_name));
-    wit_zero_name(reg, var->name, zero_name, (int)sizeof(zero_name));
-    wit_dispose_name(reg, var->name, dispose_name, (int)sizeof(dispose_name));
-    wit_macro_name(reg, var->name, macro_name, (int)sizeof(macro_name));
+    wit_type_c_typename(reg, wit_variant_symbol_name(var), type_name, (int)sizeof(type_name));
+    wit_zero_name(reg, wit_variant_symbol_name(var), zero_name, (int)sizeof(zero_name));
+    wit_dispose_name(reg, wit_variant_symbol_name(var), dispose_name, (int)sizeof(dispose_name));
+    wit_macro_name(reg, wit_variant_symbol_name(var), macro_name, (int)sizeof(macro_name));
 
     fprintf(out, "/* Generated zero helper for %s. */\n", var->name);
     fprintf(out, "void %s(%s *out)\n{\n", zero_name, type_name);
@@ -4344,6 +4866,10 @@ int main(int argc, char **argv)
     if (!parse_wit(&scanner, &reg)) {
         fprintf(stderr, "wit_codegen: parse failed at line %d col %d\n",
                 scanner.line, scanner.col);
+        free(src);
+        return 1;
+    }
+    if (!resolve_registry_symbol_scopes(&reg)) {
         free(src);
         return 1;
     }

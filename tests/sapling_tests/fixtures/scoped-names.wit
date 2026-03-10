@@ -1,0 +1,22 @@
+package lambkin:scoped-names@0.1.0;
+
+interface alpha {
+  type status = result<_, string>;
+
+  record config {
+    status: status,
+  }
+}
+
+interface beta {
+  type status = result<_, string>;
+
+  record config {
+    status: status,
+  }
+}
+
+world scoped-names {
+  export alpha;
+  export beta;
+}

@@ -274,6 +274,10 @@ set(WASI_RANDOM_INSECURE_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/tests/gene
 set(WASI_RANDOM_INSECURE_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/wasi_random_insecure.c")
 set(WASI_RANDOM_INSECURE_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/wasi_random_insecure.manifest")
 
+set(SCOPED_NAMES_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/scoped_names.h")
+set(SCOPED_NAMES_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/scoped_names.c")
+set(SCOPED_NAMES_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/scoped_names.manifest")
+
 set(MENU_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_menu_schema.h")
 set(MENU_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_menu_schema.c")
 set(MENU_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_menu_schema.manifest")
@@ -441,6 +445,20 @@ add_custom_target(wasi_random_insecure_wit_schema_gen
     DEPENDS ${WASI_RANDOM_INSECURE_WIT_GENERATED_H}
             ${WASI_RANDOM_INSECURE_WIT_GENERATED_C}
             ${WASI_RANDOM_INSECURE_WIT_GENERATED_MANIFEST})
+
+# Scoped-name regression fixture
+add_custom_command(
+    OUTPUT ${SCOPED_NAMES_WIT_GENERATED_H} ${SCOPED_NAMES_WIT_GENERATED_C} ${SCOPED_NAMES_WIT_GENERATED_MANIFEST}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/tests/generated"
+    COMMAND wit_codegen --wit "${CMAKE_CURRENT_SOURCE_DIR}/tests/sapling_tests/fixtures/scoped-names.wit"
+                        --header "${SCOPED_NAMES_WIT_GENERATED_H}" --source "${SCOPED_NAMES_WIT_GENERATED_C}" --manifest "${SCOPED_NAMES_WIT_GENERATED_MANIFEST}"
+    DEPENDS wit_codegen "${CMAKE_CURRENT_SOURCE_DIR}/tests/sapling_tests/fixtures/scoped-names.wit"
+    COMMENT "Generating scoped-name WIT regression fixture bindings..."
+)
+add_custom_target(scoped_names_wit_schema_gen
+    DEPENDS ${SCOPED_NAMES_WIT_GENERATED_H}
+            ${SCOPED_NAMES_WIT_GENERATED_C}
+            ${SCOPED_NAMES_WIT_GENERATED_MANIFEST})
 
 # Menu Schema
 add_custom_command(
@@ -775,6 +793,11 @@ add_library(croft_wit_wasi_random_insecure STATIC ${WASI_RANDOM_INSECURE_WIT_GEN
 add_dependencies(croft_wit_wasi_random_insecure wasi_random_insecure_wit_schema_gen)
 croft_apply_public_includes(croft_wit_wasi_random_insecure)
 target_link_libraries(croft_wit_wasi_random_insecure PUBLIC croft_thatch_core)
+
+add_library(croft_wit_scoped_names STATIC ${SCOPED_NAMES_WIT_GENERATED_C})
+add_dependencies(croft_wit_scoped_names scoped_names_wit_schema_gen)
+croft_apply_public_includes(croft_wit_scoped_names)
+target_link_libraries(croft_wit_scoped_names PUBLIC croft_thatch_core)
 
 add_library(croft_wire_runtime STATIC
     src/runner/wire_v0.c
@@ -2061,6 +2084,9 @@ if(CROFT_BUILD_TESTS)
                 croft_wit_wasi_random_insecure
             )
         endif()
+        if(test_name STREQUAL "test_wit_scoped_names_smoke")
+            target_link_libraries(${test_name} PRIVATE croft_wit_scoped_names)
+        endif()
         target_compile_definitions(${test_name} PRIVATE SAPLING_HAMT_TESTING)
         if(test_name STREQUAL "test_wit_thatch_codegen")
             add_dependencies(${test_name} test_wit_schema_gen)
@@ -2071,6 +2097,10 @@ if(CROFT_BUILD_TESTS)
                 wasi_cli_environment_wit_schema_gen
                 wasi_random_insecure_wit_schema_gen
             )
+            target_include_directories(${test_name} PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
+        endif()
+        if(test_name STREQUAL "test_wit_scoped_names_smoke")
+            add_dependencies(${test_name} scoped_names_wit_schema_gen)
             target_include_directories(${test_name} PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
         endif()
         add_test(NAME sapling_${test_name} COMMAND ${test_name})

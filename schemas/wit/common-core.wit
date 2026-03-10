@@ -16,6 +16,7 @@ interface text {
 }
 
 interface store {
+  type bytes = list<u8>;
   type status = result<_, string>;
 
   type db-op-result = result<db, string>;
