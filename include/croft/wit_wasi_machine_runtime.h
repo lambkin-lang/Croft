@@ -4,6 +4,7 @@
 #include "croft/wit_world_runtime.h"
 #include "generated/wit_wasi_cli_command.h"
 #include "generated/wit_wasi_clocks_world.h"
+#include "generated/wit_wasi_filesystem_world.h"
 #include "generated/wit_wasi_io_world.h"
 #include "generated/wit_wasi_random_world.h"
 
@@ -15,13 +16,21 @@ extern "C" {
 
 typedef struct croft_wit_wasi_machine_runtime croft_wit_wasi_machine_runtime;
 
+typedef struct croft_wit_wasi_machine_preopen {
+    const char* host_path;
+    const char* guest_path;
+} croft_wit_wasi_machine_preopen;
+
 typedef struct croft_wit_wasi_machine_runtime_options {
     const char* const* argv;
     uint32_t argc;
     const char* const* envp;
     uint32_t envc;
     const char* initial_cwd;
+    const croft_wit_wasi_machine_preopen* preopens;
+    uint32_t preopen_count;
     uint8_t inherit_environment;
+    uint8_t inherit_preopen_cwd;
 } croft_wit_wasi_machine_runtime_options;
 
 void croft_wit_wasi_machine_runtime_options_default(
@@ -57,6 +66,10 @@ int croft_wit_wasi_machine_runtime_bind_clocks_imports(
 int croft_wit_wasi_machine_runtime_bind_io_imports(
     croft_wit_wasi_machine_runtime* runtime,
     SapWitIoImportsWorldImports* bindings);
+
+int croft_wit_wasi_machine_runtime_bind_filesystem_imports(
+    croft_wit_wasi_machine_runtime* runtime,
+    SapWitFilesystemImportsWorldImports* bindings);
 
 #ifdef __cplusplus
 }

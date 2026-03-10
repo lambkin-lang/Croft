@@ -129,6 +129,14 @@ process/environment APIs (`environ`, `getcwd`), time APIs
 (`clock_gettime`, `clock_getres`, `localtime_r`, `gmtime_r`, `tzset`), and
 system randomness (`arc4random_buf` on macOS, `getrandom` on Linux).
 
+The current-machine filesystem tranche extends that audited boundary to the
+directory-descriptor and `*at` POSIX surface used by WASI `filesystem` and
+`preopens`: `openat`, `fstatat`, `mkdirat`, `unlinkat`, `renameat`,
+`symlinkat`, `readlinkat`, `linkat`, `pread`/`pwrite`, `fdopendir`/`readdir`,
+and sync/timestamp calls such as `fsync`, `fdatasync`, `futimens`, and
+`utimensat`. That implementation is intentionally Unix/macOS-specific today;
+Windows-targeted host glue remains future work.
+
 ## Reproducibility Note On FetchContent Pins
 
 The bootstrap workflow avoids that problem by pinning immutable SHAs in

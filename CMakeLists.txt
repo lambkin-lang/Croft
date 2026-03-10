@@ -310,6 +310,21 @@ croft_select_wasi_wit(WASI_CLOCKS_WORLD_WIT_PATH
     "tests/sapling_tests/fixtures/wasi-imports/clocks/wit/world.wit")
 croft_collect_wit_dir_depends(WASI_CLOCKS_WORLD_WIT_DEPENDS "${WASI_CLOCKS_WORLD_WIT_PATH}")
 
+croft_select_wasi_wit(WASI_FILESYSTEM_TYPES_WIT_PATH
+    "filesystem/wit/types.wit"
+    "tests/sapling_tests/fixtures/wasi-imports/filesystem/wit/types.wit")
+croft_collect_wit_dir_depends(WASI_FILESYSTEM_TYPES_WIT_DEPENDS "${WASI_FILESYSTEM_TYPES_WIT_PATH}")
+
+croft_select_wasi_wit(WASI_FILESYSTEM_PREOPENS_WIT_PATH
+    "filesystem/wit/preopens.wit"
+    "tests/sapling_tests/fixtures/wasi-imports/filesystem/wit/preopens.wit")
+croft_collect_wit_dir_depends(WASI_FILESYSTEM_PREOPENS_WIT_DEPENDS "${WASI_FILESYSTEM_PREOPENS_WIT_PATH}")
+
+croft_select_wasi_wit(WASI_FILESYSTEM_WORLD_WIT_PATH
+    "filesystem/wit/world.wit"
+    "tests/sapling_tests/fixtures/wasi-imports/filesystem/wit/world.wit")
+croft_collect_wit_dir_depends(WASI_FILESYSTEM_WORLD_WIT_DEPENDS "${WASI_FILESYSTEM_WORLD_WIT_PATH}")
+
 set(WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_schema_dbis.h")
 set(WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_schema_dbis.c")
 set(WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_schema_dbis.manifest")
@@ -417,6 +432,18 @@ set(WASI_CLOCKS_MONOTONIC_CLOCK_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_D
 set(WASI_CLOCKS_WORLD_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_clocks_world.h")
 set(WASI_CLOCKS_WORLD_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_clocks_world.c")
 set(WASI_CLOCKS_WORLD_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_clocks_world.manifest")
+
+set(WASI_FILESYSTEM_TYPES_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_filesystem_types.h")
+set(WASI_FILESYSTEM_TYPES_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_filesystem_types.c")
+set(WASI_FILESYSTEM_TYPES_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_filesystem_types.manifest")
+
+set(WASI_FILESYSTEM_PREOPENS_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_filesystem_preopens.h")
+set(WASI_FILESYSTEM_PREOPENS_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_filesystem_preopens.c")
+set(WASI_FILESYSTEM_PREOPENS_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_filesystem_preopens.manifest")
+
+set(WASI_FILESYSTEM_WORLD_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_filesystem_world.h")
+set(WASI_FILESYSTEM_WORLD_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_filesystem_world.c")
+set(WASI_FILESYSTEM_WORLD_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_filesystem_world.manifest")
 
 set(SCOPED_NAMES_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/scoped_names.h")
 set(SCOPED_NAMES_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/scoped_names.c")
@@ -789,6 +816,56 @@ add_custom_target(wasi_clocks_world_wit_schema_gen
     DEPENDS ${WASI_CLOCKS_WORLD_WIT_GENERATED_H}
             ${WASI_CLOCKS_WORLD_WIT_GENERATED_C}
             ${WASI_CLOCKS_WORLD_WIT_GENERATED_MANIFEST})
+
+# WASI filesystem/types bindings
+add_custom_command(
+    OUTPUT ${WASI_FILESYSTEM_TYPES_WIT_GENERATED_H} ${WASI_FILESYSTEM_TYPES_WIT_GENERATED_C} ${WASI_FILESYSTEM_TYPES_WIT_GENERATED_MANIFEST}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
+    COMMAND wit_codegen --wit "${WASI_FILESYSTEM_TYPES_WIT_PATH}"
+                        --header "${WASI_FILESYSTEM_TYPES_WIT_GENERATED_H}" --source "${WASI_FILESYSTEM_TYPES_WIT_GENERATED_C}" --manifest "${WASI_FILESYSTEM_TYPES_WIT_GENERATED_MANIFEST}"
+    DEPENDS wit_codegen
+            ${WASI_FILESYSTEM_TYPES_WIT_DEPENDS}
+            "${WASI_IO_STREAMS_WIT_PATH}"
+            "${WASI_CLOCKS_WALL_CLOCK_WIT_PATH}"
+    COMMENT "Generating WASI filesystem/types bindings..."
+)
+add_custom_target(wasi_filesystem_types_wit_schema_gen
+    DEPENDS ${WASI_FILESYSTEM_TYPES_WIT_GENERATED_H}
+            ${WASI_FILESYSTEM_TYPES_WIT_GENERATED_C}
+            ${WASI_FILESYSTEM_TYPES_WIT_GENERATED_MANIFEST})
+
+# WASI filesystem/preopens bindings
+add_custom_command(
+    OUTPUT ${WASI_FILESYSTEM_PREOPENS_WIT_GENERATED_H} ${WASI_FILESYSTEM_PREOPENS_WIT_GENERATED_C} ${WASI_FILESYSTEM_PREOPENS_WIT_GENERATED_MANIFEST}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
+    COMMAND wit_codegen --wit "${WASI_FILESYSTEM_PREOPENS_WIT_PATH}"
+                        --header "${WASI_FILESYSTEM_PREOPENS_WIT_GENERATED_H}" --source "${WASI_FILESYSTEM_PREOPENS_WIT_GENERATED_C}" --manifest "${WASI_FILESYSTEM_PREOPENS_WIT_GENERATED_MANIFEST}"
+    DEPENDS wit_codegen
+            ${WASI_FILESYSTEM_PREOPENS_WIT_DEPENDS}
+            "${WASI_FILESYSTEM_TYPES_WIT_PATH}"
+    COMMENT "Generating WASI filesystem/preopens bindings..."
+)
+add_custom_target(wasi_filesystem_preopens_wit_schema_gen
+    DEPENDS ${WASI_FILESYSTEM_PREOPENS_WIT_GENERATED_H}
+            ${WASI_FILESYSTEM_PREOPENS_WIT_GENERATED_C}
+            ${WASI_FILESYSTEM_PREOPENS_WIT_GENERATED_MANIFEST})
+
+# WASI filesystem imports world bindings
+add_custom_command(
+    OUTPUT ${WASI_FILESYSTEM_WORLD_WIT_GENERATED_H} ${WASI_FILESYSTEM_WORLD_WIT_GENERATED_C} ${WASI_FILESYSTEM_WORLD_WIT_GENERATED_MANIFEST}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
+    COMMAND wit_codegen --wit "${WASI_FILESYSTEM_WORLD_WIT_PATH}"
+                        --header "${WASI_FILESYSTEM_WORLD_WIT_GENERATED_H}" --source "${WASI_FILESYSTEM_WORLD_WIT_GENERATED_C}" --manifest "${WASI_FILESYSTEM_WORLD_WIT_GENERATED_MANIFEST}"
+    DEPENDS wit_codegen
+            ${WASI_FILESYSTEM_WORLD_WIT_DEPENDS}
+            "${WASI_FILESYSTEM_TYPES_WIT_PATH}"
+            "${WASI_FILESYSTEM_PREOPENS_WIT_PATH}"
+    COMMENT "Generating WASI filesystem imports world bindings..."
+)
+add_custom_target(wasi_filesystem_world_wit_schema_gen
+    DEPENDS ${WASI_FILESYSTEM_WORLD_WIT_GENERATED_H}
+            ${WASI_FILESYSTEM_WORLD_WIT_GENERATED_C}
+            ${WASI_FILESYSTEM_WORLD_WIT_GENERATED_MANIFEST})
 
 # Scoped-name regression fixture
 add_custom_command(
@@ -1327,6 +1404,33 @@ croft_register_artifact(croft_wit_wasi_clocks_world wit
     DEPENDS croft_thatch_core
 )
 
+add_library(croft_wit_wasi_filesystem_types STATIC ${WASI_FILESYSTEM_TYPES_WIT_GENERATED_C})
+add_dependencies(croft_wit_wasi_filesystem_types wasi_filesystem_types_wit_schema_gen)
+croft_apply_public_includes(croft_wit_wasi_filesystem_types)
+target_link_libraries(croft_wit_wasi_filesystem_types PUBLIC croft_thatch_core)
+croft_register_artifact(croft_wit_wasi_filesystem_types wit
+    TAGS wit wasi filesystem types resource-handles metadata current-machine unix
+    DEPENDS croft_thatch_core
+)
+
+add_library(croft_wit_wasi_filesystem_preopens STATIC ${WASI_FILESYSTEM_PREOPENS_WIT_GENERATED_C})
+add_dependencies(croft_wit_wasi_filesystem_preopens wasi_filesystem_preopens_wit_schema_gen)
+croft_apply_public_includes(croft_wit_wasi_filesystem_preopens)
+target_link_libraries(croft_wit_wasi_filesystem_preopens PUBLIC croft_thatch_core)
+croft_register_artifact(croft_wit_wasi_filesystem_preopens wit
+    TAGS wit wasi filesystem preopens metadata current-machine unix
+    DEPENDS croft_thatch_core
+)
+
+add_library(croft_wit_wasi_filesystem_world STATIC ${WASI_FILESYSTEM_WORLD_WIT_GENERATED_C})
+add_dependencies(croft_wit_wasi_filesystem_world wasi_filesystem_world_wit_schema_gen)
+croft_apply_public_includes(croft_wit_wasi_filesystem_world)
+target_link_libraries(croft_wit_wasi_filesystem_world PUBLIC croft_thatch_core)
+croft_register_artifact(croft_wit_wasi_filesystem_world wit
+    TAGS wit wasi filesystem world imports metadata current-machine unix
+    DEPENDS croft_thatch_core
+)
+
 add_library(croft_wit_scoped_names STATIC ${SCOPED_NAMES_WIT_GENERATED_C})
 add_dependencies(croft_wit_scoped_names scoped_names_wit_schema_gen)
 croft_apply_public_includes(croft_wit_scoped_names)
@@ -1607,7 +1711,8 @@ add_dependencies(croft_wit_wasi_machine_runtime
     wasi_cli_command_wit_schema_gen
     wasi_random_world_wit_schema_gen
     wasi_io_world_wit_schema_gen
-    wasi_clocks_world_wit_schema_gen)
+    wasi_clocks_world_wit_schema_gen
+    wasi_filesystem_world_wit_schema_gen)
 croft_apply_public_includes(croft_wit_wasi_machine_runtime)
 croft_set_target_profile(croft_wit_wasi_machine_runtime single-thread)
 target_link_libraries(croft_wit_wasi_machine_runtime PUBLIC
@@ -1615,7 +1720,8 @@ target_link_libraries(croft_wit_wasi_machine_runtime PUBLIC
     croft_wit_wasi_cli_command
     croft_wit_wasi_random_world
     croft_wit_wasi_io_world
-    croft_wit_wasi_clocks_world)
+    croft_wit_wasi_clocks_world
+    croft_wit_wasi_filesystem_world)
 croft_register_artifact(croft_wit_wasi_machine_runtime wit
     TAGS tier8 wit wasi runtime current-machine unix generated-glue host
     DEPENDS croft_wit_world_runtime
@@ -1623,6 +1729,7 @@ croft_register_artifact(croft_wit_wasi_machine_runtime wit
             croft_wit_wasi_random_world
             croft_wit_wasi_io_world
             croft_wit_wasi_clocks_world
+            croft_wit_wasi_filesystem_world
 )
 
 add_library(croft_wit_text_runtime STATIC src/runtime/wit_text_runtime.c)
@@ -2679,6 +2786,7 @@ if(CROFT_BUILD_TESTS)
                 croft_wit_wasi_io_world
                 croft_wit_wasi_random_world
                 croft_wit_wasi_clocks_world
+                croft_wit_wasi_filesystem_world
             )
         endif()
         if(test_name STREQUAL "test_wit_scoped_names_smoke")
@@ -2731,6 +2839,7 @@ if(CROFT_BUILD_TESTS)
                 wasi_io_world_wit_schema_gen
                 wasi_random_world_wit_schema_gen
                 wasi_clocks_world_wit_schema_gen
+                wasi_filesystem_world_wit_schema_gen
             )
             target_include_directories(${test_name} PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
         endif()
@@ -2740,6 +2849,7 @@ if(CROFT_BUILD_TESTS)
                 wasi_random_world_wit_schema_gen
                 wasi_io_world_wit_schema_gen
                 wasi_clocks_world_wit_schema_gen
+                wasi_filesystem_world_wit_schema_gen
             )
             target_include_directories(${test_name} PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
         endif()

@@ -32,7 +32,7 @@ categories=(
     "libc-memory|\\b(malloc|calloc|realloc|free)\\s*\\("
     "libc-stdio|#include <stdio\\.h>|\\b(FILE\\s*\\*|fopen|freopen|fdopen|fclose|fread|fwrite|fflush|fprintf|snprintf|vsnprintf)\\s*\\("
     "libc-strings|#include <string\\.h>|\\b(memcpy|memmove|memcmp|memset|strlen|strcmp|strncmp|strchr|strrchr)\\s*\\("
-    "posix-filesystem|#include <(unistd|fcntl|dirent|sys/stat|sys/types)\\.h>|\\b(open|close|read|write|lseek|stat|fstat|mkdir|rmdir|unlink|opendir|readdir|closedir|getcwd)\\s*\\("
+    "posix-filesystem|#include <(unistd|fcntl|dirent|sys/stat|sys/types)\\.h>|\\b(open|openat|close|read|write|pread|pwrite|lseek|dup|stat|fstat|fstatat|mkdir|mkdirat|rmdir|unlink|unlinkat|rename|renameat|symlink|symlinkat|readlink|readlinkat|link|linkat|opendir|fdopendir|readdir|closedir|getcwd|ftruncate|fsync|fdatasync|futimens|utimensat|access)\\s*\\("
     "posix-process-env|\\benviron\\b|\\b(getenv|setenv|unsetenv)\\s*\\("
     "system-random|#include <sys/random\\.h>|\\b(arc4random_buf|getrandom)\\s*\\("
     "posix-threads|#include <pthread\\.h>|\\bpthread_[A-Za-z0-9_]+\\s*\\("

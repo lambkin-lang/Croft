@@ -1,7 +1,16 @@
 #include "croft/wit_wasi_machine_runtime.h"
+#include "croft/platform.h"
 
+#include <limits.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
+#if !defined(CROFT_OS_WINDOWS)
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 
 static int expect_true(const char* label, int value)
 {
@@ -18,6 +27,19 @@ static int expect_u32(const char* label, uint32_t actual, uint32_t expected)
         return 1;
     }
     fprintf(stderr, "%s: expected %u, got %u\n", label, expected, actual);
+    return 0;
+}
+
+static int expect_u64(const char* label, uint64_t actual, uint64_t expected)
+{
+    if (actual == expected) {
+        return 1;
+    }
+    fprintf(stderr,
+            "%s: expected %llu, got %llu\n",
+            label,
+            (unsigned long long)expected,
+            (unsigned long long)actual);
     return 0;
 }
 
@@ -68,6 +90,29 @@ static int decode_string(const uint8_t* data,
     return thatch_read_ptr(&view, cursor, *out_len, (const void**)out_data);
 }
 
+static int decode_resource(const uint8_t* data,
+                           uint32_t byte_len,
+                           ThatchCursor* cursor,
+                           uint32_t* out)
+{
+    ThatchRegion view;
+    uint8_t tag = 0u;
+    int rc;
+
+    rc = thatch_region_init_readonly(&view, data, byte_len);
+    if (rc != ERR_OK) {
+        return rc;
+    }
+    rc = thatch_read_tag(&view, cursor, &tag);
+    if (rc != ERR_OK) {
+        return rc;
+    }
+    if (tag != SAP_WIT_TAG_RESOURCE) {
+        return ERR_TYPE;
+    }
+    return thatch_read_data(&view, cursor, 4u, out);
+}
+
 static int decode_env_pair(const uint8_t* data,
                            uint32_t byte_len,
                            ThatchCursor* cursor,
@@ -111,6 +156,48 @@ static int decode_env_pair(const uint8_t* data,
     return *cursor == segment_end ? ERR_OK : ERR_TYPE;
 }
 
+static int decode_resource_string_pair(const uint8_t* data,
+                                       uint32_t byte_len,
+                                       ThatchCursor* cursor,
+                                       uint32_t* resource_handle,
+                                       const uint8_t** text_data,
+                                       uint32_t* text_len)
+{
+    ThatchRegion view;
+    uint8_t tag = 0u;
+    uint32_t skip_len = 0u;
+    ThatchCursor segment_end;
+    int rc;
+
+    rc = thatch_region_init_readonly(&view, data, byte_len);
+    if (rc != ERR_OK) {
+        return rc;
+    }
+    rc = thatch_read_tag(&view, cursor, &tag);
+    if (rc != ERR_OK) {
+        return rc;
+    }
+    if (tag != SAP_WIT_TAG_TUPLE) {
+        return ERR_TYPE;
+    }
+    rc = thatch_read_skip_len(&view, cursor, &skip_len);
+    if (rc != ERR_OK) {
+        return rc;
+    }
+    segment_end = *cursor + skip_len;
+
+    rc = decode_resource(data, byte_len, cursor, resource_handle);
+    if (rc != ERR_OK) {
+        return rc;
+    }
+    rc = decode_string(data, byte_len, cursor, text_data, text_len);
+    if (rc != ERR_OK) {
+        return rc;
+    }
+
+    return *cursor == segment_end ? ERR_OK : ERR_TYPE;
+}
+
 static int decode_u32(const uint8_t* data,
                       uint32_t byte_len,
                       ThatchCursor* cursor,
@@ -146,6 +233,23 @@ static int buffer_has_nonzero(const uint8_t* data, uint32_t len)
     return 0;
 }
 
+#if !defined(CROFT_OS_WINDOWS)
+static int write_test_file(const char* path, const char* text)
+{
+    size_t text_len = strlen(text);
+    int fd = open(path, O_CREAT | O_TRUNC | O_WRONLY, 0600);
+
+    if (fd < 0) {
+        return 0;
+    }
+    if (write(fd, text, text_len) != (ssize_t)text_len) {
+        close(fd);
+        return 0;
+    }
+    return close(fd) == 0;
+}
+#endif
+
 static uint32_t encode_resource_list(uint8_t out[16], uint32_t handle)
 {
     size_t offset = 0u;
@@ -179,8 +283,15 @@ int main(void)
     SapWitClocksDatetime wall_now = {0};
     SapWitClocksTimezoneCommand timezone_command = {0};
     SapWitClocksTimezoneReply timezone_reply = {0};
+    SapWitIoStreamsCommand io_streams_command = {0};
+    SapWitIoStreamsReply io_streams_reply = {0};
     SapWitIoPollCommand io_command = {0};
     SapWitIoPollReply io_reply = {0};
+    SapWitFilesystemImportsWorldImports filesystem_imports = {0};
+    SapWitFilesystemPreopensCommand filesystem_preopens_command = {0};
+    SapWitFilesystemPreopensReply filesystem_preopens_reply = {0};
+    SapWitFilesystemTypesCommand filesystem_types_command = {0};
+    SapWitFilesystemTypesReply filesystem_types_reply = {0};
     ThatchCursor cursor = 0u;
     const uint8_t* text_data = NULL;
     uint32_t text_len = 0u;
@@ -190,6 +301,18 @@ int main(void)
     uint8_t poll_blob[16] = {0};
     uint32_t poll_blob_len = 0u;
     uint32_t pollable_handle = 0u;
+#if !defined(CROFT_OS_WINDOWS)
+    croft_wit_wasi_machine_preopen preopen = {0};
+    char fs_dir_template[] = "/tmp/croft-wasi-fs-smoke-XXXXXX";
+    char* fs_dir = NULL;
+    char fs_file_path[PATH_MAX] = {0};
+    const char fs_file_name[] = "hello.txt";
+    const char fs_file_contents[] = "hello filesystem";
+    SapWitFilesystemDescriptorResource root_descriptor = 0u;
+    SapWitFilesystemDescriptorResource file_descriptor = 0u;
+    SapWitFilesystemDirectoryEntryStreamResource directory_stream = 0u;
+    int found_directory_entry = 0;
+#endif
     int ok = 1;
 
     croft_wit_wasi_machine_runtime_options_default(&options);
@@ -199,10 +322,28 @@ int main(void)
     options.envc = 3u;
     options.inherit_environment = 0u;
     options.initial_cwd = "/virtual/cwd";
+#if !defined(CROFT_OS_WINDOWS)
+    fs_dir = mkdtemp(fs_dir_template);
+    ok &= expect_true("filesystem temp dir", fs_dir != NULL);
+    if (!fs_dir) {
+        return 1;
+    }
+    snprintf(fs_file_path, sizeof(fs_file_path), "%s/%s", fs_dir, fs_file_name);
+    ok &= expect_true("filesystem temp file", write_test_file(fs_file_path, fs_file_contents));
+    preopen.host_path = fs_dir;
+    preopen.guest_path = "/workspace";
+    options.preopens = &preopen;
+    options.preopen_count = 1u;
+    options.inherit_preopen_cwd = 0u;
+#endif
 
     runtime = croft_wit_wasi_machine_runtime_create(&options);
     ok &= expect_true("runtime", runtime != NULL);
     if (!runtime) {
+#if !defined(CROFT_OS_WINDOWS)
+        unlink(fs_file_path);
+        rmdir(fs_dir);
+#endif
         return 1;
     }
 
@@ -221,6 +362,13 @@ int main(void)
     ok &= expect_u32("bind io",
                      (uint32_t)croft_wit_wasi_machine_runtime_bind_io_imports(runtime, &io_imports),
                      0u);
+#if !defined(CROFT_OS_WINDOWS)
+    ok &= expect_u32("bind filesystem",
+                     (uint32_t)croft_wit_wasi_machine_runtime_bind_filesystem_imports(
+                         runtime,
+                         &filesystem_imports),
+                     0u);
+#endif
 
     cli_command.case_tag = SAP_WIT_CLI_ENVIRONMENT_COMMAND_GET_ARGUMENTS;
     ok &= expect_u32("cli get arguments",
@@ -412,6 +560,22 @@ int main(void)
                       timezone_reply.val.timezone_display.utc_offset > -86400
                           && timezone_reply.val.timezone_display.utc_offset < 86400);
 
+    io_streams_command.case_tag = SAP_WIT_IO_STREAMS_COMMAND_READ;
+    io_streams_command.val.read.input_stream = 1u;
+    io_streams_command.val.read.len = 16u;
+    ok &= expect_u32("io streams read",
+                     (uint32_t)sap_wit_world_io_imports_import_streams(&io_imports,
+                                                                       &io_streams_command,
+                                                                       &io_streams_reply),
+                     0u);
+    ok &= expect_u32("io streams read case",
+                     io_streams_reply.case_tag,
+                     SAP_WIT_IO_STREAMS_REPLY_READ);
+    ok &= expect_true("io streams read err", io_streams_reply.val.read.is_v_ok == 0u);
+    ok &= expect_u32("io streams read closed",
+                     io_streams_reply.val.read.v_val.err.v.case_tag,
+                     SAP_WIT_IO_STREAM_ERROR_CLOSED);
+
     io_command.case_tag = SAP_WIT_IO_POLL_COMMAND_READY;
     io_command.val.ready.pollable = (SapWitIoPollableResource)pollable_handle;
     ok &= expect_u32("io ready",
@@ -443,6 +607,166 @@ int main(void)
                      0u);
     ok &= expect_u32("ready index", ready_index, 0u);
 
+#if !defined(CROFT_OS_WINDOWS)
+    filesystem_preopens_command.case_tag = SAP_WIT_FILESYSTEM_PREOPENS_COMMAND_GET_DIRECTORIES;
+    ok &= expect_u32("filesystem get directories",
+                     (uint32_t)sap_wit_world_filesystem_imports_import_preopens(
+                         &filesystem_imports,
+                         &filesystem_preopens_command,
+                         &filesystem_preopens_reply),
+                     0u);
+    ok &= expect_u32("filesystem get directories case",
+                     filesystem_preopens_reply.case_tag,
+                     SAP_WIT_FILESYSTEM_PREOPENS_REPLY_GET_DIRECTORIES);
+    ok &= expect_u32("filesystem preopen count",
+                     filesystem_preopens_reply.val.get_directories.len,
+                     1u);
+    cursor = 0u;
+    ok &= expect_u32("decode filesystem preopen",
+                     (uint32_t)decode_resource_string_pair(
+                         filesystem_preopens_reply.val.get_directories.data,
+                         filesystem_preopens_reply.val.get_directories.byte_len,
+                         &cursor,
+                         &root_descriptor,
+                         &text_data,
+                         &text_len),
+                     0u);
+    ok &= expect_true("filesystem root descriptor", root_descriptor != 0u);
+    ok &= expect_str("filesystem guest path", text_data, text_len, "/workspace");
+
+    memset(&filesystem_types_command, 0, sizeof(filesystem_types_command));
+    filesystem_types_command.case_tag = SAP_WIT_FILESYSTEM_TYPES_COMMAND_OPEN_AT;
+    filesystem_types_command.val.open_at.descriptor = root_descriptor;
+    filesystem_types_command.val.open_at.path_data = (const uint8_t*)"/etc/passwd";
+    filesystem_types_command.val.open_at.path_len = 11u;
+    filesystem_types_command.val.open_at.flags = SAP_WIT_FILESYSTEM_DESCRIPTOR_FLAGS_READ;
+    ok &= expect_u32("filesystem reject absolute path",
+                     (uint32_t)sap_wit_world_filesystem_imports_import_types(
+                         &filesystem_imports,
+                         &filesystem_types_command,
+                         &filesystem_types_reply),
+                     0u);
+    ok &= expect_u32("filesystem reject absolute path case",
+                     filesystem_types_reply.case_tag,
+                     SAP_WIT_FILESYSTEM_TYPES_REPLY_DESCRIPTOR);
+    ok &= expect_true("filesystem reject absolute path err",
+                      filesystem_types_reply.val.descriptor.is_v_ok == 0u);
+    ok &= expect_u32("filesystem reject absolute path code",
+                     filesystem_types_reply.val.descriptor.v_val.err.v,
+                     SAP_WIT_FILESYSTEM_ERROR_CODE_NOT_PERMITTED);
+
+    memset(&filesystem_types_command, 0, sizeof(filesystem_types_command));
+    filesystem_types_command.case_tag = SAP_WIT_FILESYSTEM_TYPES_COMMAND_OPEN_AT;
+    filesystem_types_command.val.open_at.descriptor = root_descriptor;
+    filesystem_types_command.val.open_at.path_data = (const uint8_t*)fs_file_name;
+    filesystem_types_command.val.open_at.path_len = (uint32_t)strlen(fs_file_name);
+    filesystem_types_command.val.open_at.flags = SAP_WIT_FILESYSTEM_DESCRIPTOR_FLAGS_READ;
+    ok &= expect_u32("filesystem open file",
+                     (uint32_t)sap_wit_world_filesystem_imports_import_types(
+                         &filesystem_imports,
+                         &filesystem_types_command,
+                         &filesystem_types_reply),
+                     0u);
+    ok &= expect_u32("filesystem open file case",
+                     filesystem_types_reply.case_tag,
+                     SAP_WIT_FILESYSTEM_TYPES_REPLY_DESCRIPTOR);
+    ok &= expect_true("filesystem open file ok",
+                      filesystem_types_reply.val.descriptor.is_v_ok == 1u);
+    file_descriptor = filesystem_types_reply.val.descriptor.v_val.ok.v;
+    ok &= expect_true("filesystem file descriptor", file_descriptor != 0u);
+
+    memset(&filesystem_types_command, 0, sizeof(filesystem_types_command));
+    filesystem_types_command.case_tag = SAP_WIT_FILESYSTEM_TYPES_COMMAND_STAT;
+    filesystem_types_command.val.stat.descriptor = file_descriptor;
+    ok &= expect_u32("filesystem stat",
+                     (uint32_t)sap_wit_world_filesystem_imports_import_types(
+                         &filesystem_imports,
+                         &filesystem_types_command,
+                         &filesystem_types_reply),
+                     0u);
+    ok &= expect_u32("filesystem stat case",
+                     filesystem_types_reply.case_tag,
+                     SAP_WIT_FILESYSTEM_TYPES_REPLY_STAT);
+    ok &= expect_true("filesystem stat ok", filesystem_types_reply.val.stat.is_v_ok == 1u);
+    ok &= expect_u32("filesystem stat type",
+                     filesystem_types_reply.val.stat.v_val.ok.v.type,
+                     SAP_WIT_FILESYSTEM_DESCRIPTOR_TYPE_REGULAR_FILE);
+    ok &= expect_u64("filesystem stat size",
+                     filesystem_types_reply.val.stat.v_val.ok.v.size,
+                     (uint64_t)strlen(fs_file_contents));
+
+    memset(&filesystem_types_command, 0, sizeof(filesystem_types_command));
+    filesystem_types_command.case_tag = SAP_WIT_FILESYSTEM_TYPES_COMMAND_READ;
+    filesystem_types_command.val.read.descriptor = file_descriptor;
+    filesystem_types_command.val.read.length = (uint64_t)strlen(fs_file_contents);
+    filesystem_types_command.val.read.offset = 0u;
+    ok &= expect_u32("filesystem read",
+                     (uint32_t)sap_wit_world_filesystem_imports_import_types(
+                         &filesystem_imports,
+                         &filesystem_types_command,
+                         &filesystem_types_reply),
+                     0u);
+    ok &= expect_u32("filesystem read case",
+                     filesystem_types_reply.case_tag,
+                     SAP_WIT_FILESYSTEM_TYPES_REPLY_READ);
+    ok &= expect_true("filesystem read ok", filesystem_types_reply.val.read.is_v_ok == 1u);
+    ok &= expect_str("filesystem read data",
+                     filesystem_types_reply.val.read.v_val.ok.v_0_data,
+                     filesystem_types_reply.val.read.v_val.ok.v_0_len,
+                     fs_file_contents);
+    ok &= expect_true("filesystem read eof", filesystem_types_reply.val.read.v_val.ok.v_1 == 1u);
+
+    memset(&filesystem_types_command, 0, sizeof(filesystem_types_command));
+    filesystem_types_command.case_tag = SAP_WIT_FILESYSTEM_TYPES_COMMAND_READ_DIRECTORY;
+    filesystem_types_command.val.read_directory.descriptor = root_descriptor;
+    ok &= expect_u32("filesystem read directory",
+                     (uint32_t)sap_wit_world_filesystem_imports_import_types(
+                         &filesystem_imports,
+                         &filesystem_types_command,
+                         &filesystem_types_reply),
+                     0u);
+    ok &= expect_u32("filesystem read directory case",
+                     filesystem_types_reply.case_tag,
+                     SAP_WIT_FILESYSTEM_TYPES_REPLY_DIRECTORY_ENTRY_STREAM);
+    ok &= expect_true("filesystem read directory ok",
+                      filesystem_types_reply.val.directory_entry_stream.is_v_ok == 1u);
+    directory_stream = filesystem_types_reply.val.directory_entry_stream.v_val.ok.v;
+    ok &= expect_true("filesystem directory stream", directory_stream != 0u);
+
+    for (int attempt = 0; attempt < 8 && !found_directory_entry; attempt++) {
+        memset(&filesystem_types_command, 0, sizeof(filesystem_types_command));
+        filesystem_types_command.case_tag = SAP_WIT_FILESYSTEM_TYPES_COMMAND_READ_DIRECTORY_ENTRY;
+        filesystem_types_command.val.read_directory_entry.directory_entry_stream = directory_stream;
+        ok &= expect_u32("filesystem read directory entry",
+                         (uint32_t)sap_wit_world_filesystem_imports_import_types(
+                             &filesystem_imports,
+                             &filesystem_types_command,
+                             &filesystem_types_reply),
+                         0u);
+        ok &= expect_u32("filesystem read directory entry case",
+                         filesystem_types_reply.case_tag,
+                         SAP_WIT_FILESYSTEM_TYPES_REPLY_READ_DIRECTORY_ENTRY);
+        ok &= expect_true("filesystem read directory entry ok",
+                          filesystem_types_reply.val.read_directory_entry.is_v_ok == 1u);
+        if (!filesystem_types_reply.val.read_directory_entry.v_val.ok.has_v) {
+            break;
+        }
+        if (filesystem_types_reply.val.read_directory_entry.v_val.ok.v.name_len
+                == strlen(fs_file_name)
+            && memcmp(filesystem_types_reply.val.read_directory_entry.v_val.ok.v.name_data,
+                      fs_file_name,
+                      strlen(fs_file_name))
+                   == 0) {
+            found_directory_entry = 1;
+        }
+    }
+    ok &= expect_true("filesystem directory entry found", found_directory_entry);
+#endif
+
     croft_wit_wasi_machine_runtime_destroy(runtime);
+#if !defined(CROFT_OS_WINDOWS)
+    unlink(fs_file_path);
+    rmdir(fs_dir);
+#endif
     return ok ? 0 : 1;
 }

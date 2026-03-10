@@ -1,6 +1,7 @@
 #include "croft/wit_world_runtime.h"
 #include "generated/wit_wasi_cli_command.h"
 #include "generated/wit_wasi_clocks_world.h"
+#include "generated/wit_wasi_filesystem_world.h"
 #include "generated/wit_wasi_io_world.h"
 #include "generated/wit_wasi_random_world.h"
 
@@ -96,8 +97,15 @@ int main(void)
     const SapWitWorldBindingDescriptor *clocks_binding = NULL;
     const SapWitWorldEndpointDescriptor *clocks_endpoint = NULL;
     const SapWitWorldDescriptor *io_world = NULL;
-    const SapWitWorldBindingDescriptor *io_binding = NULL;
-    const SapWitWorldEndpointDescriptor *io_endpoint = NULL;
+    const SapWitWorldBindingDescriptor *io_streams_binding = NULL;
+    const SapWitWorldBindingDescriptor *io_poll_binding = NULL;
+    const SapWitWorldEndpointDescriptor *io_streams_endpoint = NULL;
+    const SapWitWorldEndpointDescriptor *io_poll_endpoint = NULL;
+    const SapWitWorldDescriptor *filesystem_world = NULL;
+    const SapWitWorldBindingDescriptor *filesystem_types_binding = NULL;
+    const SapWitWorldBindingDescriptor *filesystem_preopens_binding = NULL;
+    const SapWitWorldEndpointDescriptor *filesystem_types_endpoint = NULL;
+    const SapWitWorldEndpointDescriptor *filesystem_preopens_endpoint = NULL;
     const SapWitWorldDescriptor *cli_command_world = NULL;
     const SapWitWorldDescriptor *cli_imports_world = NULL;
     const SapWitWorldBindingDescriptor *cli_import_binding = NULL;
@@ -106,6 +114,8 @@ int main(void)
     const SapWitWorldEndpointDescriptor *cli_run_endpoint = NULL;
     SapWitRandomImportsWorldImports random_imports = {0};
     SapWitClocksImportsWorldImports clocks_imports = {0};
+    SapWitFilesystemImportsWorldImports filesystem_imports = {0};
+    SapWitIoImportsWorldImports io_imports = {0};
     SapWitCliCommandWorldImports cli_imports = {0};
     SapWitCliCommandWorldExports cli_exports = {0};
     SapWitRandomDispatchOps random_ops = {
@@ -114,6 +124,10 @@ int main(void)
     SapWitClocksMonotonicClockDispatchOps monotonic_ops = {
         .now = monotonic_now,
     };
+    SapWitIoStreamsDispatchOps io_streams_ops = {0};
+    SapWitIoPollDispatchOps io_poll_ops = {0};
+    SapWitFilesystemTypesDispatchOps filesystem_types_ops = {0};
+    SapWitFilesystemPreopensDispatchOps filesystem_preopens_ops = {0};
     SapWitCliEnvironmentDispatchOps cli_environment_ops = {
         .get_arguments = cli_get_arguments,
     };
@@ -144,7 +158,13 @@ int main(void)
 
     ok &= expect_u32("io worlds", sap_wit_io_worlds_count, 1u);
     ok &= expect_u32("io world bindings", sap_wit_io_world_bindings_count, 2u);
-    ok &= expect_u32("io import endpoints", sap_wit_io_imports_import_endpoints_count, 1u);
+    ok &= expect_u32("io import endpoints", sap_wit_io_imports_import_endpoints_count, 2u);
+
+    ok &= expect_u32("filesystem worlds", sap_wit_filesystem_worlds_count, 1u);
+    ok &= expect_u32("filesystem world bindings", sap_wit_filesystem_world_bindings_count, 2u);
+    ok &= expect_u32("filesystem import endpoints",
+                     sap_wit_filesystem_imports_import_endpoints_count,
+                     2u);
 
     ok &= expect_u32("cli worlds", sap_wit_cli_worlds_count, 2u);
     ok &= expect_u32("cli world bindings", sap_wit_cli_world_bindings_count, 3u);
@@ -176,14 +196,46 @@ int main(void)
     io_world = sap_wit_find_world_descriptor(sap_wit_io_worlds,
                                              sap_wit_io_worlds_count,
                                              "imports");
-    io_binding = sap_wit_find_world_binding_descriptor(sap_wit_io_world_bindings,
-                                                       sap_wit_io_world_bindings_count,
-                                                       "imports",
-                                                       "poll",
-                                                       SAP_WIT_WORLD_ITEM_IMPORT);
-    io_endpoint = sap_wit_find_world_endpoint_descriptor(sap_wit_io_imports_import_endpoints,
-                                                         sap_wit_io_imports_import_endpoints_count,
-                                                         "poll");
+    io_streams_binding = sap_wit_find_world_binding_descriptor(sap_wit_io_world_bindings,
+                                                               sap_wit_io_world_bindings_count,
+                                                               "imports",
+                                                               "streams",
+                                                               SAP_WIT_WORLD_ITEM_IMPORT);
+    io_poll_binding = sap_wit_find_world_binding_descriptor(sap_wit_io_world_bindings,
+                                                            sap_wit_io_world_bindings_count,
+                                                            "imports",
+                                                            "poll",
+                                                            SAP_WIT_WORLD_ITEM_IMPORT);
+    io_streams_endpoint = sap_wit_find_world_endpoint_descriptor(
+        sap_wit_io_imports_import_endpoints,
+        sap_wit_io_imports_import_endpoints_count,
+        "streams");
+    io_poll_endpoint = sap_wit_find_world_endpoint_descriptor(sap_wit_io_imports_import_endpoints,
+                                                              sap_wit_io_imports_import_endpoints_count,
+                                                              "poll");
+    filesystem_world = sap_wit_find_world_descriptor(sap_wit_filesystem_worlds,
+                                                     sap_wit_filesystem_worlds_count,
+                                                     "imports");
+    filesystem_types_binding =
+        sap_wit_find_world_binding_descriptor(sap_wit_filesystem_world_bindings,
+                                              sap_wit_filesystem_world_bindings_count,
+                                              "imports",
+                                              "types",
+                                              SAP_WIT_WORLD_ITEM_IMPORT);
+    filesystem_preopens_binding =
+        sap_wit_find_world_binding_descriptor(sap_wit_filesystem_world_bindings,
+                                              sap_wit_filesystem_world_bindings_count,
+                                              "imports",
+                                              "preopens",
+                                              SAP_WIT_WORLD_ITEM_IMPORT);
+    filesystem_types_endpoint =
+        sap_wit_find_world_endpoint_descriptor(sap_wit_filesystem_imports_import_endpoints,
+                                               sap_wit_filesystem_imports_import_endpoints_count,
+                                               "types");
+    filesystem_preopens_endpoint =
+        sap_wit_find_world_endpoint_descriptor(sap_wit_filesystem_imports_import_endpoints,
+                                               sap_wit_filesystem_imports_import_endpoints_count,
+                                               "preopens");
     cli_command_world = sap_wit_find_world_descriptor(sap_wit_cli_worlds,
                                                       sap_wit_cli_worlds_count,
                                                       "command");
@@ -216,8 +268,15 @@ int main(void)
     ok &= expect_true("clocks binding descriptor", clocks_binding != NULL);
     ok &= expect_true("clocks endpoint descriptor", clocks_endpoint != NULL);
     ok &= expect_true("io world descriptor", io_world != NULL);
-    ok &= expect_true("io binding descriptor", io_binding != NULL);
-    ok &= expect_true("io endpoint descriptor", io_endpoint != NULL);
+    ok &= expect_true("io streams binding descriptor", io_streams_binding != NULL);
+    ok &= expect_true("io poll binding descriptor", io_poll_binding != NULL);
+    ok &= expect_true("io streams endpoint descriptor", io_streams_endpoint != NULL);
+    ok &= expect_true("io poll endpoint descriptor", io_poll_endpoint != NULL);
+    ok &= expect_true("filesystem world descriptor", filesystem_world != NULL);
+    ok &= expect_true("filesystem types binding descriptor", filesystem_types_binding != NULL);
+    ok &= expect_true("filesystem preopens binding descriptor", filesystem_preopens_binding != NULL);
+    ok &= expect_true("filesystem types endpoint", filesystem_types_endpoint != NULL);
+    ok &= expect_true("filesystem preopens endpoint", filesystem_preopens_endpoint != NULL);
     ok &= expect_true("cli command world descriptor", cli_command_world != NULL);
     ok &= expect_true("cli imports world descriptor", cli_imports_world != NULL);
     ok &= expect_true("cli import binding descriptor", cli_import_binding != NULL);
@@ -226,9 +285,12 @@ int main(void)
     ok &= expect_true("cli run endpoint", cli_run_endpoint != NULL);
 
     if (!random_world || !random_binding || !random_endpoint || !clocks_world || !clocks_binding
-            || !clocks_endpoint || !io_world || !io_binding || !io_endpoint || !cli_command_world
-            || !cli_imports_world || !cli_import_binding || !cli_export_binding
-            || !cli_environment_endpoint || !cli_run_endpoint) {
+            || !clocks_endpoint || !io_world || !io_streams_binding || !io_poll_binding
+            || !io_streams_endpoint || !io_poll_endpoint
+            || !filesystem_world || !filesystem_types_binding || !filesystem_preopens_binding
+            || !filesystem_types_endpoint || !filesystem_preopens_endpoint
+            || !cli_command_world || !cli_imports_world || !cli_import_binding
+            || !cli_export_binding || !cli_environment_endpoint || !cli_run_endpoint) {
         return 1;
     }
 
@@ -249,11 +311,35 @@ int main(void)
                                                            &clocks_calls,
                                                            &monotonic_ops),
                      0u);
+    ok &= expect_u32("bind io streams endpoint",
+                     (uint32_t)sap_wit_world_endpoint_bind(&io_imports,
+                                                           io_streams_endpoint,
+                                                           NULL,
+                                                           &io_streams_ops),
+                     0u);
+    ok &= expect_u32("bind io poll endpoint",
+                     (uint32_t)sap_wit_world_endpoint_bind(&io_imports,
+                                                           io_poll_endpoint,
+                                                           NULL,
+                                                           &io_poll_ops),
+                     0u);
     ok &= expect_u32("bind cli import endpoint",
                      (uint32_t)sap_wit_world_endpoint_bind(&cli_imports,
                                                            cli_environment_endpoint,
                                                            &cli_environment_calls,
                                                            &cli_environment_ops),
+                     0u);
+    ok &= expect_u32("bind filesystem types endpoint",
+                     (uint32_t)sap_wit_world_endpoint_bind(&filesystem_imports,
+                                                           filesystem_types_endpoint,
+                                                           NULL,
+                                                           &filesystem_types_ops),
+                     0u);
+    ok &= expect_u32("bind filesystem preopens endpoint",
+                     (uint32_t)sap_wit_world_endpoint_bind(&filesystem_imports,
+                                                           filesystem_preopens_endpoint,
+                                                           NULL,
+                                                           &filesystem_preopens_ops),
                      0u);
     ok &= expect_u32("bind cli export endpoint",
                      (uint32_t)sap_wit_world_endpoint_bind(&cli_exports,
