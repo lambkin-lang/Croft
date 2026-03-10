@@ -18,7 +18,7 @@
 #include <dirent.h>
 
 #define MAX_FIELDS     32
-#define MAX_CASES      32
+#define MAX_CASES      64
 #define MAX_TYPES      64
 #define MAX_FUNCS      128
 #define MAX_NAME       128
@@ -672,6 +672,12 @@ static int scan_ident(Scanner *s, char *buf, int bufsize)
 {
     skip_whitespace(s);
     int i = 0;
+    int escaped = 0;
+
+    if (!scanner_eof(s) && scanner_peek(s) == '%') {
+        escaped = 1;
+        scanner_advance(s);
+    }
     while (!scanner_eof(s) && i < bufsize - 1) {
         char ch = scanner_peek(s);
         if (isalnum((unsigned char)ch) || ch == '-' || ch == '_') {
@@ -681,6 +687,9 @@ static int scan_ident(Scanner *s, char *buf, int bufsize)
         }
     }
     buf[i] = '\0';
+    if (escaped && i == 0) {
+        return 0;
+    }
     return i;
 }
 
@@ -1336,10 +1345,17 @@ static int parse_generic_param(Scanner *s, int *param_out);
 static int parse_type_expr(Scanner *s)
 {
     char name[MAX_NAME];
+    WitTypeKind bare_kind;
     if (!scan_ident(s, name, MAX_NAME)) return -1;
 
     skip_whitespace(s);
     if (scanner_peek(s) != '<') {
+        if (strcmp(name, "result") == 0) {
+            int idx = type_alloc();
+            if (idx < 0) return -1;
+            g_type_pool[idx].kind = TYPE_RESULT;
+            return idx;
+        }
         /* bare identifier */
         int idx = type_alloc();
         if (idx < 0) return -1;
@@ -1351,12 +1367,11 @@ static int parse_type_expr(Scanner *s)
     /* generic type: name<params...> */
     scanner_advance(s); /* consume '<' */
 
-    WitTypeKind kind;
-    if      (strcmp(name, "option") == 0) kind = TYPE_OPTION;
-    else if (strcmp(name, "list")   == 0) kind = TYPE_LIST;
-    else if (strcmp(name, "tuple")  == 0) kind = TYPE_TUPLE;
-    else if (strcmp(name, "result") == 0) kind = TYPE_RESULT;
-    else if (strcmp(name, "borrow") == 0) kind = TYPE_BORROW;
+    if      (strcmp(name, "option") == 0) bare_kind = TYPE_OPTION;
+    else if (strcmp(name, "list")   == 0) bare_kind = TYPE_LIST;
+    else if (strcmp(name, "tuple")  == 0) bare_kind = TYPE_TUPLE;
+    else if (strcmp(name, "result") == 0) bare_kind = TYPE_RESULT;
+    else if (strcmp(name, "borrow") == 0) bare_kind = TYPE_BORROW;
     else {
         fprintf(stderr, "wit_codegen: line %d: unknown generic '%s'\n",
                 s->line, name);
@@ -1365,7 +1380,7 @@ static int parse_type_expr(Scanner *s)
 
     int idx = type_alloc();
     if (idx < 0) return -1;
-    g_type_pool[idx].kind = kind;
+    g_type_pool[idx].kind = bare_kind;
 
     /* parse comma-separated type parameters via recursion */
     while (g_type_pool[idx].param_count < 4) {
@@ -1556,6 +1571,9 @@ static int registry_has_interface_symbols(const WitRegistry *reg,
     for (int i = 0; i < reg->resource_count; i++)
         if (strcmp(reg->resources[i].package_full, package_full) == 0
                 && strcmp(reg->resources[i].interface_name, interface_name) == 0) return 1;
+    for (int i = 0; i < reg->use_binding_count; i++)
+        if (strcmp(reg->use_bindings[i].package_full, package_full) == 0
+                && strcmp(reg->use_bindings[i].interface_name, interface_name) == 0) return 1;
     return 0;
 }
 
@@ -2286,6 +2304,25 @@ static int registry_has_exact_symbol(const WitRegistry *reg, const char *symbol_
     return 0;
 }
 
+static int registry_find_exact_use_binding(const WitRegistry *reg,
+                                           const WitUseBinding *binding)
+{
+    if (!reg || !binding) return -1;
+
+    for (int i = 0; i < reg->use_binding_count; i++) {
+        if (strcmp(reg->use_bindings[i].package_full, binding->package_full) == 0
+                && strcmp(reg->use_bindings[i].interface_name, binding->interface_name) == 0
+                && strcmp(reg->use_bindings[i].local_name, binding->local_name) == 0
+                && strcmp(reg->use_bindings[i].target_package_full, binding->target_package_full) == 0
+                && strcmp(reg->use_bindings[i].target_interface_name, binding->target_interface_name) == 0
+                && strcmp(reg->use_bindings[i].target_name, binding->target_name) == 0) {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
 static int merge_import_registry(WitRegistry *dst, const WitRegistry *src)
 {
     if (!dst || !src) return 0;
@@ -2326,6 +2363,22 @@ static int merge_import_registry(WitRegistry *dst, const WitRegistry *src)
             dst->resources[dst->resource_count++] = src->resources[i];
         }
     }
+    for (int i = 0; i < src->use_binding_count; i++) {
+        int use_idx = registry_find_exact_use_binding(dst, &src->use_bindings[i]);
+
+        if (use_idx >= 0) {
+            if (dst->use_bindings[use_idx].target_symbol_name[0] == '\0'
+                    && src->use_bindings[i].target_symbol_name[0] != '\0') {
+                snprintf(dst->use_bindings[use_idx].target_symbol_name,
+                         sizeof(dst->use_bindings[use_idx].target_symbol_name),
+                         "%s",
+                         src->use_bindings[i].target_symbol_name);
+            }
+            continue;
+        }
+        if (dst->use_binding_count >= MAX_USE_BINDINGS) return 0;
+        dst->use_bindings[dst->use_binding_count++] = src->use_bindings[i];
+    }
     return 1;
 }
 
@@ -2356,7 +2409,7 @@ static int ensure_import_interface_loaded(WitRegistry *reg,
                                           const char *target_interface_name)
 {
     char import_path[MAX_PATH_TEXT];
-    WitRegistry imported;
+    WitRegistry *imported = NULL;
 
     if (!reg || !target_interface_name || target_interface_name[0] == '\0') return 0;
     if (registry_has_interface_symbols(reg,
@@ -2381,15 +2434,24 @@ static int ensure_import_interface_loaded(WitRegistry *reg,
     if (registry_has_loaded_path(reg, import_path)) {
         return 1;
     }
-    if (!parse_registry_source_file(&imported, import_path)) {
+    imported = (WitRegistry *)malloc(sizeof(*imported));
+    if (!imported) {
+        fprintf(stderr, "wit_codegen: out of memory while loading %s\n", import_path);
         return 0;
     }
-    if (!merge_import_registry(reg, &imported)) {
+    if (!parse_registry_source_file(imported, import_path)) {
+        free(imported);
+        return 0;
+    }
+    if (!merge_import_registry(reg, imported)) {
+        free(imported);
         return 0;
     }
     if (!registry_mark_loaded_path(reg, import_path)) {
+        free(imported);
         return 0;
     }
+    free(imported);
     return 1;
 }
 
@@ -2640,6 +2702,52 @@ static int same_type_shape(const WitRegistry *reg, int a, int b)
     return strcmp(a_buf, b_buf) == 0;
 }
 
+typedef struct {
+    const WitFunc *func;
+    int            needs_request_record;
+    int            passthrough_record_payload;
+    char           command_case_name[MAX_NAME];
+    char           request_record_name[MAX_NAME];
+    char           reply_base_name[MAX_NAME];
+    char           reply_case_name[MAX_NAME];
+} LoweredFuncPlan;
+
+typedef enum {
+    LOWERED_NAME_COMMAND,
+    LOWERED_NAME_REPLY,
+    LOWERED_NAME_REQUEST_RECORD,
+} LoweredNameKind;
+
+static const char *lowered_name_kind_label(LoweredNameKind kind)
+{
+    switch (kind) {
+    case LOWERED_NAME_COMMAND:
+        return "command";
+    case LOWERED_NAME_REPLY:
+        return "reply";
+    case LOWERED_NAME_REQUEST_RECORD:
+        return "request";
+    }
+    return "unknown";
+}
+
+static void lowered_join_names(const char *left,
+                               const char *right,
+                               char *out,
+                               int n)
+{
+    if (!out || n <= 0) return;
+    out[0] = '\0';
+
+    if (left && left[0] != '\0' && right && right[0] != '\0') {
+        snprintf(out, n, "%s-%s", left, right);
+    } else if (right && right[0] != '\0') {
+        snprintf(out, n, "%s", right);
+    } else if (left && left[0] != '\0') {
+        snprintf(out, n, "%s", left);
+    }
+}
+
 static void lowered_command_name(const char *group_name,
                                  char *out,
                                  int n)
@@ -2667,6 +2775,143 @@ static void lowered_request_record_name(const WitFunc *func,
         return;
     }
     snprintf(out, n, "%s-%s", func->owner_name, func->name);
+}
+
+static int lowered_type_case_name_hint(const WitRegistry *reg,
+                                       int type_idx,
+                                       char *out,
+                                       int n)
+{
+    int resolved;
+    WitTypeExpr *type_expr;
+    const WitResource *resource;
+    const WitRecord *record;
+    const WitVariant *variant;
+    const WitEnum *en;
+    const WitFlags *fl;
+    const WitAlias *alias;
+
+    if (!reg || !out || n <= 0) return 0;
+    out[0] = '\0';
+
+    resolved = unwrap_borrow_type(reg, type_idx);
+    if (resolved < 0) return 0;
+    type_expr = &g_type_pool[resolved];
+    if (type_expr->kind != TYPE_IDENT) return 0;
+
+    resource = find_resource(reg, type_expr->ident);
+    if (resource) {
+        snprintf(out, n, "%s", resource->name);
+        return 1;
+    }
+
+    record = find_record(reg, type_expr->ident);
+    if (record) {
+        snprintf(out, n, "%s", record->name);
+        return 1;
+    }
+
+    variant = find_variant(reg, type_expr->ident);
+    if (variant) {
+        snprintf(out, n, "%s", variant->name);
+        return 1;
+    }
+
+    en = find_enum(reg, type_expr->ident);
+    if (en) {
+        snprintf(out, n, "%s", en->name);
+        return 1;
+    }
+
+    fl = find_flags(reg, type_expr->ident);
+    if (fl) {
+        snprintf(out, n, "%s", fl->name);
+        return 1;
+    }
+
+    alias = find_alias(reg, type_expr->ident);
+    if (alias) {
+        snprintf(out, n, "%s", alias->name);
+        return 1;
+    }
+
+    return 0;
+}
+
+static void lowered_command_case_candidate(const WitFunc *func,
+                                           int level,
+                                           char *out,
+                                           int n)
+{
+    if (!out || n <= 0) return;
+    out[0] = '\0';
+    if (!func) return;
+
+    switch (level) {
+    case 0:
+        snprintf(out, n, "%s", func->name);
+        return;
+    case 1:
+        if (func->owner_kind == WIT_OWNER_RESOURCE && func->owner_name[0] != '\0') {
+            lowered_join_names(func->owner_name, func->name, out, n);
+        } else if (func->interface_name[0] != '\0') {
+            lowered_join_names(func->interface_name, func->name, out, n);
+        } else {
+            snprintf(out, n, "%s", func->name);
+        }
+        return;
+    default:
+        if (func->interface_name[0] != '\0'
+                && func->owner_kind == WIT_OWNER_RESOURCE
+                && func->owner_name[0] != '\0') {
+            char qualified[MAX_NAME];
+
+            lowered_join_names(func->owner_name, func->name, qualified, (int)sizeof(qualified));
+            lowered_join_names(func->interface_name, qualified, out, n);
+        } else if (func->interface_name[0] != '\0') {
+            lowered_join_names(func->interface_name, func->name, out, n);
+        } else {
+            snprintf(out, n, "%s", func->name);
+        }
+        return;
+    }
+}
+
+static void lowered_request_record_candidate(const WitFunc *func,
+                                             int level,
+                                             char *out,
+                                             int n)
+{
+    char base[MAX_NAME];
+
+    if (!out || n <= 0) return;
+    out[0] = '\0';
+    if (!func) return;
+
+    lowered_request_record_name(func, base, (int)sizeof(base));
+    switch (level) {
+    case 0:
+        snprintf(out, n, "%s", base);
+        return;
+    case 1:
+        lowered_join_names(base, "request", out, n);
+        return;
+    default:
+        if (func->owner_kind == WIT_OWNER_RESOURCE && func->owner_name[0] != '\0') {
+            char qualified[MAX_NAME];
+
+            lowered_join_names(func->owner_name, func->name, qualified, (int)sizeof(qualified));
+            lowered_join_names(qualified, "request", out, n);
+        } else if (func->interface_name[0] != '\0') {
+            char qualified[MAX_NAME];
+
+            lowered_join_names(func->interface_name, func->name, qualified, (int)sizeof(qualified));
+            lowered_join_names(qualified, "request", out, n);
+        } else {
+            lowered_join_names(base, "request", out, n);
+        }
+        return;
+    }
 }
 
 static void lowered_receiver_field_name(const WitFunc *func,
@@ -2807,6 +3052,9 @@ static void lowered_reply_case_name(const WitRegistry *reg,
 
     result = &g_type_pool[resolved];
     if (result->kind != TYPE_RESULT) {
+        if (lowered_type_case_name_hint(reg, resolved, out, n)) {
+            return;
+        }
         snprintf(out, n, "%s", func->name);
         return;
     }
@@ -2834,6 +3082,238 @@ static void lowered_reply_case_name(const WitRegistry *reg,
     }
 
     snprintf(out, n, "%s", func->name);
+}
+
+static void lowered_reply_case_candidate(const WitFunc *func,
+                                         const char *base_name,
+                                         int level,
+                                         char *out,
+                                         int n)
+{
+    if (!out || n <= 0) return;
+    out[0] = '\0';
+    if (!func) return;
+
+    switch (level) {
+    case 0:
+        snprintf(out, n, "%s", base_name && base_name[0] != '\0' ? base_name : func->name);
+        return;
+    case 1:
+        if (func->owner_kind == WIT_OWNER_RESOURCE && func->owner_name[0] != '\0') {
+            lowered_join_names(func->owner_name,
+                               base_name && base_name[0] != '\0' ? base_name : func->name,
+                               out,
+                               n);
+        } else {
+            snprintf(out, n, "%s", func->name);
+        }
+        return;
+    default:
+        if (func->owner_kind == WIT_OWNER_RESOURCE && func->owner_name[0] != '\0') {
+            lowered_join_names(func->owner_name, func->name, out, n);
+        } else if (func->interface_name[0] != '\0') {
+            lowered_join_names(func->interface_name, func->name, out, n);
+        } else {
+            snprintf(out, n, "%s", func->name);
+        }
+        return;
+    }
+}
+
+static int lowered_names_conflict(const WitRegistry *reg,
+                                  const LoweredFuncPlan *plans,
+                                  int plan_count,
+                                  int a,
+                                  int b,
+                                  LoweredNameKind kind)
+{
+    if (!plans || a < 0 || b < 0 || a >= plan_count || b >= plan_count) return 0;
+
+    switch (kind) {
+    case LOWERED_NAME_COMMAND:
+        return strcmp(plans[a].command_case_name, plans[b].command_case_name) == 0;
+    case LOWERED_NAME_REPLY:
+        if (strcmp(plans[a].reply_case_name, plans[b].reply_case_name) != 0) {
+            return 0;
+        }
+        return !same_type_shape(reg,
+                                plans[a].func->result_type,
+                                plans[b].func->result_type);
+    case LOWERED_NAME_REQUEST_RECORD:
+        if (!plans[a].needs_request_record || !plans[b].needs_request_record) {
+            return 0;
+        }
+        return strcmp(plans[a].request_record_name, plans[b].request_record_name) == 0;
+    }
+
+    return 0;
+}
+
+static int lowered_request_name_conflicts_existing(const WitRegistry *reg,
+                                                   const char *name)
+{
+    if (!reg || !name || name[0] == '\0') return 0;
+    return find_record(reg, name) || find_variant(reg, name)
+        || find_enum(reg, name) || find_flags(reg, name)
+        || find_alias(reg, name) || find_resource(reg, name);
+}
+
+static int assign_lowered_plan_names(const WitRegistry *reg,
+                                     LoweredFuncPlan *plans,
+                                     int plan_count,
+                                     LoweredNameKind kind)
+{
+    int levels[MAX_FUNCS];
+    int bump_levels[MAX_FUNCS];
+    int max_level = 0;
+    int changed;
+
+    if (!reg || !plans || plan_count < 0 || plan_count > MAX_FUNCS) {
+        return 0;
+    }
+
+    switch (kind) {
+    case LOWERED_NAME_COMMAND:
+        max_level = 2;
+        break;
+    case LOWERED_NAME_REPLY:
+        max_level = 2;
+        break;
+    case LOWERED_NAME_REQUEST_RECORD:
+        max_level = 2;
+        break;
+    }
+
+    memset(levels, 0, sizeof(levels));
+    do {
+        changed = 0;
+        memset(bump_levels, 0, sizeof(bump_levels));
+        for (int i = 0; i < plan_count; i++) {
+            switch (kind) {
+            case LOWERED_NAME_COMMAND:
+                lowered_command_case_candidate(plans[i].func,
+                                               levels[i],
+                                               plans[i].command_case_name,
+                                               (int)sizeof(plans[i].command_case_name));
+                break;
+            case LOWERED_NAME_REPLY:
+                lowered_reply_case_candidate(plans[i].func,
+                                             plans[i].reply_base_name,
+                                             levels[i],
+                                             plans[i].reply_case_name,
+                                             (int)sizeof(plans[i].reply_case_name));
+                break;
+            case LOWERED_NAME_REQUEST_RECORD:
+                if (!plans[i].needs_request_record) {
+                    plans[i].request_record_name[0] = '\0';
+                    break;
+                }
+                lowered_request_record_candidate(plans[i].func,
+                                                 levels[i],
+                                                 plans[i].request_record_name,
+                                                 (int)sizeof(plans[i].request_record_name));
+                break;
+            }
+        }
+
+        if (kind == LOWERED_NAME_REQUEST_RECORD) {
+            for (int i = 0; i < plan_count; i++) {
+                if (!plans[i].needs_request_record) continue;
+                if (lowered_request_name_conflicts_existing(reg, plans[i].request_record_name)) {
+                    bump_levels[i] = 1;
+                }
+            }
+        }
+
+        for (int i = 0; i < plan_count; i++) {
+            for (int j = i + 1; j < plan_count; j++) {
+                if (!lowered_names_conflict(reg, plans, plan_count, i, j, kind)) {
+                    continue;
+                }
+                bump_levels[i] = 1;
+                bump_levels[j] = 1;
+            }
+        }
+
+        for (int i = 0; i < plan_count; i++) {
+            if (!bump_levels[i]) continue;
+            if (levels[i] >= max_level) {
+                const char *candidate = "";
+
+                switch (kind) {
+                case LOWERED_NAME_COMMAND:
+                    candidate = plans[i].command_case_name;
+                    break;
+                case LOWERED_NAME_REPLY:
+                    candidate = plans[i].reply_case_name;
+                    break;
+                case LOWERED_NAME_REQUEST_RECORD:
+                    candidate = plans[i].request_record_name;
+                    break;
+                }
+                fprintf(stderr,
+                        "wit_codegen: unable to disambiguate lowered %s name '%s' for %s\n",
+                        lowered_name_kind_label(kind),
+                        candidate,
+                        plans[i].func ? plans[i].func->trace : "(unknown)");
+                return 0;
+            }
+            levels[i]++;
+            changed = 1;
+        }
+    } while (changed);
+
+    return 1;
+}
+
+static int build_lowered_group_plans(const WitRegistry *reg,
+                                     const char *group_name,
+                                     LoweredFuncPlan *plans,
+                                     int *plan_count_out)
+{
+    int plan_count = 0;
+
+    if (!reg || !group_name || !plans || !plan_count_out) return 0;
+
+    for (int i = 0; i < reg->func_count; i++) {
+        const WitFunc *func = &reg->funcs[i];
+        LoweredFuncPlan *plan;
+
+        if (strcmp(wit_func_surface_name(reg, func), group_name) != 0) {
+            continue;
+        }
+        if (plan_count >= MAX_FUNCS) {
+            fprintf(stderr, "wit_codegen: too many lowered operations in %s\n", group_name);
+            return 0;
+        }
+
+        plan = &plans[plan_count++];
+        memset(plan, 0, sizeof(*plan));
+        plan->func = func;
+        plan->passthrough_record_payload = can_passthrough_record_payload(reg, func);
+        plan->needs_request_record = ((func->param_count > 0 || func->kind == WIT_FUNC_METHOD)
+                                      && !plan->passthrough_record_payload);
+        lowered_reply_case_name(reg,
+                                func,
+                                plan->reply_base_name,
+                                (int)sizeof(plan->reply_base_name));
+    }
+
+    if (!assign_lowered_plan_names(reg, plans, plan_count, LOWERED_NAME_COMMAND)) {
+        fprintf(stderr, "wit_codegen: unable to resolve lowered command names in %s\n", group_name);
+        return 0;
+    }
+    if (!assign_lowered_plan_names(reg, plans, plan_count, LOWERED_NAME_REPLY)) {
+        fprintf(stderr, "wit_codegen: unable to resolve lowered reply names in %s\n", group_name);
+        return 0;
+    }
+    if (!assign_lowered_plan_names(reg, plans, plan_count, LOWERED_NAME_REQUEST_RECORD)) {
+        fprintf(stderr, "wit_codegen: unable to resolve lowered request names in %s\n", group_name);
+        return 0;
+    }
+
+    *plan_count_out = plan_count;
+    return 1;
 }
 
 static int append_lowered_record(WitRegistry *reg, const WitRecord *record)
@@ -2876,8 +3356,10 @@ static int lower_operation_group(WitRegistry *reg, const char *group_name)
 {
     WitVariant command_variant;
     WitVariant reply_variant;
+    LoweredFuncPlan plans[MAX_FUNCS];
     char command_name[MAX_NAME];
     char reply_name[MAX_NAME];
+    int plan_count = 0;
 
     memset(&command_variant, 0, sizeof(command_variant));
     memset(&reply_variant, 0, sizeof(reply_variant));
@@ -2886,17 +3368,14 @@ static int lower_operation_group(WitRegistry *reg, const char *group_name)
     snprintf(command_variant.name, sizeof(command_variant.name), "%s", command_name);
     snprintf(reply_variant.name, sizeof(reply_variant.name), "%s", reply_name);
 
-    for (int i = 0; i < reg->func_count; i++) {
-        const WitFunc *func = &reg->funcs[i];
-        WitRecord request_record;
-        char record_name[MAX_NAME];
-        char reply_case_name[MAX_NAME];
-        int needs_request_record = 0;
-        int passthrough_record_payload = 0;
+    if (!build_lowered_group_plans(reg, group_name, plans, &plan_count)) {
+        return 0;
+    }
 
-        if (strcmp(wit_func_surface_name(reg, func), group_name) != 0) {
-            continue;
-        }
+    for (int i = 0; i < plan_count; i++) {
+        const LoweredFuncPlan *plan = &plans[i];
+        const WitFunc *func = plan->func;
+        WitRecord request_record;
 
         memset(&request_record, 0, sizeof(request_record));
         if (command_variant.case_count >= MAX_CASES) {
@@ -2904,14 +3383,13 @@ static int lower_operation_group(WitRegistry *reg, const char *group_name)
             return 0;
         }
 
-        passthrough_record_payload = can_passthrough_record_payload(reg, func);
-        needs_request_record = ((func->param_count > 0 || func->kind == WIT_FUNC_METHOD)
-                                && !passthrough_record_payload);
-        if (needs_request_record) {
+        if (plan->needs_request_record) {
             int field_count = 0;
 
-            lowered_request_record_name(func, record_name, (int)sizeof(record_name));
-            snprintf(request_record.name, sizeof(request_record.name), "%s", record_name);
+            snprintf(request_record.name,
+                     sizeof(request_record.name),
+                     "%s",
+                     plan->request_record_name);
 
             if (func->kind == WIT_FUNC_METHOD) {
                 char receiver_field_name[MAX_NAME];
@@ -2950,34 +3428,36 @@ static int lower_operation_group(WitRegistry *reg, const char *group_name)
         snprintf(command_variant.cases[command_variant.case_count].name,
                  sizeof(command_variant.cases[command_variant.case_count].name),
                  "%s",
-                 func->name);
+                 plan->command_case_name);
         snprintf(command_variant.cases[command_variant.case_count].trace,
                  sizeof(command_variant.cases[command_variant.case_count].trace),
                  "%s",
                  func->trace);
-        if (needs_request_record) {
+        if (plan->needs_request_record) {
             int type_idx = type_alloc();
             if (type_idx < 0) {
                 return 0;
             }
             g_type_pool[type_idx].kind = TYPE_IDENT;
-            snprintf(g_type_pool[type_idx].ident, sizeof(g_type_pool[type_idx].ident), "%s", record_name);
+            snprintf(g_type_pool[type_idx].ident,
+                     sizeof(g_type_pool[type_idx].ident),
+                     "%s",
+                     plan->request_record_name);
             command_variant.cases[command_variant.case_count].payload_type = type_idx;
-        } else if (passthrough_record_payload) {
+        } else if (plan->passthrough_record_payload) {
             command_variant.cases[command_variant.case_count].payload_type = func->params[0].wit_type;
         } else {
             command_variant.cases[command_variant.case_count].payload_type = -1;
         }
         command_variant.case_count++;
 
-        lowered_reply_case_name(reg, func, reply_case_name, (int)sizeof(reply_case_name));
         for (int j = 0; j < reply_variant.case_count; j++) {
-            if (strcmp(reply_variant.cases[j].name, reply_case_name) == 0) {
+            if (strcmp(reply_variant.cases[j].name, plan->reply_case_name) == 0) {
                 if (!same_type_shape(reg, reply_variant.cases[j].payload_type, func->result_type)) {
                     fprintf(stderr,
                             "wit_codegen: lowered reply case conflict in %s for case %s\n",
                             group_name,
-                            reply_case_name);
+                            plan->reply_case_name);
                     return 0;
                 }
                 goto reply_case_done;
@@ -2992,7 +3472,7 @@ static int lower_operation_group(WitRegistry *reg, const char *group_name)
         snprintf(reply_variant.cases[reply_variant.case_count].name,
                  sizeof(reply_variant.cases[reply_variant.case_count].name),
                  "%s",
-                 reply_case_name);
+                 plan->reply_case_name);
         reply_variant.cases[reply_variant.case_count].payload_type = func->result_type;
         reply_variant.case_count++;
 
@@ -3301,19 +3781,78 @@ static int qualify_type_expr_symbols(const WitRegistry *reg,
     return 1;
 }
 
+static int lookup_resolved_use_binding_symbol_name(const WitRegistry *reg,
+                                                   const char *package_full,
+                                                   const char *interface_name,
+                                                   const char *local_name,
+                                                   char *out,
+                                                   int n)
+{
+    if (!reg || !local_name || local_name[0] == '\0') return 0;
+
+    for (int i = 0; i < reg->use_binding_count; i++) {
+        if (strcmp(reg->use_bindings[i].package_full, package_full ? package_full : "") == 0
+                && strcmp(reg->use_bindings[i].interface_name, interface_name ? interface_name : "") == 0
+                && strcmp(reg->use_bindings[i].local_name, local_name) == 0
+                && reg->use_bindings[i].target_symbol_name[0] != '\0') {
+            if (out && n > 0) {
+                snprintf(out, n, "%s", reg->use_bindings[i].target_symbol_name);
+            }
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
 static int resolve_use_bindings(WitRegistry *reg)
 {
     char symbol_name[MAX_SYMBOL];
+    int unresolved = 0;
+    int progress = 0;
 
     if (!reg) return 0;
 
+    for (int pass = 0; pass <= reg->use_binding_count; pass++) {
+        unresolved = 0;
+        progress = 0;
+
+        for (int i = 0; i < reg->use_binding_count; i++) {
+            if (reg->use_bindings[i].target_symbol_name[0] != '\0') {
+                continue;
+            }
+            if (!lookup_decl_symbol_name(reg,
+                                         reg->use_bindings[i].target_package_full,
+                                         reg->use_bindings[i].target_interface_name,
+                                         reg->use_bindings[i].target_name,
+                                         symbol_name,
+                                         (int)sizeof(symbol_name))
+                    && !lookup_resolved_use_binding_symbol_name(reg,
+                                                                reg->use_bindings[i].target_package_full,
+                                                                reg->use_bindings[i].target_interface_name,
+                                                                reg->use_bindings[i].target_name,
+                                                                symbol_name,
+                                                                (int)sizeof(symbol_name))) {
+                unresolved++;
+                continue;
+            }
+            snprintf(reg->use_bindings[i].target_symbol_name,
+                     sizeof(reg->use_bindings[i].target_symbol_name),
+                     "%s",
+                     symbol_name);
+            progress = 1;
+        }
+
+        if (unresolved == 0) {
+            return 1;
+        }
+        if (!progress) {
+            break;
+        }
+    }
+
     for (int i = 0; i < reg->use_binding_count; i++) {
-        if (!lookup_decl_symbol_name(reg,
-                                     reg->use_bindings[i].target_package_full,
-                                     reg->use_bindings[i].target_interface_name,
-                                     reg->use_bindings[i].target_name,
-                                     symbol_name,
-                                     (int)sizeof(symbol_name))) {
+        if (reg->use_bindings[i].target_symbol_name[0] == '\0') {
             codegen_die("unknown imported WIT name %s from %s/%s in %s/%s",
                         reg->use_bindings[i].target_name,
                         reg->use_bindings[i].target_package_full,
@@ -3321,11 +3860,8 @@ static int resolve_use_bindings(WitRegistry *reg)
                         reg->use_bindings[i].package_full,
                         reg->use_bindings[i].interface_name);
         }
-        snprintf(reg->use_bindings[i].target_symbol_name,
-                 sizeof(reg->use_bindings[i].target_symbol_name),
-                 "%s",
-                 symbol_name);
     }
+
     return 1;
 }
 
@@ -5584,37 +6120,47 @@ int main(int argc, char **argv)
     }
 
     Scanner scanner;
-    WitRegistry reg;
-    if (!init_registry_for_source(&reg, wit_path, src, (int)fsize)) {
+    WitRegistry *reg = (WitRegistry *)malloc(sizeof(*reg));
+    if (!reg) {
+        free(src);
+        return 1;
+    }
+    if (!init_registry_for_source(reg, wit_path, src, (int)fsize)) {
+        free(reg);
         free(src);
         return 1;
     }
 
     scanner_init(&scanner, src, (int)fsize);
-    if (!parse_wit(&scanner, &reg)) {
+    if (!parse_wit(&scanner, reg)) {
         fprintf(stderr, "wit_codegen: parse failed at line %d col %d\n",
                 scanner.line, scanner.col);
+        free(reg);
         free(src);
         return 1;
     }
-    if (!resolve_use_bindings(&reg)) {
+    if (!resolve_use_bindings(reg)) {
+        free(reg);
         free(src);
         return 1;
     }
-    if (!resolve_registry_symbol_scopes(&reg)) {
+    if (!resolve_registry_symbol_scopes(reg)) {
+        free(reg);
         free(src);
         return 1;
     }
-    if (!lower_operations(&reg)) {
+    if (!lower_operations(reg)) {
+        free(reg);
         free(src);
         return 1;
     }
-    finalize_package_info(&reg, wit_path);
+    finalize_package_info(reg, wit_path);
 
     DbiEntry dbis[MAX_TYPES];
-    int ndbi = extract_dbis(&reg, dbis, MAX_TYPES);
+    int ndbi = extract_dbis(reg, dbis, MAX_TYPES);
     if (ndbi < 0) {
         fprintf(stderr, "wit_codegen: DBI extraction failed\n");
+        free(reg);
         free(src);
         return 1;
     }
@@ -5622,9 +6168,10 @@ int main(int argc, char **argv)
         FILE *hdr = fopen(header_path, "w");
         if (!hdr) {
             fprintf(stderr, "wit_codegen: cannot create %s\n", header_path);
+            free(reg);
             free(src); return 1;
         }
-        emit_header(hdr, &reg, dbis, ndbi, wit_path, header_path);
+        emit_header(hdr, reg, dbis, ndbi, wit_path, header_path);
         fclose(hdr);
     }
 
@@ -5632,9 +6179,10 @@ int main(int argc, char **argv)
         FILE *csrc = fopen(source_path, "w");
         if (!csrc) {
             fprintf(stderr, "wit_codegen: cannot create %s\n", source_path);
+            free(reg);
             free(src); return 1;
         }
-        emit_source(csrc, &reg, dbis, ndbi, wit_path, header_path);
+        emit_source(csrc, reg, dbis, ndbi, wit_path, header_path);
         fclose(csrc);
     }
 
@@ -5642,18 +6190,20 @@ int main(int argc, char **argv)
         FILE *manifest = fopen(manifest_path, "w");
         if (!manifest) {
             fprintf(stderr, "wit_codegen: cannot create %s\n", manifest_path);
+            free(reg);
             free(src);
             return 1;
         }
-        emit_manifest(manifest, &reg, dbis, ndbi, wit_path);
+        emit_manifest(manifest, reg, dbis, ndbi, wit_path);
         fclose(manifest);
     }
 
     printf("wit_codegen: PASS (records=%d variants=%d enums=%d flags=%d "
            "aliases=%d resources=%d dbis=%d)\n",
-           reg.record_count, reg.variant_count, reg.enum_count,
-           reg.flags_count, reg.alias_count, reg.resource_count, ndbi);
+           reg->record_count, reg->variant_count, reg->enum_count,
+           reg->flags_count, reg->alias_count, reg->resource_count, ndbi);
 
+    free(reg);
     free(src);
     return 0;
 }

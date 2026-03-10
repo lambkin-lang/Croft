@@ -13,10 +13,10 @@ int main(void)
     when.seconds = 1;
     timezone_command.case_tag = SAP_WIT_CLOCKS_TIMEZONE_COMMAND_DISPLAY;
     timezone_command.val.display = when;
-    timezone_reply.case_tag = SAP_WIT_CLOCKS_TIMEZONE_REPLY_DISPLAY;
+    timezone_reply.case_tag = SAP_WIT_CLOCKS_TIMEZONE_REPLY_TIMEZONE_DISPLAY;
     monotonic_command.case_tag = SAP_WIT_CLOCKS_MONOTONIC_CLOCK_COMMAND_SUBSCRIBE;
-    monotonic_reply.case_tag = SAP_WIT_CLOCKS_MONOTONIC_CLOCK_REPLY_SUBSCRIBE;
-    monotonic_reply.val.subscribe = pollable;
+    monotonic_reply.case_tag = SAP_WIT_CLOCKS_MONOTONIC_CLOCK_REPLY_POLLABLE;
+    monotonic_reply.val.pollable = pollable;
 
     (void)timezone_command;
     (void)timezone_reply;

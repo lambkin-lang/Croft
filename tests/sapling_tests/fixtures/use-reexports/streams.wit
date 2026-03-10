@@ -1,0 +1,13 @@
+package demo:reexports@0.1.0;
+
+interface streams {
+  use error.{error};
+
+  resource input-stream;
+  resource output-stream;
+
+  variant stream-error {
+    last-operation-failed(error),
+    closed,
+  }
+}

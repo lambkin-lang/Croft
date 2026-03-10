@@ -286,6 +286,14 @@ set(SCOPED_NAMES_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/sc
 set(SCOPED_NAMES_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/scoped_names.c")
 set(SCOPED_NAMES_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/scoped_names.manifest")
 
+set(OPERATION_COLLISIONS_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/operation_collisions.h")
+set(OPERATION_COLLISIONS_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/operation_collisions.c")
+set(OPERATION_COLLISIONS_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/operation_collisions.manifest")
+
+set(USE_REEXPORTS_TYPES_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/use_reexports_types.h")
+set(USE_REEXPORTS_TYPES_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/use_reexports_types.c")
+set(USE_REEXPORTS_TYPES_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/use_reexports_types.manifest")
+
 set(MENU_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_menu_schema.h")
 set(MENU_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_menu_schema.c")
 set(MENU_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_menu_schema.manifest")
@@ -499,6 +507,37 @@ add_custom_target(scoped_names_wit_schema_gen
     DEPENDS ${SCOPED_NAMES_WIT_GENERATED_H}
             ${SCOPED_NAMES_WIT_GENERATED_C}
             ${SCOPED_NAMES_WIT_GENERATED_MANIFEST})
+
+# Operation-lowering regression fixture
+add_custom_command(
+    OUTPUT ${OPERATION_COLLISIONS_WIT_GENERATED_H} ${OPERATION_COLLISIONS_WIT_GENERATED_C} ${OPERATION_COLLISIONS_WIT_GENERATED_MANIFEST}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/tests/generated"
+    COMMAND wit_codegen --wit "${CMAKE_CURRENT_SOURCE_DIR}/tests/sapling_tests/fixtures/operation-collisions.wit"
+                        --header "${OPERATION_COLLISIONS_WIT_GENERATED_H}" --source "${OPERATION_COLLISIONS_WIT_GENERATED_C}" --manifest "${OPERATION_COLLISIONS_WIT_GENERATED_MANIFEST}"
+    DEPENDS wit_codegen "${CMAKE_CURRENT_SOURCE_DIR}/tests/sapling_tests/fixtures/operation-collisions.wit"
+    COMMENT "Generating operation-lowering WIT regression fixture bindings..."
+)
+add_custom_target(operation_collisions_wit_schema_gen
+    DEPENDS ${OPERATION_COLLISIONS_WIT_GENERATED_H}
+            ${OPERATION_COLLISIONS_WIT_GENERATED_C}
+            ${OPERATION_COLLISIONS_WIT_GENERATED_MANIFEST})
+
+# Transitive-use regression fixture
+add_custom_command(
+    OUTPUT ${USE_REEXPORTS_TYPES_WIT_GENERATED_H} ${USE_REEXPORTS_TYPES_WIT_GENERATED_C} ${USE_REEXPORTS_TYPES_WIT_GENERATED_MANIFEST}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/tests/generated"
+    COMMAND wit_codegen --wit "${CMAKE_CURRENT_SOURCE_DIR}/tests/sapling_tests/fixtures/use-reexports/types.wit"
+                        --header "${USE_REEXPORTS_TYPES_WIT_GENERATED_H}" --source "${USE_REEXPORTS_TYPES_WIT_GENERATED_C}" --manifest "${USE_REEXPORTS_TYPES_WIT_GENERATED_MANIFEST}"
+    DEPENDS wit_codegen
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/sapling_tests/fixtures/use-reexports/types.wit"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/sapling_tests/fixtures/use-reexports/streams.wit"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/sapling_tests/fixtures/use-reexports/error.wit"
+    COMMENT "Generating transitive-use WIT regression fixture bindings..."
+)
+add_custom_target(use_reexports_types_wit_schema_gen
+    DEPENDS ${USE_REEXPORTS_TYPES_WIT_GENERATED_H}
+            ${USE_REEXPORTS_TYPES_WIT_GENERATED_C}
+            ${USE_REEXPORTS_TYPES_WIT_GENERATED_MANIFEST})
 
 # Menu Schema
 add_custom_command(
@@ -848,6 +887,16 @@ add_library(croft_wit_scoped_names STATIC ${SCOPED_NAMES_WIT_GENERATED_C})
 add_dependencies(croft_wit_scoped_names scoped_names_wit_schema_gen)
 croft_apply_public_includes(croft_wit_scoped_names)
 target_link_libraries(croft_wit_scoped_names PUBLIC croft_thatch_core)
+
+add_library(croft_wit_operation_collisions STATIC ${OPERATION_COLLISIONS_WIT_GENERATED_C})
+add_dependencies(croft_wit_operation_collisions operation_collisions_wit_schema_gen)
+croft_apply_public_includes(croft_wit_operation_collisions)
+target_link_libraries(croft_wit_operation_collisions PUBLIC croft_thatch_core)
+
+add_library(croft_wit_use_reexports_types STATIC ${USE_REEXPORTS_TYPES_WIT_GENERATED_C})
+add_dependencies(croft_wit_use_reexports_types use_reexports_types_wit_schema_gen)
+croft_apply_public_includes(croft_wit_use_reexports_types)
+target_link_libraries(croft_wit_use_reexports_types PUBLIC croft_thatch_core)
 
 add_library(croft_wire_runtime STATIC
     src/runner/wire_v0.c
@@ -2143,6 +2192,12 @@ if(CROFT_BUILD_TESTS)
         if(test_name STREQUAL "test_wit_scoped_names_smoke")
             target_link_libraries(${test_name} PRIVATE croft_wit_scoped_names)
         endif()
+        if(test_name STREQUAL "test_wit_operation_lowering_smoke")
+            target_link_libraries(${test_name} PRIVATE croft_wit_operation_collisions)
+        endif()
+        if(test_name STREQUAL "test_wit_use_reexports_smoke")
+            target_link_libraries(${test_name} PRIVATE croft_wit_use_reexports_types)
+        endif()
         target_compile_definitions(${test_name} PRIVATE SAPLING_HAMT_TESTING)
         if(test_name STREQUAL "test_wit_thatch_codegen")
             add_dependencies(${test_name} test_wit_schema_gen)
@@ -2164,6 +2219,14 @@ if(CROFT_BUILD_TESTS)
         endif()
         if(test_name STREQUAL "test_wit_scoped_names_smoke")
             add_dependencies(${test_name} scoped_names_wit_schema_gen)
+            target_include_directories(${test_name} PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
+        endif()
+        if(test_name STREQUAL "test_wit_operation_lowering_smoke")
+            add_dependencies(${test_name} operation_collisions_wit_schema_gen)
+            target_include_directories(${test_name} PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
+        endif()
+        if(test_name STREQUAL "test_wit_use_reexports_smoke")
+            add_dependencies(${test_name} use_reexports_types_wit_schema_gen)
             target_include_directories(${test_name} PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
         endif()
         add_test(NAME sapling_${test_name} COMMAND ${test_name})

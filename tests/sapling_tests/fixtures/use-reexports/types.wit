@@ -1,0 +1,14 @@
+package demo:reexports@0.1.0;
+
+interface types {
+  use streams.{input-stream, output-stream, error};
+
+  record descriptor-stat {
+    %type: option<string>,
+    last-error: option<error>,
+  }
+
+  describe: func() -> descriptor-stat;
+  fail-open: func() -> result<input-stream, error>;
+  drain: func(stream: borrow<output-stream>) -> result;
+}
