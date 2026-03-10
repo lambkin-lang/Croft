@@ -1,0 +1,4 @@
+@since(version = 0.1.0)
+interface run {
+  start: func() -> result<_, string>;
+}

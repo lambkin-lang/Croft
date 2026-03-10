@@ -294,6 +294,10 @@ set(USE_REEXPORTS_TYPES_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/tests/gener
 set(USE_REEXPORTS_TYPES_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/use_reexports_types.c")
 set(USE_REEXPORTS_TYPES_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/use_reexports_types.manifest")
 
+set(WORLD_META_COMMAND_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/world_meta_command.h")
+set(WORLD_META_COMMAND_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/world_meta_command.c")
+set(WORLD_META_COMMAND_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/world_meta_command.manifest")
+
 set(MENU_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_menu_schema.h")
 set(MENU_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_menu_schema.c")
 set(MENU_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_menu_schema.manifest")
@@ -538,6 +542,24 @@ add_custom_target(use_reexports_types_wit_schema_gen
     DEPENDS ${USE_REEXPORTS_TYPES_WIT_GENERATED_H}
             ${USE_REEXPORTS_TYPES_WIT_GENERATED_C}
             ${USE_REEXPORTS_TYPES_WIT_GENERATED_MANIFEST})
+
+# World/manifest regression fixture
+add_custom_command(
+    OUTPUT ${WORLD_META_COMMAND_WIT_GENERATED_H} ${WORLD_META_COMMAND_WIT_GENERATED_C} ${WORLD_META_COMMAND_WIT_GENERATED_MANIFEST}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/tests/generated"
+    COMMAND wit_codegen --wit "${CMAKE_CURRENT_SOURCE_DIR}/tests/sapling_tests/fixtures/world-meta/command.wit"
+                        --header "${WORLD_META_COMMAND_WIT_GENERATED_H}" --source "${WORLD_META_COMMAND_WIT_GENERATED_C}" --manifest "${WORLD_META_COMMAND_WIT_GENERATED_MANIFEST}"
+    DEPENDS wit_codegen
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/sapling_tests/fixtures/world-meta/command.wit"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/sapling_tests/fixtures/world-meta/world.wit"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/sapling_tests/fixtures/world-meta/environment.wit"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/sapling_tests/fixtures/world-meta/run.wit"
+    COMMENT "Generating world/manifest WIT regression fixture bindings..."
+)
+add_custom_target(world_meta_command_wit_schema_gen
+    DEPENDS ${WORLD_META_COMMAND_WIT_GENERATED_H}
+            ${WORLD_META_COMMAND_WIT_GENERATED_C}
+            ${WORLD_META_COMMAND_WIT_GENERATED_MANIFEST})
 
 # Menu Schema
 add_custom_command(
@@ -897,6 +919,11 @@ add_library(croft_wit_use_reexports_types STATIC ${USE_REEXPORTS_TYPES_WIT_GENER
 add_dependencies(croft_wit_use_reexports_types use_reexports_types_wit_schema_gen)
 croft_apply_public_includes(croft_wit_use_reexports_types)
 target_link_libraries(croft_wit_use_reexports_types PUBLIC croft_thatch_core)
+
+add_library(croft_wit_world_meta_command STATIC ${WORLD_META_COMMAND_WIT_GENERATED_C})
+add_dependencies(croft_wit_world_meta_command world_meta_command_wit_schema_gen)
+croft_apply_public_includes(croft_wit_world_meta_command)
+target_link_libraries(croft_wit_world_meta_command PUBLIC croft_thatch_core)
 
 add_library(croft_wire_runtime STATIC
     src/runner/wire_v0.c
@@ -2198,6 +2225,9 @@ if(CROFT_BUILD_TESTS)
         if(test_name STREQUAL "test_wit_use_reexports_smoke")
             target_link_libraries(${test_name} PRIVATE croft_wit_use_reexports_types)
         endif()
+        if(test_name STREQUAL "test_wit_world_manifest_smoke")
+            target_link_libraries(${test_name} PRIVATE croft_wit_world_meta_command)
+        endif()
         target_compile_definitions(${test_name} PRIVATE SAPLING_HAMT_TESTING)
         if(test_name STREQUAL "test_wit_thatch_codegen")
             add_dependencies(${test_name} test_wit_schema_gen)
@@ -2228,6 +2258,11 @@ if(CROFT_BUILD_TESTS)
         if(test_name STREQUAL "test_wit_use_reexports_smoke")
             add_dependencies(${test_name} use_reexports_types_wit_schema_gen)
             target_include_directories(${test_name} PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
+        endif()
+        if(test_name STREQUAL "test_wit_world_manifest_smoke")
+            add_dependencies(${test_name} world_meta_command_wit_schema_gen)
+            target_include_directories(${test_name} PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
+            target_compile_definitions(${test_name} PRIVATE WIT_WORLD_META_MANIFEST_PATH="${WORLD_META_COMMAND_WIT_GENERATED_MANIFEST}")
         endif()
         add_test(NAME sapling_${test_name} COMMAND ${test_name})
         set_tests_properties(sapling_${test_name} PROPERTIES LABELS "${test_labels}")

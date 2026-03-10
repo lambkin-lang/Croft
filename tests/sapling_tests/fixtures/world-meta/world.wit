@@ -1,0 +1,5 @@
+@since(version = 0.1.0)
+world imports {
+  @since(version = 0.1.0)
+  import environment;
+}

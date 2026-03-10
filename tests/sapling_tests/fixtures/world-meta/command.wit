@@ -1,0 +1,10 @@
+package demo:cli@0.1.0;
+
+@since(version = 0.1.0)
+world command {
+  @since(version = 0.1.0)
+  include imports;
+
+  @since(version = 0.1.0)
+  export run;
+}
