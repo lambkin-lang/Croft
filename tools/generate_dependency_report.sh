@@ -32,9 +32,11 @@ categories=(
     "libc-memory|\\b(malloc|calloc|realloc|free)\\s*\\("
     "libc-stdio|#include <stdio\\.h>|\\b(FILE\\s*\\*|fopen|freopen|fdopen|fclose|fread|fwrite|fflush|fprintf|snprintf|vsnprintf)\\s*\\("
     "libc-strings|#include <string\\.h>|\\b(memcpy|memmove|memcmp|memset|strlen|strcmp|strncmp|strchr|strrchr)\\s*\\("
-    "posix-filesystem|#include <(unistd|fcntl|dirent|sys/stat|sys/types)\\.h>|\\b(open|close|read|write|lseek|stat|fstat|mkdir|rmdir|unlink|opendir|readdir|closedir)\\s*\\("
+    "posix-filesystem|#include <(unistd|fcntl|dirent|sys/stat|sys/types)\\.h>|\\b(open|close|read|write|lseek|stat|fstat|mkdir|rmdir|unlink|opendir|readdir|closedir|getcwd)\\s*\\("
+    "posix-process-env|\\benviron\\b|\\b(getenv|setenv|unsetenv)\\s*\\("
+    "system-random|#include <sys/random\\.h>|\\b(arc4random_buf|getrandom)\\s*\\("
     "posix-threads|#include <pthread\\.h>|\\bpthread_[A-Za-z0-9_]+\\s*\\("
-    "posix-time|#include <time\\.h>|\\b(clock_gettime|nanosleep|gettimeofday)\\s*\\("
+    "posix-time|#include <time\\.h>|\\b(clock_gettime|clock_getres|nanosleep|gettimeofday|localtime_r|gmtime_r|tzset)\\s*\\("
     "apple-frameworks|#import <(AppKit|Metal|QuartzCore|Foundation|CoreText|CoreGraphics)/[^>]+>|-framework (AppKit|Metal|QuartzCore|OpenGL)"
 )
 

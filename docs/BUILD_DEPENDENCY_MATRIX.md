@@ -120,7 +120,14 @@ The full current-machine build now emits:
 
 - generated public WIT headers under `build/generated/`
 - generated WIT manifests under `build/generated/` and installable copies under `share/croft/wit-manifests/`
+- native current-machine WASI host runtime glue via `croft_wit_wasi_machine_runtime`
 - dependency audit reports under `build/reports/`
+
+For the new current-machine WASI host layer, the libc/POSIX boundary is now
+intentional and audited rather than implicit. On macOS/Unix that runtime uses
+process/environment APIs (`environ`, `getcwd`), time APIs
+(`clock_gettime`, `clock_getres`, `localtime_r`, `gmtime_r`, `tzset`), and
+system randomness (`arc4random_buf` on macOS, `getrandom` on Linux).
 
 ## Reproducibility Note On FetchContent Pins
 

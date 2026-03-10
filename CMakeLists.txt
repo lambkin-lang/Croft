@@ -1602,6 +1602,29 @@ croft_register_artifact(croft_wit_world_runtime wit
     TAGS tier8 wit world runtime metadata generated-glue
 )
 
+add_library(croft_wit_wasi_machine_runtime STATIC src/runtime/wit_wasi_machine_runtime.c)
+add_dependencies(croft_wit_wasi_machine_runtime
+    wasi_cli_command_wit_schema_gen
+    wasi_random_world_wit_schema_gen
+    wasi_io_world_wit_schema_gen
+    wasi_clocks_world_wit_schema_gen)
+croft_apply_public_includes(croft_wit_wasi_machine_runtime)
+croft_set_target_profile(croft_wit_wasi_machine_runtime single-thread)
+target_link_libraries(croft_wit_wasi_machine_runtime PUBLIC
+    croft_wit_world_runtime
+    croft_wit_wasi_cli_command
+    croft_wit_wasi_random_world
+    croft_wit_wasi_io_world
+    croft_wit_wasi_clocks_world)
+croft_register_artifact(croft_wit_wasi_machine_runtime wit
+    TAGS tier8 wit wasi runtime current-machine unix generated-glue host
+    DEPENDS croft_wit_world_runtime
+            croft_wit_wasi_cli_command
+            croft_wit_wasi_random_world
+            croft_wit_wasi_io_world
+            croft_wit_wasi_clocks_world
+)
+
 add_library(croft_wit_text_runtime STATIC src/runtime/wit_text_runtime.c)
 add_dependencies(croft_wit_text_runtime common_wit_schema_gen)
 croft_apply_public_includes(croft_wit_text_runtime)
@@ -2679,6 +2702,9 @@ if(CROFT_BUILD_TESTS)
                 croft_wit_world_inline_command
             )
         endif()
+        if(test_name STREQUAL "test_wit_wasi_machine_runtime_smoke")
+            target_link_libraries(${test_name} PRIVATE croft_wit_wasi_machine_runtime)
+        endif()
         target_compile_definitions(${test_name} PRIVATE SAPLING_HAMT_TESTING)
         if(test_name STREQUAL "test_wit_thatch_codegen")
             add_dependencies(${test_name} test_wit_schema_gen)
@@ -2704,6 +2730,15 @@ if(CROFT_BUILD_TESTS)
                 wasi_cli_command_wit_schema_gen
                 wasi_io_world_wit_schema_gen
                 wasi_random_world_wit_schema_gen
+                wasi_clocks_world_wit_schema_gen
+            )
+            target_include_directories(${test_name} PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
+        endif()
+        if(test_name STREQUAL "test_wit_wasi_machine_runtime_smoke")
+            add_dependencies(${test_name}
+                wasi_cli_command_wit_schema_gen
+                wasi_random_world_wit_schema_gen
+                wasi_io_world_wit_schema_gen
                 wasi_clocks_world_wit_schema_gen
             )
             target_include_directories(${test_name} PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
