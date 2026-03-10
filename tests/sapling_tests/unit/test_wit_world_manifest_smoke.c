@@ -73,6 +73,34 @@ static const SapWitWorldBindingDescriptor *find_world_binding_desc(const char *w
     return NULL;
 }
 
+static int32_t world_import_get_environment(void *ctx, SapWitCliEnvironmentReply *reply_out)
+{
+    uint32_t *calls = (uint32_t *)ctx;
+
+    if (calls) {
+        (*calls)++;
+    }
+    sap_wit_zero_cli_environment_reply(reply_out);
+    reply_out->case_tag = SAP_WIT_CLI_ENVIRONMENT_REPLY_GET_ENVIRONMENT;
+    reply_out->val.get_environment.data = (const uint8_t *)"";
+    reply_out->val.get_environment.len = 0u;
+    reply_out->val.get_environment.byte_len = 0u;
+    return 0;
+}
+
+static int32_t world_export_start(void *ctx, SapWitCliRunReply *reply_out)
+{
+    uint32_t *calls = (uint32_t *)ctx;
+
+    if (calls) {
+        (*calls)++;
+    }
+    sap_wit_zero_cli_run_reply(reply_out);
+    reply_out->case_tag = SAP_WIT_CLI_RUN_REPLY_STATUS;
+    reply_out->val.status.is_v_ok = 1u;
+    return 0;
+}
+
 static char *read_file(const char *path)
 {
     FILE *f;
@@ -122,6 +150,10 @@ int main(void)
     const SapWitWorldBindingDescriptor *include_imports = NULL;
     const SapWitWorldBindingDescriptor *import_environment = NULL;
     const SapWitWorldBindingDescriptor *export_run = NULL;
+    SapWitCliEnvironmentReply env_reply = {0};
+    SapWitCliRunReply run_reply = {0};
+    uint32_t import_calls = 0u;
+    uint32_t export_calls = 0u;
     char *manifest = read_file(WIT_WORLD_META_MANIFEST_PATH);
     int ok = 1;
 
@@ -215,6 +247,43 @@ int main(void)
                          "demo:cli@0.1.0");
         ok &= expect_str("export_run.target_name", export_run->target_name, "run");
         ok &= expect_u32("export_run.imported", export_run->imported, 0u);
+    }
+
+    {
+        SapWitCliEnvironmentDispatchOps env_ops = {
+            .get_environment = world_import_get_environment,
+        };
+        SapWitCliRunDispatchOps run_ops = {
+            .start = world_export_start,
+        };
+        SapWitCliCommandWorldImports command_imports = {
+            .environment_ctx = &import_calls,
+            .environment_ops = &env_ops,
+        };
+        SapWitCliCommandWorldExports command_exports = {
+            .run_ctx = &export_calls,
+            .run_ops = &run_ops,
+        };
+
+        ok &= expect_u32("world import wrapper rc",
+                         (uint32_t)sap_wit_world_cli_command_import_environment(&command_imports,
+                                                                               &env_command,
+                                                                               &env_reply),
+                         0u);
+        ok &= expect_u32("world export wrapper rc",
+                         (uint32_t)sap_wit_world_cli_command_export_run(&command_exports,
+                                                                        &run_command,
+                                                                        &run_reply),
+                         0u);
+        ok &= expect_u32("world import callback count", import_calls, 1u);
+        ok &= expect_u32("world export callback count", export_calls, 1u);
+        ok &= expect_u32("world import reply case",
+                         env_reply.case_tag,
+                         SAP_WIT_CLI_ENVIRONMENT_REPLY_GET_ENVIRONMENT);
+        ok &= expect_u32("world export reply case",
+                         run_reply.case_tag,
+                         SAP_WIT_CLI_RUN_REPLY_STATUS);
+        ok &= expect_u32("world export reply ok", run_reply.val.status.is_v_ok, 1u);
     }
 
     free(manifest);

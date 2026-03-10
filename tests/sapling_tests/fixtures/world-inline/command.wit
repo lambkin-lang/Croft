@@ -1,0 +1,22 @@
+package demo:inline-world@0.1.0;
+
+interface shared {
+  type status = result<_, string>;
+}
+
+@since(version = 0.1.0)
+world command {
+  @since(version = 0.1.0)
+  import environment: interface {
+    get-environment: func() -> list<tuple<string, string>>;
+  }
+
+  @since(version = 0.1.0)
+  export run: func() -> result<_, string>;
+
+  @since(version = 0.1.0)
+  export status-check: interface {
+    use shared.{status};
+    current: func() -> status;
+  }
+}

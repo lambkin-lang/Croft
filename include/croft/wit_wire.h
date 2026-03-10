@@ -55,6 +55,8 @@ typedef struct {
     const char *package_id;
     const char *interface_name;
     const char *attributes;
+    const char *origin_world_name;
+    const char *origin_item_name;
     uint8_t imported;
 } SapWitInterfaceDescriptor;
 
@@ -77,6 +79,8 @@ typedef struct {
     uint8_t               imported;
     const char           *target_package_id;
     const char           *target_name;
+    const char           *lowered_package_id;
+    const char           *lowered_name;
 } SapWitWorldBindingDescriptor;
 
 int sap_wit_skip_value(const ThatchRegion* region, ThatchCursor* cursor);
