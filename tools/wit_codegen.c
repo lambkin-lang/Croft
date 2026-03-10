@@ -1411,6 +1411,43 @@ static void emit_trace_comment(FILE *out, const char *indent, const char *trace)
     fprintf(out, "%s/* %s */\n", indent ? indent : "", trace);
 }
 
+static void emit_c_string_literal(FILE *out, const char *text)
+{
+    const unsigned char *p = (const unsigned char *)(text ? text : "");
+
+    if (!out) return;
+
+    fputc('"', out);
+    while (*p) {
+        switch (*p) {
+        case '\\':
+            fputs("\\\\", out);
+            break;
+        case '"':
+            fputs("\\\"", out);
+            break;
+        case '\n':
+            fputs("\\n", out);
+            break;
+        case '\r':
+            fputs("\\r", out);
+            break;
+        case '\t':
+            fputs("\\t", out);
+            break;
+        default:
+            if (*p < 0x20u || *p == 0x7Fu) {
+                fprintf(out, "\\x%02X", *p);
+            } else {
+                fputc((int)*p, out);
+            }
+            break;
+        }
+        p++;
+    }
+    fputc('"', out);
+}
+
 static void format_field_trace(const WitRegistry *reg,
                                const char *scope_package_full,
                                const char *scope_interface_name,
@@ -5217,20 +5254,109 @@ static int reply_case_owns_heap_ok(const WitRegistry *reg, int payload_type)
     return 0;
 }
 
+static void wit_package_symbol(const WitRegistry *reg,
+                               const char *suffix,
+                               char *out,
+                               int n)
+{
+    if (!out || n <= 0) return;
+    if (!suffix || suffix[0] == '\0') {
+        out[0] = '\0';
+        return;
+    }
+
+    if (reg && reg->package_snake[0] != '\0')
+        snprintf(out, n, "sap_wit_%s_%s", reg->package_snake, suffix);
+    else
+        snprintf(out, n, "sap_wit_%s", suffix);
+}
+
 static void wit_dbi_schema_symbol(const WitRegistry *reg, char *out, int n)
 {
-    if (reg->package_snake[0] != '\0')
-        snprintf(out, n, "sap_wit_%s_dbi_schema", reg->package_snake);
-    else
-        snprintf(out, n, "sap_wit_dbi_schema");
+    wit_package_symbol(reg, "dbi_schema", out, n);
 }
 
 static void wit_dbi_schema_count_symbol(const WitRegistry *reg, char *out, int n)
 {
-    if (reg->package_snake[0] != '\0')
-        snprintf(out, n, "sap_wit_%s_dbi_schema_count", reg->package_snake);
-    else
-        snprintf(out, n, "sap_wit_dbi_schema_count");
+    wit_package_symbol(reg, "dbi_schema_count", out, n);
+}
+
+static void wit_interfaces_symbol(const WitRegistry *reg, char *out, int n)
+{
+    wit_package_symbol(reg, "interfaces", out, n);
+}
+
+static void wit_interfaces_count_symbol(const WitRegistry *reg, char *out, int n)
+{
+    wit_package_symbol(reg, "interfaces_count", out, n);
+}
+
+static void wit_worlds_symbol(const WitRegistry *reg, char *out, int n)
+{
+    wit_package_symbol(reg, "worlds", out, n);
+}
+
+static void wit_worlds_count_symbol(const WitRegistry *reg, char *out, int n)
+{
+    wit_package_symbol(reg, "worlds_count", out, n);
+}
+
+static void wit_world_bindings_symbol(const WitRegistry *reg, char *out, int n)
+{
+    wit_package_symbol(reg, "world_bindings", out, n);
+}
+
+static void wit_world_bindings_count_symbol(const WitRegistry *reg, char *out, int n)
+{
+    wit_package_symbol(reg, "world_bindings_count", out, n);
+}
+
+static const char *wit_world_item_kind_macro(WitWorldItemKind kind)
+{
+    switch (kind) {
+    case WIT_WORLD_ITEM_INCLUDE:
+        return "SAP_WIT_WORLD_ITEM_INCLUDE";
+    case WIT_WORLD_ITEM_IMPORT:
+        return "SAP_WIT_WORLD_ITEM_IMPORT";
+    case WIT_WORLD_ITEM_EXPORT:
+        return "SAP_WIT_WORLD_ITEM_EXPORT";
+    }
+    return "SAP_WIT_WORLD_ITEM_IMPORT";
+}
+
+static const char *wit_world_target_kind_macro(WitWorldTargetKind kind)
+{
+    switch (kind) {
+    case WIT_WORLD_TARGET_INTERFACE:
+        return "SAP_WIT_WORLD_TARGET_INTERFACE";
+    case WIT_WORLD_TARGET_WORLD:
+        return "SAP_WIT_WORLD_TARGET_WORLD";
+    case WIT_WORLD_TARGET_UNKNOWN:
+        return "SAP_WIT_WORLD_TARGET_UNKNOWN";
+    }
+    return "SAP_WIT_WORLD_TARGET_UNKNOWN";
+}
+
+static int wit_world_item_matches_world(const WitWorldItem *item, const WitWorld *world)
+{
+    if (!item || !world) return 0;
+    return strcmp(item->package_full, world->package_full) == 0
+        && strcmp(item->world_name, world->name) == 0;
+}
+
+static uint32_t wit_world_binding_count(const WitRegistry *reg, const WitWorld *world)
+{
+    uint32_t count = 0;
+
+    if (!reg || !world) return 0u;
+
+    for (int i = 0; i < reg->world_item_count; i++) {
+        if (wit_world_item_matches_world(&reg->world_items[i], world)) {
+            count++;
+        }
+    }
+
+    return count;
 }
 
 /* ------------------------------------------------------------------ */
@@ -5588,6 +5714,12 @@ static void emit_header(FILE *out, const WitRegistry *reg,
     char fn_name[MAX_NAME * 2];
     char dbi_schema_symbol[MAX_NAME * 2];
     char dbi_schema_count_symbol[MAX_NAME * 2];
+    char interfaces_symbol[MAX_NAME * 2];
+    char interfaces_count_symbol[MAX_NAME * 2];
+    char worlds_symbol[MAX_NAME * 2];
+    char worlds_count_symbol[MAX_NAME * 2];
+    char world_bindings_symbol[MAX_NAME * 2];
+    char world_bindings_count_symbol[MAX_NAME * 2];
     char wit_path_display[MAX_PATH_TEXT];
 
     /* Derive include guard from header filename (basename, uppercased). */
@@ -5889,6 +6021,26 @@ static void emit_header(FILE *out, const WitRegistry *reg,
         wit_dbi_schema_count_symbol(reg, dbi_schema_count_symbol, (int)sizeof(dbi_schema_count_symbol));
         fprintf(out, "extern const SapWitDbiSchema %s[];\n", dbi_schema_symbol);
         fprintf(out, "extern const uint32_t %s;\n\n", dbi_schema_count_symbol);
+    }
+    if (reg->interface_count > 0) {
+        wit_interfaces_symbol(reg, interfaces_symbol, (int)sizeof(interfaces_symbol));
+        wit_interfaces_count_symbol(reg, interfaces_count_symbol, (int)sizeof(interfaces_count_symbol));
+        fprintf(out, "extern const SapWitInterfaceDescriptor %s[];\n", interfaces_symbol);
+        fprintf(out, "extern const uint32_t %s;\n\n", interfaces_count_symbol);
+    }
+    if (reg->world_count > 0) {
+        wit_worlds_symbol(reg, worlds_symbol, (int)sizeof(worlds_symbol));
+        wit_worlds_count_symbol(reg, worlds_count_symbol, (int)sizeof(worlds_count_symbol));
+        fprintf(out, "extern const SapWitWorldDescriptor %s[];\n", worlds_symbol);
+        fprintf(out, "extern const uint32_t %s;\n\n", worlds_count_symbol);
+    }
+    if (reg->world_item_count > 0) {
+        wit_world_bindings_symbol(reg, world_bindings_symbol, (int)sizeof(world_bindings_symbol));
+        wit_world_bindings_count_symbol(reg,
+                                        world_bindings_count_symbol,
+                                        (int)sizeof(world_bindings_count_symbol));
+        fprintf(out, "extern const SapWitWorldBindingDescriptor %s[];\n", world_bindings_symbol);
+        fprintf(out, "extern const uint32_t %s;\n\n", world_bindings_count_symbol);
     }
     fprintf(out, "#endif /* %s */\n", guard);
 }
@@ -6908,6 +7060,12 @@ static void emit_source(FILE *out, const WitRegistry *reg,
 {
     char dbi_schema_symbol[MAX_NAME * 2];
     char dbi_schema_count_symbol[MAX_NAME * 2];
+    char interfaces_symbol[MAX_NAME * 2];
+    char interfaces_count_symbol[MAX_NAME * 2];
+    char worlds_symbol[MAX_NAME * 2];
+    char worlds_count_symbol[MAX_NAME * 2];
+    char world_bindings_symbol[MAX_NAME * 2];
+    char world_bindings_count_symbol[MAX_NAME * 2];
     char fn_name[MAX_NAME * 2];
     char type_name[MAX_NAME * 2];
     char wit_path_display[MAX_PATH_TEXT];
@@ -6942,6 +7100,88 @@ static void emit_source(FILE *out, const WitRegistry *reg,
         fprintf(out, "const uint32_t %s =\n", dbi_schema_count_symbol);
         fprintf(out, "    (uint32_t)(sizeof(%s) / sizeof(%s[0]));\n\n",
                 dbi_schema_symbol, dbi_schema_symbol);
+    }
+    if (reg->interface_count > 0) {
+        wit_interfaces_symbol(reg, interfaces_symbol, (int)sizeof(interfaces_symbol));
+        wit_interfaces_count_symbol(reg, interfaces_count_symbol, (int)sizeof(interfaces_count_symbol));
+        fprintf(out, "/* WIT interface metadata for package %s. */\n", reg->package_full);
+        fprintf(out, "const SapWitInterfaceDescriptor %s[] = {\n", interfaces_symbol);
+        for (int i = 0; i < reg->interface_count; i++) {
+            fprintf(out, "    {");
+            emit_c_string_literal(out, reg->interfaces[i].package_full);
+            fprintf(out, ", ");
+            emit_c_string_literal(out, reg->interfaces[i].name);
+            fprintf(out, ", ");
+            emit_c_string_literal(out, reg->interfaces[i].metadata);
+            fprintf(out, ", %uu},\n", reg->interfaces[i].imported ? 1u : 0u);
+        }
+        fprintf(out, "};\n\n");
+        fprintf(out, "const uint32_t %s =\n", interfaces_count_symbol);
+        fprintf(out, "    (uint32_t)(sizeof(%s) / sizeof(%s[0]));\n\n",
+                interfaces_symbol, interfaces_symbol);
+    }
+    if (reg->world_count > 0) {
+        uint32_t binding_offset = 0u;
+
+        wit_worlds_symbol(reg, worlds_symbol, (int)sizeof(worlds_symbol));
+        wit_worlds_count_symbol(reg, worlds_count_symbol, (int)sizeof(worlds_count_symbol));
+        fprintf(out, "/* WIT world metadata for package %s. */\n", reg->package_full);
+        fprintf(out, "const SapWitWorldDescriptor %s[] = {\n", worlds_symbol);
+        for (int i = 0; i < reg->world_count; i++) {
+            uint32_t binding_count = wit_world_binding_count(reg, &reg->worlds[i]);
+
+            fprintf(out, "    {");
+            emit_c_string_literal(out, reg->worlds[i].package_full);
+            fprintf(out, ", ");
+            emit_c_string_literal(out, reg->worlds[i].name);
+            fprintf(out, ", ");
+            emit_c_string_literal(out, reg->worlds[i].metadata);
+            fprintf(out,
+                    ", %uu, %uu, %uu},\n",
+                    reg->worlds[i].imported ? 1u : 0u,
+                    binding_offset,
+                    binding_count);
+            binding_offset += binding_count;
+        }
+        fprintf(out, "};\n\n");
+        fprintf(out, "const uint32_t %s =\n", worlds_count_symbol);
+        fprintf(out, "    (uint32_t)(sizeof(%s) / sizeof(%s[0]));\n\n",
+                worlds_symbol, worlds_symbol);
+    }
+    if (reg->world_item_count > 0) {
+        wit_world_bindings_symbol(reg, world_bindings_symbol, (int)sizeof(world_bindings_symbol));
+        wit_world_bindings_count_symbol(reg,
+                                        world_bindings_count_symbol,
+                                        (int)sizeof(world_bindings_count_symbol));
+        fprintf(out, "/* WIT world binding metadata for package %s. */\n", reg->package_full);
+        fprintf(out, "const SapWitWorldBindingDescriptor %s[] = {\n", world_bindings_symbol);
+        for (int i = 0; i < reg->world_count; i++) {
+            for (int j = 0; j < reg->world_item_count; j++) {
+                if (!wit_world_item_matches_world(&reg->world_items[j], &reg->worlds[i])) {
+                    continue;
+                }
+
+                fprintf(out, "    {%s, %s, ",
+                        wit_world_item_kind_macro(reg->world_items[j].kind),
+                        wit_world_target_kind_macro(reg->world_items[j].target_kind));
+                emit_c_string_literal(out, reg->world_items[j].package_full);
+                fprintf(out, ", ");
+                emit_c_string_literal(out, reg->world_items[j].world_name);
+                fprintf(out, ", ");
+                emit_c_string_literal(out, reg->world_items[j].name);
+                fprintf(out, ", ");
+                emit_c_string_literal(out, reg->world_items[j].metadata);
+                fprintf(out, ", %uu, ", reg->world_items[j].imported ? 1u : 0u);
+                emit_c_string_literal(out, reg->world_items[j].target_package_full);
+                fprintf(out, ", ");
+                emit_c_string_literal(out, reg->world_items[j].target_name);
+                fprintf(out, "},\n");
+            }
+        }
+        fprintf(out, "};\n\n");
+        fprintf(out, "const uint32_t %s =\n", world_bindings_count_symbol);
+        fprintf(out, "    (uint32_t)(sizeof(%s) / sizeof(%s[0]));\n\n",
+                world_bindings_symbol, world_bindings_symbol);
     }
 
     const char *order[MAX_TYPES * 2];

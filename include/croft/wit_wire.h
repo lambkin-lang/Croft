@@ -1,6 +1,8 @@
 #ifndef CROFT_WIT_WIRE_H
 #define CROFT_WIT_WIRE_H
 
+#include <stdint.h>
+
 #include "sapling/thatch.h"
 
 #ifdef __cplusplus
@@ -34,6 +36,48 @@ extern "C" {
 #define SAP_WIT_TAG_BYTES        0x2C
 #define SAP_WIT_TAG_STRING       0x2D
 #define SAP_WIT_TAG_RESOURCE     0x2E
+
+/* Generated WIT graph metadata shared by interface/world bindings. */
+typedef enum {
+    SAP_WIT_WORLD_ITEM_INCLUDE = 0,
+    SAP_WIT_WORLD_ITEM_IMPORT = 1,
+    SAP_WIT_WORLD_ITEM_EXPORT = 2,
+} SapWitWorldItemKind;
+
+typedef enum {
+    SAP_WIT_WORLD_TARGET_UNKNOWN = 0,
+    SAP_WIT_WORLD_TARGET_INTERFACE = 1,
+    SAP_WIT_WORLD_TARGET_WORLD = 2,
+    SAP_WIT_WORLD_TARGET_FUNCTION = 3,
+} SapWitWorldTargetKind;
+
+typedef struct {
+    const char *package_id;
+    const char *interface_name;
+    const char *attributes;
+    uint8_t imported;
+} SapWitInterfaceDescriptor;
+
+typedef struct {
+    const char *package_id;
+    const char *world_name;
+    const char *attributes;
+    uint8_t imported;
+    uint32_t binding_offset;
+    uint32_t binding_count;
+} SapWitWorldDescriptor;
+
+typedef struct {
+    SapWitWorldItemKind   kind;
+    SapWitWorldTargetKind target_kind;
+    const char           *package_id;
+    const char           *world_name;
+    const char           *item_name;
+    const char           *attributes;
+    uint8_t               imported;
+    const char           *target_package_id;
+    const char           *target_name;
+} SapWitWorldBindingDescriptor;
 
 int sap_wit_skip_value(const ThatchRegion* region, ThatchCursor* cursor);
 
