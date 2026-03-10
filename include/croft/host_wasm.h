@@ -2,6 +2,7 @@
 #define CROFT_HOST_WASM_H
 
 #include "croft/host_queue.h"
+#include "croft/wit_world_runtime.h"
 #include <stdint.h>
 #include <stddef.h>
 
@@ -34,6 +35,16 @@ uint8_t *host_wasm_get_memory(host_wasm_ctx_t *ctx, uint32_t *out_size);
  * `argc` specifies the number of string arguments in `argv`.
  */
 int32_t host_wasm_call(host_wasm_ctx_t *ctx, const char *func_name, int argc, const char *argv[]);
+
+/*
+ * Register a generated WIT world endpoint set for generic guest lookup and
+ * invocation. Endpoints are exposed to Wasm guests by canonical names in the
+ * form "<package>/<world>#<kind>:<item>".
+ */
+int host_wasm_register_wit_world_endpoints(host_wasm_ctx_t *ctx,
+                                           const SapWitWorldEndpointDescriptor *endpoints,
+                                           uint32_t count,
+                                           const void *bindings);
 
 /**
  * Implementation of `SapWasiGuestLogicV0` compliant callback.

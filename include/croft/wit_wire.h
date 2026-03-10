@@ -88,6 +88,14 @@ typedef int32_t (*SapWitWorldEndpointInvokeFn)(const void *bindings,
                                                const void *command,
                                                void *reply_out);
 
+typedef int (*SapWitWorldEndpointReadFn)(const ThatchRegion *region,
+                                         ThatchCursor *cursor,
+                                         void *out);
+
+typedef int (*SapWitWorldEndpointWriteFn)(ThatchRegion *region, const void *value);
+
+typedef void (*SapWitWorldEndpointDisposeFn)(void *value);
+
 typedef struct {
     SapWitWorldItemKind        kind;
     SapWitWorldTargetKind      target_kind;
@@ -102,8 +110,13 @@ typedef struct {
     const char                *ops_c_type;
     const char                *command_c_type;
     const char                *reply_c_type;
+    size_t                     command_size;
+    size_t                     reply_size;
     size_t                     ctx_offset;
     size_t                     ops_offset;
+    SapWitWorldEndpointReadFn  read_command;
+    SapWitWorldEndpointWriteFn write_reply;
+    SapWitWorldEndpointDisposeFn dispose_reply;
     SapWitWorldEndpointInvokeFn invoke;
 } SapWitWorldEndpointDescriptor;
 

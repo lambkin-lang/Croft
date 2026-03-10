@@ -1806,6 +1806,7 @@ if(CROFT_WASM3_TARGET)
             croft_host_log
             croft_host_time
             croft_fs
+            croft_wit_world_runtime
             ${CROFT_WASM3_TARGET}
     )
     croft_register_artifact(croft_wasm_wasm3 wasm
@@ -2234,6 +2235,7 @@ endif()
 if(TARGET croft_wasm_wasm3 AND CROFT_WAT2WASM_TOOL)
     set(WASM_GUEST_BIN "${CMAKE_CURRENT_BINARY_DIR}/examples/dummy_guest.wasm")
     set(WASM_TEXT_BRIDGE_BIN "${CMAKE_CURRENT_BINARY_DIR}/examples/text_bridge_guest.wasm")
+    set(WASM_WIT_WORLD_BRIDGE_BIN "${CMAKE_CURRENT_BINARY_DIR}/examples/wit_world_bridge_guest.wasm")
     add_custom_command(
         OUTPUT ${WASM_GUEST_BIN}
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/examples"
@@ -2253,6 +2255,16 @@ if(TARGET croft_wasm_wasm3 AND CROFT_WAT2WASM_TOOL)
         COMMENT "Compiling text_bridge_guest.wat to Wasm..."
     )
     add_custom_target(wasm_text_bridge_guest_gen DEPENDS ${WASM_TEXT_BRIDGE_BIN})
+
+    add_custom_command(
+        OUTPUT ${WASM_WIT_WORLD_BRIDGE_BIN}
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/examples"
+        COMMAND ${CROFT_WAT2WASM_TOOL} "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/wit_world_bridge_guest.wat"
+                                     -o ${WASM_WIT_WORLD_BRIDGE_BIN}
+        DEPENDS ${CROFT_WAT2WASM_DEP} "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/wit_world_bridge_guest.wat"
+        COMMENT "Compiling wit_world_bridge_guest.wat to Wasm..."
+    )
+    add_custom_target(wasm_wit_world_bridge_guest_gen DEPENDS ${WASM_WIT_WORLD_BRIDGE_BIN})
 endif()
 
 # ── Examples ─────────────────────────────────────────────────────────
@@ -2675,6 +2687,15 @@ if(CROFT_BUILD_TESTS)
             DUMMY_GUEST_WASM_PATH="${WASM_GUEST_BIN}"
         )
         add_dependencies(test_croft wasm_guest_gen)
+    endif()
+
+    if(TARGET croft_wasm_wasm3 AND TARGET wasm_wit_world_bridge_guest_gen)
+        target_sources(test_croft PRIVATE tests/host_tests/test_wasm_wit_guest.c)
+        target_link_libraries(test_croft PRIVATE croft_wit_wasi_machine_runtime)
+        target_compile_definitions(test_croft PRIVATE
+            WIT_WORLD_BRIDGE_GUEST_WASM_PATH="${WASM_WIT_WORLD_BRIDGE_BIN}"
+        )
+        add_dependencies(test_croft wasm_wit_world_bridge_guest_gen)
     endif()
 
     if(CROFT_EXAMPLE_UI_TARGET)

@@ -8316,6 +8316,12 @@ static void emit_source(FILE *out, const WitRegistry *reg,
                 char dispatch_name[MAX_NAME * 2];
                 char wrapper_name[MAX_NAME * 2];
                 char adapter_name[MAX_NAME * 2];
+                char read_adapter_name[MAX_NAME * 3];
+                char write_adapter_name[MAX_NAME * 3];
+                char dispose_adapter_name[MAX_NAME * 3];
+                char command_reader[MAX_NAME * 2];
+                char reply_writer[MAX_NAME * 2];
+                char reply_dispose[MAX_NAME * 2];
                 char field_name[MAX_NAME];
 
                 wit_type_c_typename(reg,
@@ -8344,6 +8350,30 @@ static void emit_source(FILE *out, const WitRegistry *reg,
                                                 imports[j].item->name,
                                                 adapter_name,
                                                 (int)sizeof(adapter_name));
+                wit_reader_name(reg,
+                                wit_variant_symbol_name(imports[j].command_variant),
+                                command_reader,
+                                (int)sizeof(command_reader));
+                wit_writer_name(reg,
+                                wit_variant_symbol_name(imports[j].reply_variant),
+                                reply_writer,
+                                (int)sizeof(reply_writer));
+                wit_dispose_name(reg,
+                                 wit_variant_symbol_name(imports[j].reply_variant),
+                                 reply_dispose,
+                                 (int)sizeof(reply_dispose));
+                snprintf(read_adapter_name,
+                         sizeof(read_adapter_name),
+                         "%s_read_command",
+                         adapter_name);
+                snprintf(write_adapter_name,
+                         sizeof(write_adapter_name),
+                         "%s_write_reply",
+                         adapter_name);
+                snprintf(dispose_adapter_name,
+                         sizeof(dispose_adapter_name),
+                         "%s_dispose_reply",
+                         adapter_name);
                 wit_name_to_snake_ident(imports[j].item->name, field_name, (int)sizeof(field_name));
 
                 fprintf(out,
@@ -8374,6 +8404,33 @@ static void emit_source(FILE *out, const WitRegistry *reg,
                         command_type,
                         reply_type);
                 fprintf(out, "}\n\n");
+
+                fprintf(out,
+                        "static int %s(const ThatchRegion *region, ThatchCursor *cursor, void *out)\n{\n",
+                        read_adapter_name);
+                fprintf(out,
+                        "    return %s(region, cursor, (%s *)out);\n",
+                        command_reader,
+                        command_type);
+                fprintf(out, "}\n\n");
+
+                fprintf(out,
+                        "static int %s(ThatchRegion *region, const void *value)\n{\n",
+                        write_adapter_name);
+                fprintf(out,
+                        "    return %s(region, (const %s *)value);\n",
+                        reply_writer,
+                        reply_type);
+                fprintf(out, "}\n\n");
+
+                fprintf(out,
+                        "static void %s(void *value)\n{\n",
+                        dispose_adapter_name);
+                fprintf(out,
+                        "    %s((%s *)value);\n",
+                        reply_dispose,
+                        reply_type);
+                fprintf(out, "}\n\n");
             }
 
             {
@@ -8398,6 +8455,9 @@ static void emit_source(FILE *out, const WitRegistry *reg,
                     char reply_type[MAX_NAME * 2];
                     char ops_type[MAX_NAME * 2];
                     char adapter_name[MAX_NAME * 2];
+                    char read_adapter_name[MAX_NAME * 3];
+                    char write_adapter_name[MAX_NAME * 3];
+                    char dispose_adapter_name[MAX_NAME * 3];
                     char field_name[MAX_NAME];
 
                     wit_type_c_typename(reg,
@@ -8419,6 +8479,18 @@ static void emit_source(FILE *out, const WitRegistry *reg,
                                                     imports[j].item->name,
                                                     adapter_name,
                                                     (int)sizeof(adapter_name));
+                    snprintf(read_adapter_name,
+                             sizeof(read_adapter_name),
+                             "%s_read_command",
+                             adapter_name);
+                    snprintf(write_adapter_name,
+                             sizeof(write_adapter_name),
+                             "%s_write_reply",
+                             adapter_name);
+                    snprintf(dispose_adapter_name,
+                             sizeof(dispose_adapter_name),
+                             "%s_dispose_reply",
+                             adapter_name);
                     wit_name_to_snake_ident(imports[j].item->name, field_name, (int)sizeof(field_name));
 
                     fprintf(out, "    {%s, %s, ",
@@ -8446,11 +8518,16 @@ static void emit_source(FILE *out, const WitRegistry *reg,
                     fprintf(out, ", ");
                     emit_c_string_literal(out, reply_type);
                     fprintf(out,
-                            ", offsetof(%s, %s_ctx), offsetof(%s, %s_ops), %s},\n",
+                            ", sizeof(%s), sizeof(%s), offsetof(%s, %s_ctx), offsetof(%s, %s_ops), %s, %s, %s, %s},\n",
+                            command_type,
+                            reply_type,
                             imports_type,
                             field_name,
                             imports_type,
                             field_name,
+                            read_adapter_name,
+                            write_adapter_name,
+                            dispose_adapter_name,
                             adapter_name);
                 }
                 fprintf(out, "};\n");
@@ -8474,6 +8551,12 @@ static void emit_source(FILE *out, const WitRegistry *reg,
                 char dispatch_name[MAX_NAME * 2];
                 char wrapper_name[MAX_NAME * 2];
                 char adapter_name[MAX_NAME * 2];
+                char read_adapter_name[MAX_NAME * 3];
+                char write_adapter_name[MAX_NAME * 3];
+                char dispose_adapter_name[MAX_NAME * 3];
+                char command_reader[MAX_NAME * 2];
+                char reply_writer[MAX_NAME * 2];
+                char reply_dispose[MAX_NAME * 2];
                 char field_name[MAX_NAME];
 
                 wit_type_c_typename(reg,
@@ -8502,6 +8585,30 @@ static void emit_source(FILE *out, const WitRegistry *reg,
                                                 exports[j].item->name,
                                                 adapter_name,
                                                 (int)sizeof(adapter_name));
+                wit_reader_name(reg,
+                                wit_variant_symbol_name(exports[j].command_variant),
+                                command_reader,
+                                (int)sizeof(command_reader));
+                wit_writer_name(reg,
+                                wit_variant_symbol_name(exports[j].reply_variant),
+                                reply_writer,
+                                (int)sizeof(reply_writer));
+                wit_dispose_name(reg,
+                                 wit_variant_symbol_name(exports[j].reply_variant),
+                                 reply_dispose,
+                                 (int)sizeof(reply_dispose));
+                snprintf(read_adapter_name,
+                         sizeof(read_adapter_name),
+                         "%s_read_command",
+                         adapter_name);
+                snprintf(write_adapter_name,
+                         sizeof(write_adapter_name),
+                         "%s_write_reply",
+                         adapter_name);
+                snprintf(dispose_adapter_name,
+                         sizeof(dispose_adapter_name),
+                         "%s_dispose_reply",
+                         adapter_name);
                 wit_name_to_snake_ident(exports[j].item->name, field_name, (int)sizeof(field_name));
 
                 fprintf(out,
@@ -8532,6 +8639,33 @@ static void emit_source(FILE *out, const WitRegistry *reg,
                         command_type,
                         reply_type);
                 fprintf(out, "}\n\n");
+
+                fprintf(out,
+                        "static int %s(const ThatchRegion *region, ThatchCursor *cursor, void *out)\n{\n",
+                        read_adapter_name);
+                fprintf(out,
+                        "    return %s(region, cursor, (%s *)out);\n",
+                        command_reader,
+                        command_type);
+                fprintf(out, "}\n\n");
+
+                fprintf(out,
+                        "static int %s(ThatchRegion *region, const void *value)\n{\n",
+                        write_adapter_name);
+                fprintf(out,
+                        "    return %s(region, (const %s *)value);\n",
+                        reply_writer,
+                        reply_type);
+                fprintf(out, "}\n\n");
+
+                fprintf(out,
+                        "static void %s(void *value)\n{\n",
+                        dispose_adapter_name);
+                fprintf(out,
+                        "    %s((%s *)value);\n",
+                        reply_dispose,
+                        reply_type);
+                fprintf(out, "}\n\n");
             }
 
             {
@@ -8556,6 +8690,9 @@ static void emit_source(FILE *out, const WitRegistry *reg,
                     char reply_type[MAX_NAME * 2];
                     char ops_type[MAX_NAME * 2];
                     char adapter_name[MAX_NAME * 2];
+                    char read_adapter_name[MAX_NAME * 3];
+                    char write_adapter_name[MAX_NAME * 3];
+                    char dispose_adapter_name[MAX_NAME * 3];
                     char field_name[MAX_NAME];
 
                     wit_type_c_typename(reg,
@@ -8577,6 +8714,18 @@ static void emit_source(FILE *out, const WitRegistry *reg,
                                                     exports[j].item->name,
                                                     adapter_name,
                                                     (int)sizeof(adapter_name));
+                    snprintf(read_adapter_name,
+                             sizeof(read_adapter_name),
+                             "%s_read_command",
+                             adapter_name);
+                    snprintf(write_adapter_name,
+                             sizeof(write_adapter_name),
+                             "%s_write_reply",
+                             adapter_name);
+                    snprintf(dispose_adapter_name,
+                             sizeof(dispose_adapter_name),
+                             "%s_dispose_reply",
+                             adapter_name);
                     wit_name_to_snake_ident(exports[j].item->name, field_name, (int)sizeof(field_name));
 
                     fprintf(out, "    {%s, %s, ",
@@ -8604,11 +8753,16 @@ static void emit_source(FILE *out, const WitRegistry *reg,
                     fprintf(out, ", ");
                     emit_c_string_literal(out, reply_type);
                     fprintf(out,
-                            ", offsetof(%s, %s_ctx), offsetof(%s, %s_ops), %s},\n",
+                            ", sizeof(%s), sizeof(%s), offsetof(%s, %s_ctx), offsetof(%s, %s_ops), %s, %s, %s, %s},\n",
+                            command_type,
+                            reply_type,
                             exports_type,
                             field_name,
                             exports_type,
                             field_name,
+                            read_adapter_name,
+                            write_adapter_name,
+                            dispose_adapter_name,
                             adapter_name);
                 }
                 fprintf(out, "};\n");

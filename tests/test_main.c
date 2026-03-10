@@ -293,10 +293,12 @@ static int run_tier2_fs_tests(void) {
  * ═══════════════════════════════════════════════════════════════════ */
 
 extern void run_test_wasm_guest(int argc, char **argv);
+extern void run_test_wasm_wit_guest(int argc, char **argv);
 
 static int run_tier4_wasm_tests(void) {
 #ifdef CROFT_TEST_HAS_WASM
     run_test_wasm_guest(0, NULL);
+    run_test_wasm_wit_guest(0, NULL);
 #endif
     return 0;
 }

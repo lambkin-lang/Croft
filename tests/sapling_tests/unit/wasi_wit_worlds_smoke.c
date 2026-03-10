@@ -6,6 +6,7 @@
 #include "generated/wit_wasi_random_world.h"
 
 #include <stdio.h>
+#include <string.h>
 
 static int expect_u32(const char *label, uint32_t actual, uint32_t expected)
 {
@@ -32,6 +33,28 @@ static int expect_true(const char *label, int actual)
     }
     fprintf(stderr, "%s: expected true\n", label);
     return 0;
+}
+
+static int expect_str(const char *label, const char *actual, const char *expected)
+{
+    if (actual && expected && strcmp(actual, expected) == 0) {
+        return 1;
+    }
+    fprintf(stderr,
+            "%s: expected '%s', got '%s'\n",
+            label,
+            expected ? expected : "<null>",
+            actual ? actual : "<null>");
+    return 0;
+}
+
+static void init_writable_region(ThatchRegion *region, uint8_t *data, uint32_t cap)
+{
+    memset(region, 0, sizeof(*region));
+    region->page_ptr = data;
+    region->capacity = cap;
+    region->head = 0u;
+    region->sealed = 0;
 }
 
 static int32_t random_get_random_u64(void *ctx, SapWitRandomReply *reply_out)
@@ -140,8 +163,22 @@ int main(void)
     SapWitClocksMonotonicClockReply clocks_reply = {0};
     SapWitCliEnvironmentCommand cli_environment_command = {0};
     SapWitCliEnvironmentReply cli_environment_reply = {0};
+    SapWitCliEnvironmentReply cli_environment_reply_bytes = {0};
     SapWitCliRunCommand cli_run_command = {0};
     SapWitCliRunReply cli_run_reply = {0};
+    SapWitRandomReply random_reply_bytes = {0};
+    ThatchRegion region = {0};
+    ThatchRegion view = {0};
+    ThatchCursor cursor = 0u;
+    char endpoint_name[256];
+    uint8_t random_command_bytes[32] = {0};
+    uint8_t random_reply_blob[32] = {0};
+    uint8_t cli_command_bytes[32] = {0};
+    uint8_t cli_reply_blob[64] = {0};
+    uint32_t random_command_len = 0u;
+    uint32_t random_reply_len = 0u;
+    uint32_t cli_command_len = 0u;
+    uint32_t cli_reply_len = 0u;
     uint32_t random_calls = 0u;
     uint32_t clocks_calls = 0u;
     uint32_t cli_environment_calls = 0u;
@@ -299,6 +336,35 @@ int main(void)
     cli_environment_command.case_tag = SAP_WIT_CLI_ENVIRONMENT_COMMAND_GET_ARGUMENTS;
     cli_run_command.case_tag = SAP_WIT_CLI_RUN_COMMAND_RUN;
 
+    ok &= expect_str("random endpoint name",
+                     (sap_wit_world_endpoint_name(random_endpoint,
+                                                  endpoint_name,
+                                                  sizeof(endpoint_name))
+                      > 0u)
+                         ? endpoint_name
+                         : NULL,
+                     "wasi:random@0.2.9/imports#import:random");
+    ok &= expect_true("random endpoint qualified lookup",
+                      sap_wit_find_world_endpoint_descriptor_qualified(
+                          sap_wit_random_imports_import_endpoints,
+                          sap_wit_random_imports_import_endpoints_count,
+                          endpoint_name)
+                          == random_endpoint);
+    ok &= expect_str("cli import endpoint name",
+                     (sap_wit_world_endpoint_name(cli_environment_endpoint,
+                                                  endpoint_name,
+                                                  sizeof(endpoint_name))
+                      > 0u)
+                         ? endpoint_name
+                         : NULL,
+                     "wasi:cli@0.2.9/command#import:environment");
+    ok &= expect_true("cli import endpoint qualified lookup",
+                      sap_wit_find_world_endpoint_descriptor_qualified(
+                          sap_wit_cli_command_import_endpoints,
+                          sap_wit_cli_command_import_endpoints_count,
+                          endpoint_name)
+                          == cli_environment_endpoint);
+
     ok &= expect_u32("bind random endpoint",
                      (uint32_t)sap_wit_world_endpoint_bind(&random_imports,
                                                            random_endpoint,
@@ -388,20 +454,82 @@ int main(void)
                                                              &cli_run_reply),
                      0u);
 
-    ok &= expect_u32("random calls", random_calls, 1u);
+    init_writable_region(&region, random_command_bytes, (uint32_t)sizeof(random_command_bytes));
+    ok &= expect_u32("encode random command bytes",
+                     (uint32_t)sap_wit_write_random_command(&region, &random_command),
+                     0u);
+    random_command_len = thatch_region_used(&region);
+    ok &= expect_u32("invoke random endpoint bytes",
+                     (uint32_t)sap_wit_world_endpoint_invoke_bytes(random_endpoint,
+                                                                   &random_imports,
+                                                                   random_command_bytes,
+                                                                   random_command_len,
+                                                                   random_reply_blob,
+                                                                   (uint32_t)sizeof(random_reply_blob),
+                                                                   &random_reply_len),
+                     0u);
+    ok &= expect_true("random reply len > 0", random_reply_len > 0u);
+    ok &= expect_u32("init random reply view",
+                     (uint32_t)thatch_region_init_readonly(&view,
+                                                           random_reply_blob,
+                                                           random_reply_len),
+                     0u);
+    cursor = 0u;
+    ok &= expect_u32("decode random reply bytes",
+                     (uint32_t)sap_wit_read_random_reply(&view, &cursor, &random_reply_bytes),
+                     0u);
+    ok &= expect_u32("random reply bytes cursor", cursor, random_reply_len);
+
+    init_writable_region(&region, cli_command_bytes, (uint32_t)sizeof(cli_command_bytes));
+    ok &= expect_u32("encode cli command bytes",
+                     (uint32_t)sap_wit_write_cli_environment_command(&region,
+                                                                     &cli_environment_command),
+                     0u);
+    cli_command_len = thatch_region_used(&region);
+    ok &= expect_u32("invoke cli endpoint bytes",
+                     (uint32_t)sap_wit_world_endpoint_invoke_bytes(cli_environment_endpoint,
+                                                                   &cli_imports,
+                                                                   cli_command_bytes,
+                                                                   cli_command_len,
+                                                                   cli_reply_blob,
+                                                                   (uint32_t)sizeof(cli_reply_blob),
+                                                                   &cli_reply_len),
+                     0u);
+    ok &= expect_true("cli reply len > 0", cli_reply_len > 0u);
+    ok &= expect_u32("init cli reply view",
+                     (uint32_t)thatch_region_init_readonly(&view, cli_reply_blob, cli_reply_len),
+                     0u);
+    cursor = 0u;
+    ok &= expect_u32("decode cli reply bytes",
+                     (uint32_t)sap_wit_read_cli_environment_reply(&view,
+                                                                  &cursor,
+                                                                  &cli_environment_reply_bytes),
+                     0u);
+    ok &= expect_u32("cli reply bytes cursor", cursor, cli_reply_len);
+
+    ok &= expect_u32("random calls", random_calls, 2u);
     ok &= expect_u32("clocks calls", clocks_calls, 1u);
-    ok &= expect_u32("cli environment calls", cli_environment_calls, 1u);
+    ok &= expect_u32("cli environment calls", cli_environment_calls, 2u);
     ok &= expect_u32("cli run calls", cli_run_calls, 1u);
     ok &= expect_u32("random reply case",
                      random_reply.case_tag,
                      SAP_WIT_RANDOM_REPLY_GET_RANDOM_U64);
     ok &= expect_u32("random reply value", (uint32_t)random_reply.val.get_random_u64, 77u);
+    ok &= expect_u32("random reply bytes case",
+                     random_reply_bytes.case_tag,
+                     SAP_WIT_RANDOM_REPLY_GET_RANDOM_U64);
+    ok &= expect_u32("random reply bytes value",
+                     (uint32_t)random_reply_bytes.val.get_random_u64,
+                     77u);
     ok &= expect_u32("clocks reply case",
                      clocks_reply.case_tag,
                      SAP_WIT_CLOCKS_MONOTONIC_CLOCK_REPLY_NOW);
     ok &= expect_u32("clocks reply value", (uint32_t)clocks_reply.val.now, 123u);
     ok &= expect_u32("cli environment reply case",
                      cli_environment_reply.case_tag,
+                     SAP_WIT_CLI_ENVIRONMENT_REPLY_GET_ARGUMENTS);
+    ok &= expect_u32("cli environment reply bytes case",
+                     cli_environment_reply_bytes.case_tag,
                      SAP_WIT_CLI_ENVIRONMENT_REPLY_GET_ARGUMENTS);
     ok &= expect_u32("cli run reply case",
                      cli_run_reply.case_tag,
