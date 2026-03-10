@@ -369,6 +369,7 @@ typedef enum {
 typedef struct {
     char        name[MAX_NAME];
     char        owner_name[MAX_NAME];
+    char        lower_group[MAX_NAME];
     WitFuncKind kind;
     WitOwnerKind owner_kind;
     WitField    params[MAX_FIELDS];
@@ -380,6 +381,7 @@ typedef struct {
 typedef struct {
     char name[MAX_NAME];
     int  imported;
+    char lower_group[MAX_NAME];
 } WitResource;
 
 typedef struct {
@@ -417,6 +419,7 @@ typedef struct {
     int         len;
     int         line;
     int         col;
+    char        pending_lower_group[MAX_NAME];
 } Scanner;
 
 static void scanner_init(Scanner *s, const char *src, int len)
@@ -426,6 +429,7 @@ static void scanner_init(Scanner *s, const char *src, int len)
     s->len  = len;
     s->line = 1;
     s->col  = 1;
+    s->pending_lower_group[0] = '\0';
 }
 
 static int scanner_eof(const Scanner *s)
@@ -448,6 +452,8 @@ static char scanner_advance(Scanner *s)
     return ch;
 }
 
+static int scan_ident(Scanner *s, char *buf, int bufsize);
+
 static void skip_balanced_parens(Scanner *s)
 {
     int depth = 0;
@@ -469,8 +475,34 @@ static void skip_balanced_parens(Scanner *s)
     }
 }
 
+static void scanner_clear_pending_attrs(Scanner *s)
+{
+    if (!s) {
+        return;
+    }
+    s->pending_lower_group[0] = '\0';
+}
+
+static void scanner_take_pending_lower_group(Scanner *s, char *out, int n)
+{
+    if (!out || n <= 0) {
+        return;
+    }
+    out[0] = '\0';
+    if (!s) {
+        return;
+    }
+    if (s->pending_lower_group[0] != '\0') {
+        snprintf(out, n, "%s", s->pending_lower_group);
+    }
+    s->pending_lower_group[0] = '\0';
+}
+
 static void skip_attribute(Scanner *s)
 {
+    char attr_name[MAX_NAME];
+    int attr_name_len = 0;
+
     if (scanner_peek(s) != '@') {
         return;
     }
@@ -479,11 +511,15 @@ static void skip_attribute(Scanner *s)
     while (!scanner_eof(s)) {
         char ch = scanner_peek(s);
         if (isalnum((unsigned char)ch) || ch == '-' || ch == '_' || ch == '.') {
+            if (attr_name_len < MAX_NAME - 1) {
+                attr_name[attr_name_len++] = ch;
+            }
             scanner_advance(s);
             continue;
         }
         break;
     }
+    attr_name[attr_name_len] = '\0';
 
     while (!scanner_eof(s)) {
         char ch = scanner_peek(s);
@@ -495,7 +531,28 @@ static void skip_attribute(Scanner *s)
     }
 
     if (scanner_peek(s) == '(') {
-        skip_balanced_parens(s);
+        if (strcmp(attr_name, "croft-lower-group") == 0) {
+            scanner_advance(s);
+            while (!scanner_eof(s)) {
+                char ch = scanner_peek(s);
+                if (ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n') {
+                    scanner_advance(s);
+                    continue;
+                }
+                break;
+            }
+            if (!scan_ident(s, s->pending_lower_group, (int)sizeof(s->pending_lower_group))) {
+                s->pending_lower_group[0] = '\0';
+            }
+            while (!scanner_eof(s) && scanner_peek(s) != ')') {
+                scanner_advance(s);
+            }
+            if (scanner_peek(s) == ')') {
+                scanner_advance(s);
+            }
+        } else {
+            skip_balanced_parens(s);
+        }
     }
 }
 
@@ -1206,6 +1263,7 @@ static int parse_named_func(Scanner *s,
     if (!expect_char(s, ';')) return 0;
 
     snprintf(func.owner_name, sizeof(func.owner_name), "%s", scope_name ? scope_name : "");
+    scanner_take_pending_lower_group(s, func.lower_group, (int)sizeof(func.lower_group));
     func.owner_kind = (scope == PARSE_SCOPE_RESOURCE) ? WIT_OWNER_RESOURCE : WIT_OWNER_INTERFACE;
     format_func_trace(&func, func.trace, (int)sizeof(func.trace));
     return registry_add_func(reg, &func);
@@ -1256,6 +1314,7 @@ static int parse_constructor_func(Scanner *s,
     }
 
     if (!expect_char(s, ';')) return 0;
+    scanner_clear_pending_attrs(s);
     format_func_trace(&func, func.trace, (int)sizeof(func.trace));
     return registry_add_func(reg, &func);
 }
@@ -1354,9 +1413,24 @@ static int parse_interface_decl(Scanner *s, WitRegistry *reg)
 static int parse_resource_decl(Scanner *s, WitRegistry *reg)
 {
     char name[MAX_NAME];
+    char lower_group[MAX_NAME];
+    int resource_index = -1;
 
     if (!scan_ident(s, name, MAX_NAME)) return 0;
+    scanner_take_pending_lower_group(s, lower_group, (int)sizeof(lower_group));
     if (!registry_add_resource(reg, name, 0)) return 0;
+    for (int i = 0; i < reg->resource_count; i++) {
+        if (strcmp(reg->resources[i].name, name) == 0) {
+            resource_index = i;
+            break;
+        }
+    }
+    if (resource_index >= 0 && lower_group[0] != '\0') {
+        snprintf(reg->resources[resource_index].lower_group,
+                 sizeof(reg->resources[resource_index].lower_group),
+                 "%s",
+                 lower_group);
+    }
 
     skip_whitespace(s);
     if (match_char(s, ';')) {
@@ -1476,12 +1550,15 @@ static int parse_scope_items(Scanner *s,
                 && try_parse_named_func(s, reg, scope, scope_name)) {
             continue;
         } else if (match_keyword(s, "package")) {
+            scanner_clear_pending_attrs(s);
             if (!parse_package_decl(s, reg)) return 0;
         } else if (match_keyword(s, "use")) {
+            scanner_clear_pending_attrs(s);
             if (!parse_use_decl(s, reg)) return 0;
         } else if (match_keyword(s, "world")) {
             char world_name[MAX_NAME];
 
+            scanner_clear_pending_attrs(s);
             if (!scan_ident(s, world_name, MAX_NAME)) return 0;
             skip_whitespace(s);
             if (match_char(s, ';')) {
@@ -1489,8 +1566,10 @@ static int parse_scope_items(Scanner *s,
             }
             skip_braced_block(s);
         } else if (match_keyword(s, "interface")) {
+            scanner_clear_pending_attrs(s);
             if (!parse_interface_decl(s, reg)) return 0;
         } else if (match_keyword(s, "export") || match_keyword(s, "import")) {
+            scanner_clear_pending_attrs(s);
             while (!scanner_eof(s) && scanner_peek(s) != '{' && scanner_peek(s) != ';')
                 scanner_advance(s);
             if (match_char(s, ';')) {
@@ -1498,30 +1577,35 @@ static int parse_scope_items(Scanner *s,
             }
             skip_braced_block(s);
         } else if (match_keyword(s, "record")) {
+            scanner_clear_pending_attrs(s);
             if (reg->record_count >= MAX_TYPES) {
                 fprintf(stderr, "wit_codegen: too many records\n"); return 0;
             }
             if (!parse_record(s, &reg->records[reg->record_count])) return 0;
             reg->record_count++;
         } else if (match_keyword(s, "variant")) {
+            scanner_clear_pending_attrs(s);
             if (reg->variant_count >= MAX_TYPES) {
                 fprintf(stderr, "wit_codegen: too many variants\n"); return 0;
             }
             if (!parse_variant(s, &reg->variants[reg->variant_count])) return 0;
             reg->variant_count++;
         } else if (match_keyword(s, "enum")) {
+            scanner_clear_pending_attrs(s);
             if (reg->enum_count >= MAX_TYPES) {
                 fprintf(stderr, "wit_codegen: too many enums\n"); return 0;
             }
             if (!parse_enum(s, &reg->enums[reg->enum_count])) return 0;
             reg->enum_count++;
         } else if (match_keyword(s, "flags")) {
+            scanner_clear_pending_attrs(s);
             if (reg->flags_count >= MAX_TYPES) {
                 fprintf(stderr, "wit_codegen: too many flags\n"); return 0;
             }
             if (!parse_flags(s, &reg->flags[reg->flags_count])) return 0;
             reg->flags_count++;
         } else if (match_keyword(s, "type")) {
+            scanner_clear_pending_attrs(s);
             if (reg->alias_count >= MAX_TYPES) {
                 fprintf(stderr, "wit_codegen: too many aliases\n"); return 0;
             }
@@ -1530,6 +1614,7 @@ static int parse_scope_items(Scanner *s,
         } else if (match_keyword(s, "resource")) {
             if (!parse_resource_decl(s, reg)) return 0;
         } else {
+            scanner_clear_pending_attrs(s);
             scanner_advance(s);
         }
     }
@@ -1550,6 +1635,7 @@ static const WitFlags *find_flags(const WitRegistry *reg, const char *name);
 static const WitResource *find_resource(const WitRegistry *reg, const char *name);
 static int resolve_type(const WitRegistry *reg, int type_idx);
 static int unwrap_borrow_type(const WitRegistry *reg, int type_idx);
+static const char *prim_c_type(const char *name);
 
 static int same_type_shape(const WitRegistry *reg, int a, int b)
 {
@@ -1563,24 +1649,22 @@ static int same_type_shape(const WitRegistry *reg, int a, int b)
     return strcmp(a_buf, b_buf) == 0;
 }
 
-static void lowered_command_name(WitOwnerKind owner_kind,
-                                 const char *group_name,
+static void lowered_command_name(const char *group_name,
                                  char *out,
                                  int n)
 {
-    if (owner_kind == WIT_OWNER_INTERFACE && strcmp(group_name, "types") == 0) {
+    if (strcmp(group_name, "types") == 0 || strcmp(group_name, "command") == 0) {
         snprintf(out, n, "command");
         return;
     }
     snprintf(out, n, "%s-command", group_name);
 }
 
-static void lowered_reply_name(WitOwnerKind owner_kind,
-                               const char *group_name,
+static void lowered_reply_name(const char *group_name,
                                char *out,
                                int n)
 {
-    if (owner_kind == WIT_OWNER_INTERFACE && strcmp(group_name, "types") == 0) {
+    if (strcmp(group_name, "types") == 0 || strcmp(group_name, "command") == 0) {
         snprintf(out, n, "reply");
         return;
     }
@@ -1602,8 +1686,7 @@ static void lowered_request_record_name(const WitFunc *func,
     snprintf(out, n, "%s-%s", func->owner_name, func->name);
 }
 
-static void lowered_receiver_field_name(const char *group_name,
-                                        const WitFunc *func,
+static void lowered_receiver_field_name(const WitFunc *func,
                                         char *out,
                                         int n)
 {
@@ -1612,7 +1695,11 @@ static void lowered_receiver_field_name(const char *group_name,
         snprintf(out, n, "source");
         return;
     }
-    snprintf(out, n, "%s", group_name ? group_name : "self");
+    if (func && func->owner_name[0] != '\0') {
+        snprintf(out, n, "%s", func->owner_name);
+        return;
+    }
+    snprintf(out, n, "self");
 }
 
 static int alias_result_case_name(const WitRegistry *reg,
@@ -1682,6 +1769,23 @@ static int can_passthrough_record_payload(const WitRegistry *reg,
     if (resolved < 0) return 0;
     type_expr = &g_type_pool[resolved];
     return type_expr->kind == TYPE_IDENT && find_record(reg, type_expr->ident);
+}
+
+static const char *wit_func_lower_group(const WitRegistry *reg, const WitFunc *func)
+{
+    const WitResource *resource;
+
+    if (!func) return "";
+    if (func->lower_group[0] != '\0') {
+        return func->lower_group;
+    }
+    if (func->owner_kind == WIT_OWNER_RESOURCE) {
+        resource = find_resource(reg, func->owner_name);
+        if (resource && resource->lower_group[0] != '\0') {
+            return resource->lower_group;
+        }
+    }
+    return func->owner_name;
 }
 
 static void lowered_reply_case_name(const WitRegistry *reg,
@@ -1779,9 +1883,7 @@ static int append_lowered_variant(WitRegistry *reg, const WitVariant *variant)
     return 1;
 }
 
-static int lower_operation_group(WitRegistry *reg,
-                                 const char *group_name,
-                                 WitOwnerKind owner_kind)
+static int lower_operation_group(WitRegistry *reg, const char *group_name)
 {
     WitVariant command_variant;
     WitVariant reply_variant;
@@ -1790,8 +1892,8 @@ static int lower_operation_group(WitRegistry *reg,
 
     memset(&command_variant, 0, sizeof(command_variant));
     memset(&reply_variant, 0, sizeof(reply_variant));
-    lowered_command_name(owner_kind, group_name, command_name, (int)sizeof(command_name));
-    lowered_reply_name(owner_kind, group_name, reply_name, (int)sizeof(reply_name));
+    lowered_command_name(group_name, command_name, (int)sizeof(command_name));
+    lowered_reply_name(group_name, reply_name, (int)sizeof(reply_name));
     snprintf(command_variant.name, sizeof(command_variant.name), "%s", command_name);
     snprintf(reply_variant.name, sizeof(reply_variant.name), "%s", reply_name);
 
@@ -1803,7 +1905,7 @@ static int lower_operation_group(WitRegistry *reg,
         int needs_request_record = 0;
         int passthrough_record_payload = 0;
 
-        if (func->owner_kind != owner_kind || strcmp(func->owner_name, group_name) != 0) {
+        if (strcmp(wit_func_lower_group(reg, func), group_name) != 0) {
             continue;
         }
 
@@ -1825,7 +1927,7 @@ static int lower_operation_group(WitRegistry *reg,
             if (func->kind == WIT_FUNC_METHOD) {
                 char receiver_field_name[MAX_NAME];
 
-                lowered_receiver_field_name(group_name, func,
+                lowered_receiver_field_name(func,
                                             receiver_field_name,
                                             (int)sizeof(receiver_field_name));
                 snprintf(request_record.fields[field_count].name,
@@ -1840,7 +1942,7 @@ static int lower_operation_group(WitRegistry *reg,
                 snprintf(g_type_pool[request_record.fields[field_count].wit_type].ident,
                          sizeof(g_type_pool[request_record.fields[field_count].wit_type].ident),
                          "%s",
-                         group_name);
+                         func->owner_name);
                 field_count++;
             }
 
@@ -1926,8 +2028,8 @@ static int lower_operations(WitRegistry *reg)
         int seen = 0;
 
         for (int j = 0; j < i; j++) {
-            if (reg->funcs[i].owner_kind == reg->funcs[j].owner_kind
-                    && strcmp(reg->funcs[i].owner_name, reg->funcs[j].owner_name) == 0) {
+            if (strcmp(wit_func_lower_group(reg, &reg->funcs[i]),
+                       wit_func_lower_group(reg, &reg->funcs[j])) == 0) {
                 seen = 1;
                 break;
             }
@@ -1935,7 +2037,7 @@ static int lower_operations(WitRegistry *reg)
         if (seen) {
             continue;
         }
-        if (!lower_operation_group(reg, reg->funcs[i].owner_name, reg->funcs[i].owner_kind)) {
+        if (!lower_operation_group(reg, wit_func_lower_group(reg, &reg->funcs[i]))) {
             return 0;
         }
     }
@@ -2261,6 +2363,130 @@ static void wit_dispose_name(const WitRegistry *reg, const char *wit_name, char 
 
     wit_function_suffix(reg, wit_name, suffix, (int)sizeof(suffix));
     snprintf(out, n, "sap_wit_dispose_%s", suffix);
+}
+
+static int wit_is_command_variant(const char *wit_name)
+{
+    size_t len;
+
+    if (!wit_name) return 0;
+    if (strcmp(wit_name, "command") == 0) return 1;
+    len = strlen(wit_name);
+    return (len > 8u && strcmp(wit_name + len - 8u, "-command") == 0)
+        || (len > 8u && strcmp(wit_name + len - 8u, "_command") == 0);
+}
+
+static int wit_command_reply_name(const char *command_name, char *out, int n)
+{
+    size_t len;
+
+    if (!command_name || !out || n <= 0) return 0;
+    if (strcmp(command_name, "command") == 0) {
+        snprintf(out, n, "reply");
+        return 1;
+    }
+
+    len = strlen(command_name);
+    if (len > 8u && strcmp(command_name + len - 8u, "-command") == 0) {
+        snprintf(out, n, "%.*s-reply", (int)(len - 8u), command_name);
+        return 1;
+    }
+    if (len > 8u && strcmp(command_name + len - 8u, "_command") == 0) {
+        snprintf(out, n, "%.*s_reply", (int)(len - 8u), command_name);
+        return 1;
+    }
+    return 0;
+}
+
+static const WitVariant *find_paired_reply_variant(const WitRegistry *reg,
+                                                   const WitVariant *command_variant)
+{
+    char reply_name[MAX_NAME];
+
+    if (!reg || !command_variant || !wit_is_command_variant(command_variant->name)) {
+        return NULL;
+    }
+    if (!wit_command_reply_name(command_variant->name, reply_name, (int)sizeof(reply_name))) {
+        return NULL;
+    }
+    return find_variant(reg, reply_name);
+}
+
+static void trim_suffix_in_place(char *text, const char *suffix)
+{
+    size_t text_len;
+    size_t suffix_len;
+
+    if (!text || !suffix) return;
+    text_len = strlen(text);
+    suffix_len = strlen(suffix);
+    if (text_len >= suffix_len && strcmp(text + text_len - suffix_len, suffix) == 0) {
+        text[text_len - suffix_len] = '\0';
+    }
+}
+
+static void wit_dispatch_ops_typename(const WitRegistry *reg,
+                                      const char *command_name,
+                                      char *out,
+                                      int n)
+{
+    char type_name[MAX_NAME * 2];
+
+    wit_type_c_typename(reg, command_name, type_name, (int)sizeof(type_name));
+    trim_suffix_in_place(type_name, "Command");
+    snprintf(out, n, "%sDispatchOps", type_name);
+}
+
+static void wit_dispatch_name(const WitRegistry *reg, const char *command_name, char *out, int n)
+{
+    char suffix[MAX_NAME * 2];
+
+    wit_function_suffix(reg, command_name, suffix, (int)sizeof(suffix));
+    trim_suffix_in_place(suffix, "_command");
+    snprintf(out, n, "sap_wit_dispatch_%s", suffix);
+}
+
+static void wit_payload_c_typename(const WitRegistry *reg, int payload_type, char *out, int n)
+{
+    int resolved;
+    WitTypeExpr *type_expr;
+    const char *ctype;
+
+    if (!out || n <= 0) return;
+    out[0] = '\0';
+    if (!reg || payload_type < 0) return;
+
+    resolved = unwrap_borrow_type(reg, payload_type);
+    if (resolved < 0) {
+        codegen_die_type("unsupported dispatch payload type", payload_type);
+    }
+
+    type_expr = &g_type_pool[resolved];
+    if (type_expr->kind == TYPE_IDENT) {
+        ctype = prim_c_type(type_expr->ident);
+        if (ctype) {
+            snprintf(out, n, "%s", ctype);
+            return;
+        }
+        if (find_resource(reg, type_expr->ident)) {
+            wit_resource_c_typename(reg, type_expr->ident, out, n);
+            return;
+        }
+        if (find_record(reg, type_expr->ident) || find_variant(reg, type_expr->ident)) {
+            wit_type_c_typename(reg, type_expr->ident, out, n);
+            return;
+        }
+        if (find_enum(reg, type_expr->ident)) {
+            snprintf(out, n, "uint8_t");
+            return;
+        }
+        if (find_flags(reg, type_expr->ident)) {
+            snprintf(out, n, "uint32_t");
+            return;
+        }
+    }
+
+    codegen_die_type("unsupported dispatch payload type", payload_type);
 }
 
 static int reply_case_owns_heap_ok(const WitRegistry *reg, int payload_type)
@@ -2888,6 +3114,59 @@ static void emit_header(FILE *out, const WitRegistry *reg,
         wit_dispose_name(reg, var->name, dispose_name, (int)sizeof(dispose_name));
         fprintf(out, "void %s(%s *out);\n", zero_name, type_name);
         fprintf(out, "void %s(%s *out);\n", dispose_name, type_name);
+    }
+    fprintf(out, "\n");
+
+    fprintf(out, "/* Generated command dispatch adapters. */\n");
+    for (int idx = 0; idx < norder; idx++) {
+        const WitVariant *command_var = find_variant(reg, order[idx]);
+        const WitVariant *reply_var;
+        char command_type[MAX_NAME * 2];
+        char reply_type[MAX_NAME * 2];
+        char ops_name[MAX_NAME * 2];
+        char dispatch_name[MAX_NAME * 2];
+
+        if (!command_var || !wit_is_command_variant(command_var->name)) continue;
+        reply_var = find_paired_reply_variant(reg, command_var);
+        if (!reply_var) continue;
+
+        wit_type_c_typename(reg, command_var->name, command_type, (int)sizeof(command_type));
+        wit_type_c_typename(reg, reply_var->name, reply_type, (int)sizeof(reply_type));
+        wit_dispatch_ops_typename(reg, command_var->name, ops_name, (int)sizeof(ops_name));
+        wit_dispatch_name(reg, command_var->name, dispatch_name, (int)sizeof(dispatch_name));
+
+        fprintf(out, "/* WIT %s dispatcher ops. */\n", command_var->name);
+        fprintf(out, "typedef struct {\n");
+        for (int j = 0; j < command_var->case_count; j++) {
+            char case_name[MAX_NAME];
+
+            wit_name_to_snake_ident(command_var->cases[j].name, case_name, (int)sizeof(case_name));
+            if (command_var->cases[j].payload_type >= 0) {
+                char payload_type_name[MAX_NAME * 2];
+
+                wit_payload_c_typename(reg,
+                                       command_var->cases[j].payload_type,
+                                       payload_type_name,
+                                       (int)sizeof(payload_type_name));
+                fprintf(out,
+                        "    int32_t (*%s)(void *ctx, const %s *payload, %s *reply_out);\n",
+                        case_name,
+                        payload_type_name,
+                        reply_type);
+            } else {
+                fprintf(out,
+                        "    int32_t (*%s)(void *ctx, %s *reply_out);\n",
+                        case_name,
+                        reply_type);
+            }
+        }
+        fprintf(out, "} %s;\n", ops_name);
+        fprintf(out,
+                "int32_t %s(void *ctx, const %s *ops, const %s *command, %s *reply_out);\n",
+                dispatch_name,
+                ops_name,
+                command_type,
+                reply_type);
     }
     fprintf(out, "\n");
 
@@ -3665,6 +3944,63 @@ static void emit_skip_function(FILE *out)
     fprintf(out, "}\n\n");
 }
 
+static void emit_dispatch_helper_function(FILE *out,
+                                          const WitRegistry *reg,
+                                          const WitVariant *command_var,
+                                          const WitVariant *reply_var)
+{
+    char command_type[MAX_NAME * 2];
+    char reply_type[MAX_NAME * 2];
+    char ops_name[MAX_NAME * 2];
+    char dispatch_name[MAX_NAME * 2];
+    char macro_name[MAX_NAME * 2];
+
+    if (!out || !reg || !command_var || !reply_var || !wit_is_command_variant(command_var->name)) {
+        return;
+    }
+
+    wit_type_c_typename(reg, command_var->name, command_type, (int)sizeof(command_type));
+    wit_type_c_typename(reg, reply_var->name, reply_type, (int)sizeof(reply_type));
+    wit_dispatch_ops_typename(reg, command_var->name, ops_name, (int)sizeof(ops_name));
+    wit_dispatch_name(reg, command_var->name, dispatch_name, (int)sizeof(dispatch_name));
+    wit_macro_name(reg, command_var->name, macro_name, (int)sizeof(macro_name));
+
+    fprintf(out, "/* Generated dispatcher for %s. */\n", command_var->name);
+    fprintf(out,
+            "int32_t %s(void *ctx, const %s *ops, const %s *command, %s *reply_out)\n{\n",
+            dispatch_name,
+            ops_name,
+            command_type,
+            reply_type);
+    fprintf(out, "    if (!ops || !command || !reply_out) {\n");
+    fprintf(out, "        return -1;\n");
+    fprintf(out, "    }\n");
+    fprintf(out, "    switch (command->case_tag) {\n");
+    for (int i = 0; i < command_var->case_count; i++) {
+        char case_upper[MAX_NAME];
+        char case_snake[MAX_NAME];
+
+        wit_name_to_upper_ident(command_var->cases[i].name, case_upper, (int)sizeof(case_upper));
+        wit_name_to_snake_ident(command_var->cases[i].name, case_snake, (int)sizeof(case_snake));
+        fprintf(out, "    case %s_%s:\n", macro_name, case_upper);
+        fprintf(out, "        if (!ops->%s) {\n", case_snake);
+        fprintf(out, "            return -1;\n");
+        fprintf(out, "        }\n");
+        if (command_var->cases[i].payload_type >= 0) {
+            fprintf(out,
+                    "        return ops->%s(ctx, &command->val.%s, reply_out);\n",
+                    case_snake,
+                    case_snake);
+        } else {
+            fprintf(out, "        return ops->%s(ctx, reply_out);\n", case_snake);
+        }
+    }
+    fprintf(out, "    default:\n");
+    fprintf(out, "        return -1;\n");
+    fprintf(out, "    }\n");
+    fprintf(out, "}\n\n");
+}
+
 static void emit_reply_helper_functions(FILE *out, const WitRegistry *reg,
                                         const WitVariant *var)
 {
@@ -3791,6 +4127,17 @@ static void emit_source(FILE *out, const WitRegistry *reg,
         if (rec) { emit_read_record(out, reg, rec); continue; }
         const WitVariant *var = find_variant(reg, order[idx]);
         if (var) { emit_read_variant(out, reg, var); continue; }
+    }
+
+    fprintf(out, "/* ---- Generated command dispatch helpers ---- */\n\n");
+    for (int idx = 0; idx < norder; idx++) {
+        const WitVariant *command_var = find_variant(reg, order[idx]);
+        const WitVariant *reply_var;
+
+        if (!command_var || !wit_is_command_variant(command_var->name)) continue;
+        reply_var = find_paired_reply_variant(reg, command_var);
+        if (!reply_var) continue;
+        emit_dispatch_helper_function(out, reg, command_var, reply_var);
     }
 
     fprintf(out, "/* ---- Generated reply helpers ---- */\n\n");

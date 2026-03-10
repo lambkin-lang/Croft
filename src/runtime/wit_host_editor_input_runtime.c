@@ -390,49 +390,101 @@ static void croft_wit_host_editor_input_translate_menu(croft_wit_host_editor_inp
     }
 }
 
+static int32_t croft_wit_host_editor_input_dispatch_window_key(
+    void* ctx,
+    const SapWitHostEditorInputKeyEvent* event,
+    SapWitHostEditorInputReply* reply_out)
+{
+    croft_wit_host_editor_input_runtime* runtime = (croft_wit_host_editor_input_runtime*)ctx;
+
+    if (!runtime || !event || !reply_out) {
+        return -1;
+    }
+    croft_wit_host_editor_input_translate_key(runtime, event);
+    croft_wit_host_editor_input_reply_status_ok(reply_out);
+    return 0;
+}
+
+static int32_t croft_wit_host_editor_input_dispatch_window_char(
+    void* ctx,
+    const SapWitHostEditorInputCharEvent* event,
+    SapWitHostEditorInputReply* reply_out)
+{
+    croft_wit_host_editor_input_runtime* runtime = (croft_wit_host_editor_input_runtime*)ctx;
+    SapWitHostEditorInputEditorAction action = {0};
+
+    if (!runtime || !event || !reply_out) {
+        return -1;
+    }
+    if (runtime->suppress_tab_char && event->codepoint == (uint32_t)'\t') {
+        runtime->suppress_tab_char = 0u;
+        croft_wit_host_editor_input_reply_status_ok(reply_out);
+        return 0;
+    }
+    runtime->suppress_tab_char = 0u;
+    action.case_tag = SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_INSERT_CODEPOINT;
+    action.val.insert_codepoint = event->codepoint;
+    croft_wit_host_editor_input_enqueue(runtime, &action);
+    croft_wit_host_editor_input_reply_status_ok(reply_out);
+    return 0;
+}
+
+static int32_t croft_wit_host_editor_input_dispatch_menu_action(
+    void* ctx,
+    const SapWitHostEditorInputMenuAction* action,
+    SapWitHostEditorInputReply* reply_out)
+{
+    croft_wit_host_editor_input_runtime* runtime = (croft_wit_host_editor_input_runtime*)ctx;
+
+    if (!runtime || !action || !reply_out) {
+        return -1;
+    }
+    croft_wit_host_editor_input_translate_menu(runtime, action->action_id);
+    croft_wit_host_editor_input_reply_status_ok(reply_out);
+    return 0;
+}
+
+static int32_t croft_wit_host_editor_input_dispatch_next_action(
+    void* ctx,
+    SapWitHostEditorInputReply* reply_out)
+{
+    croft_wit_host_editor_input_runtime* runtime = (croft_wit_host_editor_input_runtime*)ctx;
+
+    if (!runtime || !reply_out) {
+        return -1;
+    }
+    if (runtime->action_count == 0u) {
+        croft_wit_host_editor_input_reply_action_empty(reply_out);
+        return 0;
+    }
+    croft_wit_host_editor_input_reply_action_ok(reply_out, &runtime->actions[runtime->action_head]);
+    runtime->action_head = (runtime->action_head + 1u) % CROFT_WIT_EDITOR_ACTION_CAP;
+    runtime->action_count--;
+    return 0;
+}
+
 int32_t croft_wit_host_editor_input_runtime_dispatch(
     croft_wit_host_editor_input_runtime* runtime,
     const SapWitHostEditorInputCommand* command,
     SapWitHostEditorInputReply* reply_out)
 {
+    int32_t rc;
+
+    static const SapWitHostEditorInputDispatchOps ops = {
+        .window_key = croft_wit_host_editor_input_dispatch_window_key,
+        .window_char = croft_wit_host_editor_input_dispatch_window_char,
+        .menu_action = croft_wit_host_editor_input_dispatch_menu_action,
+        .next_action = croft_wit_host_editor_input_dispatch_next_action,
+    };
+
     if (!runtime || !command || !reply_out) {
         return -1;
     }
 
-    switch (command->case_tag) {
-        case SAP_WIT_HOST_EDITOR_INPUT_COMMAND_WINDOW_KEY:
-            croft_wit_host_editor_input_translate_key(runtime, &command->val.window_key);
-            croft_wit_host_editor_input_reply_status_ok(reply_out);
-            return 0;
-        case SAP_WIT_HOST_EDITOR_INPUT_COMMAND_WINDOW_CHAR: {
-            SapWitHostEditorInputEditorAction action = {0};
-            if (runtime->suppress_tab_char && command->val.window_char.codepoint == (uint32_t)'\t') {
-                runtime->suppress_tab_char = 0u;
-                croft_wit_host_editor_input_reply_status_ok(reply_out);
-                return 0;
-            }
-            runtime->suppress_tab_char = 0u;
-            action.case_tag = SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_INSERT_CODEPOINT;
-            action.val.insert_codepoint = command->val.window_char.codepoint;
-            croft_wit_host_editor_input_enqueue(runtime, &action);
-            croft_wit_host_editor_input_reply_status_ok(reply_out);
-            return 0;
-        }
-        case SAP_WIT_HOST_EDITOR_INPUT_COMMAND_MENU_ACTION:
-            croft_wit_host_editor_input_translate_menu(runtime, command->val.menu_action.action_id);
-            croft_wit_host_editor_input_reply_status_ok(reply_out);
-            return 0;
-        case SAP_WIT_HOST_EDITOR_INPUT_COMMAND_NEXT_ACTION:
-            if (runtime->action_count == 0u) {
-                croft_wit_host_editor_input_reply_action_empty(reply_out);
-                return 0;
-            }
-            croft_wit_host_editor_input_reply_action_ok(reply_out, &runtime->actions[runtime->action_head]);
-            runtime->action_head = (runtime->action_head + 1u) % CROFT_WIT_EDITOR_ACTION_CAP;
-            runtime->action_count--;
-            return 0;
-        default:
-            croft_wit_host_editor_input_reply_status_err(reply_out, "internal");
-            return 0;
+    rc = sap_wit_dispatch_host_editor_input(runtime, &ops, command, reply_out);
+    if (rc == -1) {
+        croft_wit_host_editor_input_reply_status_err(reply_out, "internal");
+        return 0;
     }
+    return rc;
 }

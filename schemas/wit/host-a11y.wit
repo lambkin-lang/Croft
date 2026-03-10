@@ -11,10 +11,6 @@ interface types {
     button,
   }
 
-  record open {}
-
-  record close {}
-
   record bounds {
     x: f32,
     y: f32,
@@ -22,35 +18,15 @@ interface types {
     height: f32,
   }
 
-  record create-node {
-    role: role,
-    bounds: bounds,
-    label: option<list<u8>>,
-  }
-
-  record add-child {
-    parent: option<node>,
-    child: node,
-  }
-
-  record update-frame {
-    node: node,
-    bounds: bounds,
-  }
-
-  record destroy-node {
-    node: node,
-  }
-
   type node-result = result<node, string>;
   type status = result<_, string>;
 
-  open: func(request: open) -> status;
-  close: func(request: close) -> status;
-  create-node: func(request: create-node) -> node-result;
-  add-child: func(request: add-child) -> status;
-  update-frame: func(request: update-frame) -> status;
-  destroy-node: func(request: destroy-node) -> status;
+  open: func() -> status;
+  close: func() -> status;
+  create-node: func(role: role, bounds: bounds, label: option<list<u8>>) -> node-result;
+  add-child: func(parent: option<node>, child: node) -> status;
+  update-frame: func(node: node, bounds: bounds) -> status;
+  destroy-node: func(node: node) -> status;
 }
 
 world host-a11y {

@@ -185,9 +185,10 @@ void croft_wit_host_a11y_runtime_destroy(croft_wit_host_a11y_runtime* runtime)
     free(runtime);
 }
 
-static int32_t croft_wit_host_a11y_dispatch_open(croft_wit_host_a11y_runtime* runtime,
+static int32_t croft_wit_host_a11y_dispatch_open(void* ctx,
                                                  SapWitHostA11yReply* reply_out)
 {
+    croft_wit_host_a11y_runtime* runtime = (croft_wit_host_a11y_runtime*)ctx;
     if (!runtime || !reply_out) {
         return -1;
     }
@@ -204,9 +205,10 @@ static int32_t croft_wit_host_a11y_dispatch_open(croft_wit_host_a11y_runtime* ru
     return 0;
 }
 
-static int32_t croft_wit_host_a11y_dispatch_close(croft_wit_host_a11y_runtime* runtime,
+static int32_t croft_wit_host_a11y_dispatch_close(void* ctx,
                                                   SapWitHostA11yReply* reply_out)
 {
+    croft_wit_host_a11y_runtime* runtime = (croft_wit_host_a11y_runtime*)ctx;
     size_t i;
 
     if (!runtime || !reply_out) {
@@ -229,108 +231,154 @@ static int32_t croft_wit_host_a11y_dispatch_close(croft_wit_host_a11y_runtime* r
     return 0;
 }
 
+static int32_t croft_wit_host_a11y_dispatch_create_node(
+    void* ctx,
+    const SapWitHostA11yCreateNode* request,
+    SapWitHostA11yReply* reply_out)
+{
+    croft_wit_host_a11y_runtime* runtime = (croft_wit_host_a11y_runtime*)ctx;
+    SapWitHostA11yNodeResource handle = SAP_WIT_HOST_A11Y_NODE_RESOURCE_INVALID;
+    host_a11y_node_config cfg = {0};
+    void* native_node;
+    char* label = NULL;
+
+    if (!runtime || !request || !reply_out) {
+        return -1;
+    }
+    if (!runtime->open) {
+        croft_wit_host_a11y_reply_node_err(reply_out, "unavailable");
+        return 0;
+    }
+    cfg.x = request->bounds.x;
+    cfg.y = request->bounds.y;
+    cfg.width = request->bounds.width;
+    cfg.height = request->bounds.height;
+    cfg.os_specific_mixin = NULL;
+    if (request->has_label) {
+        label = (char*)malloc((size_t)request->label_len + 1u);
+        if (!label) {
+            croft_wit_host_a11y_reply_node_err(reply_out, "internal");
+            return 0;
+        }
+        memcpy(label, request->label_data, request->label_len);
+        label[request->label_len] = '\0';
+        cfg.label = label;
+    }
+    native_node = host_a11y_create_node(croft_wit_host_a11y_role(request->role), &cfg);
+    free(label);
+    if (!native_node || croft_wit_host_a11y_slots_insert(runtime, native_node, &handle) != 0) {
+        if (native_node) {
+            host_a11y_destroy_node(native_node);
+        }
+        croft_wit_host_a11y_reply_node_err(reply_out, "internal");
+        return 0;
+    }
+    croft_wit_host_a11y_reply_node_ok(reply_out, handle);
+    return 0;
+}
+
+static int32_t croft_wit_host_a11y_dispatch_add_child(
+    void* ctx,
+    const SapWitHostA11yAddChild* request,
+    SapWitHostA11yReply* reply_out)
+{
+    croft_wit_host_a11y_runtime* runtime = (croft_wit_host_a11y_runtime*)ctx;
+    croft_wit_host_a11y_slot* child;
+    croft_wit_host_a11y_slot* parent = NULL;
+
+    if (!runtime || !request || !reply_out) {
+        return -1;
+    }
+    child = croft_wit_host_a11y_lookup(runtime, request->child);
+    if (!child) {
+        croft_wit_host_a11y_reply_status_err(reply_out, "invalid-handle");
+        return 0;
+    }
+    if (request->has_parent) {
+        parent = croft_wit_host_a11y_lookup(runtime, request->parent);
+        if (!parent) {
+            croft_wit_host_a11y_reply_status_err(reply_out, "invalid-handle");
+            return 0;
+        }
+    }
+    host_a11y_add_child(parent ? parent->native_node : NULL, child->native_node);
+    croft_wit_host_a11y_reply_status_ok(reply_out);
+    return 0;
+}
+
+static int32_t croft_wit_host_a11y_dispatch_update_frame(
+    void* ctx,
+    const SapWitHostA11yUpdateFrame* request,
+    SapWitHostA11yReply* reply_out)
+{
+    croft_wit_host_a11y_runtime* runtime = (croft_wit_host_a11y_runtime*)ctx;
+    croft_wit_host_a11y_slot* node;
+
+    if (!runtime || !request || !reply_out) {
+        return -1;
+    }
+    node = croft_wit_host_a11y_lookup(runtime, request->node);
+    if (!node) {
+        croft_wit_host_a11y_reply_status_err(reply_out, "invalid-handle");
+        return 0;
+    }
+    host_a11y_update_frame(node->native_node,
+                           request->bounds.x,
+                           request->bounds.y,
+                           request->bounds.width,
+                           request->bounds.height);
+    croft_wit_host_a11y_reply_status_ok(reply_out);
+    return 0;
+}
+
+static int32_t croft_wit_host_a11y_dispatch_destroy_node(
+    void* ctx,
+    const SapWitHostA11yDestroyNode* request,
+    SapWitHostA11yReply* reply_out)
+{
+    croft_wit_host_a11y_runtime* runtime = (croft_wit_host_a11y_runtime*)ctx;
+    croft_wit_host_a11y_slot* node;
+
+    if (!runtime || !request || !reply_out) {
+        return -1;
+    }
+    node = croft_wit_host_a11y_lookup(runtime, request->node);
+    if (!node) {
+        croft_wit_host_a11y_reply_status_err(reply_out, "invalid-handle");
+        return 0;
+    }
+    host_a11y_destroy_node(node->native_node);
+    node->live = 0u;
+    node->native_node = NULL;
+    croft_wit_host_a11y_reply_status_ok(reply_out);
+    return 0;
+}
+
+static const SapWitHostA11yDispatchOps g_croft_wit_host_a11y_dispatch_ops = {
+    .open = croft_wit_host_a11y_dispatch_open,
+    .close = croft_wit_host_a11y_dispatch_close,
+    .create_node = croft_wit_host_a11y_dispatch_create_node,
+    .add_child = croft_wit_host_a11y_dispatch_add_child,
+    .update_frame = croft_wit_host_a11y_dispatch_update_frame,
+    .destroy_node = croft_wit_host_a11y_dispatch_destroy_node,
+};
+
 int32_t croft_wit_host_a11y_runtime_dispatch(croft_wit_host_a11y_runtime* runtime,
                                              const SapWitHostA11yCommand* command,
                                              SapWitHostA11yReply* reply_out)
 {
+    int32_t rc;
+
     if (!runtime || !command || !reply_out) {
         return -1;
     }
 
-    switch (command->case_tag) {
-        case SAP_WIT_HOST_A11Y_COMMAND_OPEN:
-            return croft_wit_host_a11y_dispatch_open(runtime, reply_out);
-        case SAP_WIT_HOST_A11Y_COMMAND_CLOSE:
-            return croft_wit_host_a11y_dispatch_close(runtime, reply_out);
-        case SAP_WIT_HOST_A11Y_COMMAND_CREATE_NODE: {
-            SapWitHostA11yNodeResource handle = SAP_WIT_HOST_A11Y_NODE_RESOURCE_INVALID;
-            host_a11y_node_config cfg = {0};
-            void* native_node;
-            char* label = NULL;
-
-            if (!runtime->open) {
-                croft_wit_host_a11y_reply_node_err(reply_out, "unavailable");
-                return 0;
-            }
-            cfg.x = command->val.create_node.bounds.x;
-            cfg.y = command->val.create_node.bounds.y;
-            cfg.width = command->val.create_node.bounds.width;
-            cfg.height = command->val.create_node.bounds.height;
-            cfg.os_specific_mixin = NULL;
-            if (command->val.create_node.has_label) {
-                label = (char*)malloc((size_t)command->val.create_node.label_len + 1u);
-                if (!label) {
-                    croft_wit_host_a11y_reply_node_err(reply_out, "internal");
-                    return 0;
-                }
-                memcpy(label, command->val.create_node.label_data, command->val.create_node.label_len);
-                label[command->val.create_node.label_len] = '\0';
-                cfg.label = label;
-            }
-            native_node = host_a11y_create_node(
-                croft_wit_host_a11y_role(command->val.create_node.role), &cfg);
-            free(label);
-            if (!native_node || croft_wit_host_a11y_slots_insert(runtime, native_node, &handle) != 0) {
-                if (native_node) {
-                    host_a11y_destroy_node(native_node);
-                }
-                croft_wit_host_a11y_reply_node_err(reply_out, "internal");
-                return 0;
-            }
-            croft_wit_host_a11y_reply_node_ok(reply_out, handle);
-            return 0;
-        }
-        case SAP_WIT_HOST_A11Y_COMMAND_ADD_CHILD: {
-            croft_wit_host_a11y_slot* child = croft_wit_host_a11y_lookup(runtime,
-                                                                         command->val.add_child.child);
-            croft_wit_host_a11y_slot* parent = NULL;
-            if (!child) {
-                croft_wit_host_a11y_reply_status_err(reply_out, "invalid-handle");
-                return 0;
-            }
-            if (command->val.add_child.has_parent) {
-                parent = croft_wit_host_a11y_lookup(runtime, command->val.add_child.parent);
-                if (!parent) {
-                    croft_wit_host_a11y_reply_status_err(reply_out, "invalid-handle");
-                    return 0;
-                }
-            }
-            host_a11y_add_child(parent ? parent->native_node : NULL, child->native_node);
-            croft_wit_host_a11y_reply_status_ok(reply_out);
-            return 0;
-        }
-        case SAP_WIT_HOST_A11Y_COMMAND_UPDATE_FRAME: {
-            croft_wit_host_a11y_slot* node = croft_wit_host_a11y_lookup(runtime,
-                                                                        command->val.update_frame.node);
-            if (!node) {
-                croft_wit_host_a11y_reply_status_err(reply_out, "invalid-handle");
-                return 0;
-            }
-            host_a11y_update_frame(node->native_node,
-                                   command->val.update_frame.bounds.x,
-                                   command->val.update_frame.bounds.y,
-                                   command->val.update_frame.bounds.width,
-                                   command->val.update_frame.bounds.height);
-            croft_wit_host_a11y_reply_status_ok(reply_out);
-            return 0;
-        }
-        case SAP_WIT_HOST_A11Y_COMMAND_DESTROY_NODE: {
-            croft_wit_host_a11y_slot* node = croft_wit_host_a11y_lookup(runtime,
-                                                                        command->val.destroy_node.node);
-            if (!node) {
-                croft_wit_host_a11y_reply_status_err(reply_out, "invalid-handle");
-                return 0;
-            }
-            host_a11y_destroy_node(node->native_node);
-            node->live = 0u;
-            node->native_node = NULL;
-            croft_wit_host_a11y_reply_status_ok(reply_out);
-            return 0;
-        }
-        default:
-            croft_wit_host_a11y_reply_status_err(reply_out, "internal");
-            return 0;
+    rc = sap_wit_dispatch_host_a11y(runtime, &g_croft_wit_host_a11y_dispatch_ops, command, reply_out);
+    if (rc == -1) {
+        croft_wit_host_a11y_reply_status_err(reply_out, "internal");
+        return 0;
     }
+    return rc;
 }
 
 static int32_t croft_wit_host_a11y_bridge_open(void* userdata)

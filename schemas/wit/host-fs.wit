@@ -1,31 +1,16 @@
 package lambkin:host-fs@0.1.0;
 
 interface types {
-  resource file;
-
-  record fs-file-open {
-    path: list<u8>,
-    write: bool,
-    create: bool,
-    truncate: bool,
-    append: bool,
-  }
-
-  record fs-file-close {
-    file: file,
-  }
-
-  record fs-file-read-all {
-    file: file,
-  }
-
   type fs-file-op-result = result<file, string>;
   type fs-status = result<_, string>;
   type fs-file-read-result = result<list<u8>, string>;
 
-  open: func(request: fs-file-open) -> fs-file-op-result;
-  close: func(request: fs-file-close) -> fs-status;
-  read-all: func(request: fs-file-read-all) -> fs-file-read-result;
+  @croft-lower-group(command)
+  resource file {
+    open: static func(path: list<u8>, write: bool, create: bool, truncate: bool, append: bool) -> fs-file-op-result;
+    close: func() -> fs-status;
+    read-all: func() -> fs-file-read-result;
+  }
 }
 
 world host-fs {

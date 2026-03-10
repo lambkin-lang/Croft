@@ -409,10 +409,11 @@ void croft_wit_store_runtime_destroy(croft_wit_store_runtime* runtime)
     free(runtime);
 }
 
-static int32_t croft_wit_store_dispatch_db_open(croft_wit_store_runtime* runtime,
-                                                const SapWitCommonCoreDbOpen* request,
-                                                SapWitCommonCoreStoreReply* reply_out)
+static int32_t croft_wit_store_dispatch_open(void* ctx,
+                                             const SapWitCommonCoreDbOpen* request,
+                                             SapWitCommonCoreStoreReply* reply_out)
 {
+    croft_wit_store_runtime* runtime = (croft_wit_store_runtime*)ctx;
     SapArenaOptions options;
     SapMemArena* arena = NULL;
     DB* db = NULL;
@@ -456,10 +457,11 @@ static int32_t croft_wit_store_dispatch_db_open(croft_wit_store_runtime* runtime
     return ERR_OK;
 }
 
-static int32_t croft_wit_store_dispatch_db_drop(croft_wit_store_runtime* runtime,
-                                                const SapWitCommonCoreDbDrop* request,
-                                                SapWitCommonCoreStoreReply* reply_out)
+static int32_t croft_wit_store_dispatch_drop(void* ctx,
+                                             const SapWitCommonCoreDbDrop* request,
+                                             SapWitCommonCoreStoreReply* reply_out)
 {
+    croft_wit_store_runtime* runtime = (croft_wit_store_runtime*)ctx;
     size_t slot;
     croft_wit_db_slot* db_slot;
 
@@ -487,10 +489,11 @@ static int32_t croft_wit_store_dispatch_db_drop(croft_wit_store_runtime* runtime
     return ERR_OK;
 }
 
-static int32_t croft_wit_store_dispatch_txn_begin(croft_wit_store_runtime* runtime,
-                                                  const SapWitCommonCoreTxnBegin* request,
-                                                  SapWitCommonCoreStoreReply* reply_out)
+static int32_t croft_wit_store_dispatch_begin(void* ctx,
+                                              const SapWitCommonCoreDbBegin* request,
+                                              SapWitCommonCoreStoreReply* reply_out)
 {
+    croft_wit_store_runtime* runtime = (croft_wit_store_runtime*)ctx;
     croft_wit_db_slot* db_slot;
     Txn* txn;
     SapWitCommonCoreTxnResource handle;
@@ -528,10 +531,11 @@ static int32_t croft_wit_store_dispatch_txn_begin(croft_wit_store_runtime* runti
     return ERR_OK;
 }
 
-static int32_t croft_wit_store_dispatch_txn_commit(croft_wit_store_runtime* runtime,
-                                                   const SapWitCommonCoreTxnCommit* request,
-                                                   SapWitCommonCoreStoreReply* reply_out)
+static int32_t croft_wit_store_dispatch_commit(void* ctx,
+                                               const SapWitCommonCoreTxnCommit* request,
+                                               SapWitCommonCoreStoreReply* reply_out)
 {
+    croft_wit_store_runtime* runtime = (croft_wit_store_runtime*)ctx;
     croft_wit_txn_slot* txn_slot;
     int32_t rc;
 
@@ -556,10 +560,11 @@ static int32_t croft_wit_store_dispatch_txn_commit(croft_wit_store_runtime* runt
     return ERR_OK;
 }
 
-static int32_t croft_wit_store_dispatch_txn_abort(croft_wit_store_runtime* runtime,
-                                                  const SapWitCommonCoreTxnAbort* request,
-                                                  SapWitCommonCoreStoreReply* reply_out)
+static int32_t croft_wit_store_dispatch_abort(void* ctx,
+                                              const SapWitCommonCoreTxnAbort* request,
+                                              SapWitCommonCoreStoreReply* reply_out)
 {
+    croft_wit_store_runtime* runtime = (croft_wit_store_runtime*)ctx;
     croft_wit_txn_slot* txn_slot;
 
     if (!runtime || !request || !reply_out) {
@@ -578,10 +583,11 @@ static int32_t croft_wit_store_dispatch_txn_abort(croft_wit_store_runtime* runti
     return ERR_OK;
 }
 
-static int32_t croft_wit_store_dispatch_kv_put(croft_wit_store_runtime* runtime,
-                                               const SapWitCommonCoreKvPut* request,
-                                               SapWitCommonCoreStoreReply* reply_out)
+static int32_t croft_wit_store_dispatch_put(void* ctx,
+                                            const SapWitCommonCoreTxnPut* request,
+                                            SapWitCommonCoreStoreReply* reply_out)
 {
+    croft_wit_store_runtime* runtime = (croft_wit_store_runtime*)ctx;
     croft_wit_txn_slot* txn_slot;
     int32_t rc;
 
@@ -614,10 +620,11 @@ static int32_t croft_wit_store_dispatch_kv_put(croft_wit_store_runtime* runtime,
  * pointers. That keeps the generated-side ownership rules simple and makes the
  * later move to remote/distributed implementations easier to model.
  */
-static int32_t croft_wit_store_dispatch_kv_get(croft_wit_store_runtime* runtime,
-                                               const SapWitCommonCoreKvGet* request,
-                                               SapWitCommonCoreStoreReply* reply_out)
+static int32_t croft_wit_store_dispatch_get(void* ctx,
+                                            const SapWitCommonCoreTxnGet* request,
+                                            SapWitCommonCoreStoreReply* reply_out)
 {
+    croft_wit_store_runtime* runtime = (croft_wit_store_runtime*)ctx;
     croft_wit_txn_slot* txn_slot;
     const void* value = NULL;
     uint32_t value_len = 0u;
@@ -658,30 +665,26 @@ static int32_t croft_wit_store_dispatch_kv_get(croft_wit_store_runtime* runtime,
     return ERR_OK;
 }
 
+static const SapWitCommonCoreStoreDispatchOps g_croft_wit_store_dispatch_ops = {
+    .open = croft_wit_store_dispatch_open,
+    .drop = croft_wit_store_dispatch_drop,
+    .begin = croft_wit_store_dispatch_begin,
+    .commit = croft_wit_store_dispatch_commit,
+    .abort = croft_wit_store_dispatch_abort,
+    .put = croft_wit_store_dispatch_put,
+    .get = croft_wit_store_dispatch_get,
+};
+
 int32_t croft_wit_store_runtime_dispatch(croft_wit_store_runtime* runtime,
                                          const SapWitCommonCoreStoreCommand* command,
                                          SapWitCommonCoreStoreReply* reply_out)
 {
+    int32_t rc;
+
     if (!runtime || !command || !reply_out) {
         return ERR_INVALID;
     }
 
-    switch (command->case_tag) {
-        case SAP_WIT_COMMON_CORE_STORE_COMMAND_DB_OPEN:
-            return croft_wit_store_dispatch_db_open(runtime, &command->val.db_open, reply_out);
-        case SAP_WIT_COMMON_CORE_STORE_COMMAND_DB_DROP:
-            return croft_wit_store_dispatch_db_drop(runtime, &command->val.db_drop, reply_out);
-        case SAP_WIT_COMMON_CORE_STORE_COMMAND_TXN_BEGIN:
-            return croft_wit_store_dispatch_txn_begin(runtime, &command->val.txn_begin, reply_out);
-        case SAP_WIT_COMMON_CORE_STORE_COMMAND_TXN_COMMIT:
-            return croft_wit_store_dispatch_txn_commit(runtime, &command->val.txn_commit, reply_out);
-        case SAP_WIT_COMMON_CORE_STORE_COMMAND_TXN_ABORT:
-            return croft_wit_store_dispatch_txn_abort(runtime, &command->val.txn_abort, reply_out);
-        case SAP_WIT_COMMON_CORE_STORE_COMMAND_KV_PUT:
-            return croft_wit_store_dispatch_kv_put(runtime, &command->val.kv_put, reply_out);
-        case SAP_WIT_COMMON_CORE_STORE_COMMAND_KV_GET:
-            return croft_wit_store_dispatch_kv_get(runtime, &command->val.kv_get, reply_out);
-        default:
-            return ERR_INVALID;
-    }
+    rc = sap_wit_dispatch_common_core_store(runtime, &g_croft_wit_store_dispatch_ops, command, reply_out);
+    return rc == -1 ? ERR_INVALID : rc;
 }

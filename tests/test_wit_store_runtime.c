@@ -63,8 +63,8 @@ int test_wit_store_runtime_roundtrip(void)
         return 1;
     }
 
-    command.case_tag = SAP_WIT_COMMON_CORE_STORE_COMMAND_DB_OPEN;
-    command.val.db_open.page_size = 4096u;
+    command.case_tag = SAP_WIT_COMMON_CORE_STORE_COMMAND_OPEN;
+    command.val.open.page_size = 4096u;
     if (croft_wit_store_runtime_dispatch(runtime, &command, &reply) != 0
             || !wit_store_expect_db_ok(&reply, &db)) {
         croft_wit_store_reply_dispose(&reply);
@@ -73,9 +73,9 @@ int test_wit_store_runtime_roundtrip(void)
     }
     croft_wit_store_reply_dispose(&reply);
 
-    command.case_tag = SAP_WIT_COMMON_CORE_STORE_COMMAND_TXN_BEGIN;
-    command.val.txn_begin.db = db;
-    command.val.txn_begin.read_only = 0u;
+    command.case_tag = SAP_WIT_COMMON_CORE_STORE_COMMAND_BEGIN;
+    command.val.begin.db = db;
+    command.val.begin.read_only = 0u;
     if (croft_wit_store_runtime_dispatch(runtime, &command, &reply) != 0
             || !wit_store_expect_txn_ok(&reply, &write_txn)) {
         croft_wit_store_reply_dispose(&reply);
@@ -84,12 +84,12 @@ int test_wit_store_runtime_roundtrip(void)
     }
     croft_wit_store_reply_dispose(&reply);
 
-    command.case_tag = SAP_WIT_COMMON_CORE_STORE_COMMAND_KV_PUT;
-    command.val.kv_put.txn = write_txn;
-    command.val.kv_put.key_data = (const uint8_t*)"editor";
-    command.val.kv_put.key_len = 6u;
-    command.val.kv_put.value_data = (const uint8_t*)"small binaries";
-    command.val.kv_put.value_len = 14u;
+    command.case_tag = SAP_WIT_COMMON_CORE_STORE_COMMAND_PUT;
+    command.val.put.txn = write_txn;
+    command.val.put.key_data = (const uint8_t*)"editor";
+    command.val.put.key_len = 6u;
+    command.val.put.value_data = (const uint8_t*)"small binaries";
+    command.val.put.value_len = 14u;
     if (croft_wit_store_runtime_dispatch(runtime, &command, &reply) != 0
             || !wit_store_expect_status_ok(&reply)) {
         croft_wit_store_reply_dispose(&reply);
@@ -98,8 +98,8 @@ int test_wit_store_runtime_roundtrip(void)
     }
     croft_wit_store_reply_dispose(&reply);
 
-    command.case_tag = SAP_WIT_COMMON_CORE_STORE_COMMAND_TXN_COMMIT;
-    command.val.txn_commit.txn = write_txn;
+    command.case_tag = SAP_WIT_COMMON_CORE_STORE_COMMAND_COMMIT;
+    command.val.commit.txn = write_txn;
     if (croft_wit_store_runtime_dispatch(runtime, &command, &reply) != 0
             || !wit_store_expect_status_ok(&reply)) {
         croft_wit_store_reply_dispose(&reply);
@@ -108,9 +108,9 @@ int test_wit_store_runtime_roundtrip(void)
     }
     croft_wit_store_reply_dispose(&reply);
 
-    command.case_tag = SAP_WIT_COMMON_CORE_STORE_COMMAND_TXN_BEGIN;
-    command.val.txn_begin.db = db;
-    command.val.txn_begin.read_only = 1u;
+    command.case_tag = SAP_WIT_COMMON_CORE_STORE_COMMAND_BEGIN;
+    command.val.begin.db = db;
+    command.val.begin.read_only = 1u;
     if (croft_wit_store_runtime_dispatch(runtime, &command, &reply) != 0
             || !wit_store_expect_txn_ok(&reply, &read_txn)) {
         croft_wit_store_reply_dispose(&reply);
@@ -119,10 +119,10 @@ int test_wit_store_runtime_roundtrip(void)
     }
     croft_wit_store_reply_dispose(&reply);
 
-    command.case_tag = SAP_WIT_COMMON_CORE_STORE_COMMAND_KV_GET;
-    command.val.kv_get.txn = read_txn;
-    command.val.kv_get.key_data = (const uint8_t*)"editor";
-    command.val.kv_get.key_len = 6u;
+    command.case_tag = SAP_WIT_COMMON_CORE_STORE_COMMAND_GET;
+    command.val.get.txn = read_txn;
+    command.val.get.key_data = (const uint8_t*)"editor";
+    command.val.get.key_len = 6u;
     if (croft_wit_store_runtime_dispatch(runtime, &command, &reply) != 0
             || reply.case_tag != SAP_WIT_COMMON_CORE_STORE_REPLY_GET
             || !reply.val.get.is_v_ok
@@ -140,8 +140,8 @@ int test_wit_store_runtime_roundtrip(void)
     }
     croft_wit_store_reply_dispose(&reply);
 
-    command.case_tag = SAP_WIT_COMMON_CORE_STORE_COMMAND_TXN_ABORT;
-    command.val.txn_abort.txn = read_txn;
+    command.case_tag = SAP_WIT_COMMON_CORE_STORE_COMMAND_ABORT;
+    command.val.abort.txn = read_txn;
     if (croft_wit_store_runtime_dispatch(runtime, &command, &reply) != 0
             || !wit_store_expect_status_ok(&reply)) {
         croft_wit_store_reply_dispose(&reply);
@@ -150,8 +150,8 @@ int test_wit_store_runtime_roundtrip(void)
     }
     croft_wit_store_reply_dispose(&reply);
 
-    command.case_tag = SAP_WIT_COMMON_CORE_STORE_COMMAND_DB_DROP;
-    command.val.db_drop.db = db;
+    command.case_tag = SAP_WIT_COMMON_CORE_STORE_COMMAND_DROP;
+    command.val.drop.db = db;
     if (croft_wit_store_runtime_dispatch(runtime, &command, &reply) != 0
             || !wit_store_expect_status_ok(&reply)) {
         croft_wit_store_reply_dispose(&reply);
@@ -177,8 +177,8 @@ int test_wit_store_runtime_readonly_put_rejected(void)
         return 1;
     }
 
-    command.case_tag = SAP_WIT_COMMON_CORE_STORE_COMMAND_DB_OPEN;
-    command.val.db_open.page_size = 4096u;
+    command.case_tag = SAP_WIT_COMMON_CORE_STORE_COMMAND_OPEN;
+    command.val.open.page_size = 4096u;
     if (croft_wit_store_runtime_dispatch(runtime, &command, &reply) != 0
             || !wit_store_expect_db_ok(&reply, &db)) {
         croft_wit_store_reply_dispose(&reply);
@@ -187,9 +187,9 @@ int test_wit_store_runtime_readonly_put_rejected(void)
     }
     croft_wit_store_reply_dispose(&reply);
 
-    command.case_tag = SAP_WIT_COMMON_CORE_STORE_COMMAND_TXN_BEGIN;
-    command.val.txn_begin.db = db;
-    command.val.txn_begin.read_only = 1u;
+    command.case_tag = SAP_WIT_COMMON_CORE_STORE_COMMAND_BEGIN;
+    command.val.begin.db = db;
+    command.val.begin.read_only = 1u;
     if (croft_wit_store_runtime_dispatch(runtime, &command, &reply) != 0
             || !wit_store_expect_txn_ok(&reply, &read_txn)) {
         croft_wit_store_reply_dispose(&reply);
@@ -198,12 +198,12 @@ int test_wit_store_runtime_readonly_put_rejected(void)
     }
     croft_wit_store_reply_dispose(&reply);
 
-    command.case_tag = SAP_WIT_COMMON_CORE_STORE_COMMAND_KV_PUT;
-    command.val.kv_put.txn = read_txn;
-    command.val.kv_put.key_data = (const uint8_t*)"k";
-    command.val.kv_put.key_len = 1u;
-    command.val.kv_put.value_data = (const uint8_t*)"v";
-    command.val.kv_put.value_len = 1u;
+    command.case_tag = SAP_WIT_COMMON_CORE_STORE_COMMAND_PUT;
+    command.val.put.txn = read_txn;
+    command.val.put.key_data = (const uint8_t*)"k";
+    command.val.put.key_len = 1u;
+    command.val.put.value_data = (const uint8_t*)"v";
+    command.val.put.value_len = 1u;
     if (croft_wit_store_runtime_dispatch(runtime, &command, &reply) != 0
             || reply.case_tag != SAP_WIT_COMMON_CORE_STORE_REPLY_STATUS
             || reply.val.status.is_v_ok
@@ -216,8 +216,8 @@ int test_wit_store_runtime_readonly_put_rejected(void)
     }
     croft_wit_store_reply_dispose(&reply);
 
-    command.case_tag = SAP_WIT_COMMON_CORE_STORE_COMMAND_TXN_ABORT;
-    command.val.txn_abort.txn = read_txn;
+    command.case_tag = SAP_WIT_COMMON_CORE_STORE_COMMAND_ABORT;
+    command.val.abort.txn = read_txn;
     if (croft_wit_store_runtime_dispatch(runtime, &command, &reply) != 0
             || !wit_store_expect_status_ok(&reply)) {
         croft_wit_store_reply_dispose(&reply);
@@ -226,8 +226,8 @@ int test_wit_store_runtime_readonly_put_rejected(void)
     }
     croft_wit_store_reply_dispose(&reply);
 
-    command.case_tag = SAP_WIT_COMMON_CORE_STORE_COMMAND_DB_DROP;
-    command.val.db_drop.db = db;
+    command.case_tag = SAP_WIT_COMMON_CORE_STORE_COMMAND_DROP;
+    command.val.drop.db = db;
     if (croft_wit_store_runtime_dispatch(runtime, &command, &reply) != 0
             || !wit_store_expect_status_ok(&reply)) {
         croft_wit_store_reply_dispose(&reply);

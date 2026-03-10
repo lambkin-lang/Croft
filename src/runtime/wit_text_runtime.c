@@ -519,10 +519,11 @@ void croft_wit_text_runtime_destroy(croft_wit_text_runtime* runtime)
     free(runtime);
 }
 
-static int32_t croft_wit_text_dispatch_open(croft_wit_text_runtime* runtime,
+static int32_t croft_wit_text_dispatch_open(void* ctx,
                                             const SapWitCommonCoreTextOpen* request,
                                             SapWitCommonCoreTextReply* reply_out)
 {
+    croft_wit_text_runtime* runtime = (croft_wit_text_runtime*)ctx;
     SapTxnCtx* txn;
     Text* text;
     SapWitCommonCoreTextResource handle;
@@ -570,10 +571,11 @@ static int32_t croft_wit_text_dispatch_open(croft_wit_text_runtime* runtime,
     return ERR_OK;
 }
 
-static int32_t croft_wit_text_dispatch_clone(croft_wit_text_runtime* runtime,
+static int32_t croft_wit_text_dispatch_clone(void* ctx,
                                              const SapWitCommonCoreTextClone* request,
                                              SapWitCommonCoreTextReply* reply_out)
 {
+    croft_wit_text_runtime* runtime = (croft_wit_text_runtime*)ctx;
     Text* source;
     Text* clone;
     SapWitCommonCoreTextResource handle;
@@ -606,10 +608,11 @@ static int32_t croft_wit_text_dispatch_clone(croft_wit_text_runtime* runtime,
     return ERR_OK;
 }
 
-static int32_t croft_wit_text_dispatch_insert(croft_wit_text_runtime* runtime,
+static int32_t croft_wit_text_dispatch_insert(void* ctx,
                                               const SapWitCommonCoreTextInsert* request,
                                               SapWitCommonCoreTextReply* reply_out)
 {
+    croft_wit_text_runtime* runtime = (croft_wit_text_runtime*)ctx;
     SapTxnCtx* txn;
     Text* text;
     int32_t rc;
@@ -648,10 +651,11 @@ static int32_t croft_wit_text_dispatch_insert(croft_wit_text_runtime* runtime,
     return ERR_OK;
 }
 
-static int32_t croft_wit_text_dispatch_delete(croft_wit_text_runtime* runtime,
+static int32_t croft_wit_text_dispatch_delete(void* ctx,
                                               const SapWitCommonCoreTextDelete* request,
                                               SapWitCommonCoreTextReply* reply_out)
 {
+    croft_wit_text_runtime* runtime = (croft_wit_text_runtime*)ctx;
     SapTxnCtx* txn;
     Text* text;
     int32_t rc;
@@ -690,10 +694,11 @@ static int32_t croft_wit_text_dispatch_delete(croft_wit_text_runtime* runtime,
     return ERR_OK;
 }
 
-static int32_t croft_wit_text_dispatch_export(croft_wit_text_runtime* runtime,
+static int32_t croft_wit_text_dispatch_export(void* ctx,
                                               const SapWitCommonCoreTextExport* request,
                                               SapWitCommonCoreTextReply* reply_out)
 {
+    croft_wit_text_runtime* runtime = (croft_wit_text_runtime*)ctx;
     Text* text;
     size_t utf8_len = 0u;
     size_t written = 0u;
@@ -734,10 +739,11 @@ static int32_t croft_wit_text_dispatch_export(croft_wit_text_runtime* runtime,
     return ERR_OK;
 }
 
-static int32_t croft_wit_text_dispatch_drop(croft_wit_text_runtime* runtime,
+static int32_t croft_wit_text_dispatch_drop(void* ctx,
                                             const SapWitCommonCoreTextDrop* request,
                                             SapWitCommonCoreTextReply* reply_out)
 {
+    croft_wit_text_runtime* runtime = (croft_wit_text_runtime*)ctx;
     int32_t rc;
 
     if (!runtime || !request || !reply_out) {
@@ -758,28 +764,25 @@ static int32_t croft_wit_text_dispatch_drop(croft_wit_text_runtime* runtime,
     return ERR_OK;
 }
 
+static const SapWitCommonCoreTextDispatchOps g_croft_wit_text_dispatch_ops = {
+    .open = croft_wit_text_dispatch_open,
+    .clone = croft_wit_text_dispatch_clone,
+    .insert = croft_wit_text_dispatch_insert,
+    .delete = croft_wit_text_dispatch_delete,
+    .export = croft_wit_text_dispatch_export,
+    .drop = croft_wit_text_dispatch_drop,
+};
+
 int32_t croft_wit_text_runtime_dispatch(croft_wit_text_runtime* runtime,
                                         const SapWitCommonCoreTextCommand* command,
                                         SapWitCommonCoreTextReply* reply_out)
 {
+    int32_t rc;
+
     if (!runtime || !command || !reply_out) {
         return ERR_INVALID;
     }
 
-    switch (command->case_tag) {
-        case SAP_WIT_COMMON_CORE_TEXT_COMMAND_OPEN:
-            return croft_wit_text_dispatch_open(runtime, &command->val.open, reply_out);
-        case SAP_WIT_COMMON_CORE_TEXT_COMMAND_CLONE:
-            return croft_wit_text_dispatch_clone(runtime, &command->val.clone, reply_out);
-        case SAP_WIT_COMMON_CORE_TEXT_COMMAND_INSERT:
-            return croft_wit_text_dispatch_insert(runtime, &command->val.insert, reply_out);
-        case SAP_WIT_COMMON_CORE_TEXT_COMMAND_DELETE:
-            return croft_wit_text_dispatch_delete(runtime, &command->val.delete, reply_out);
-        case SAP_WIT_COMMON_CORE_TEXT_COMMAND_EXPORT:
-            return croft_wit_text_dispatch_export(runtime, &command->val.export, reply_out);
-        case SAP_WIT_COMMON_CORE_TEXT_COMMAND_DROP:
-            return croft_wit_text_dispatch_drop(runtime, &command->val.drop, reply_out);
-        default:
-            return ERR_INVALID;
-    }
+    rc = sap_wit_dispatch_common_core_text(runtime, &g_croft_wit_text_dispatch_ops, command, reply_out);
+    return rc == -1 ? ERR_INVALID : rc;
 }

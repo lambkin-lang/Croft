@@ -155,45 +155,87 @@ void croft_wit_host_popup_menu_runtime_destroy(croft_wit_host_popup_menu_runtime
     free(runtime);
 }
 
+static int32_t croft_wit_host_popup_menu_dispatch_begin_popup(void* ctx,
+                                                              SapWitHostPopupMenuReply* reply_out)
+{
+    croft_wit_host_popup_menu_runtime* runtime = (croft_wit_host_popup_menu_runtime*)ctx;
+
+    if (!runtime || !reply_out) {
+        return -1;
+    }
+    croft_wit_host_popup_menu_reset(runtime);
+    croft_wit_host_popup_menu_reply_status_ok(reply_out);
+    return 0;
+}
+
+static int32_t croft_wit_host_popup_menu_dispatch_add_item(void* ctx,
+                                                           const SapWitHostPopupMenuPopupItem* item,
+                                                           SapWitHostPopupMenuReply* reply_out)
+{
+    croft_wit_host_popup_menu_runtime* runtime = (croft_wit_host_popup_menu_runtime*)ctx;
+
+    if (!runtime || !item || !reply_out) {
+        return -1;
+    }
+    if (!croft_wit_host_popup_menu_add_item(runtime, item)) {
+        croft_wit_host_popup_menu_reply_status_err(reply_out, "internal");
+        return 0;
+    }
+    croft_wit_host_popup_menu_reply_status_ok(reply_out);
+    return 0;
+}
+
+static int32_t croft_wit_host_popup_menu_dispatch_show_at(void* ctx,
+                                                          const SapWitHostPopupMenuShowAt* at,
+                                                          SapWitHostPopupMenuReply* reply_out)
+{
+    croft_wit_host_popup_menu_runtime* runtime = (croft_wit_host_popup_menu_runtime*)ctx;
+    int32_t action_id = 0;
+    host_popup_menu_result result;
+
+    if (!runtime || !at || !reply_out) {
+        return -1;
+    }
+
+    result = host_popup_menu_show(runtime->items,
+                                  runtime->item_count,
+                                  (float)at->x_milli / 1000.0f,
+                                  (float)at->y_milli / 1000.0f,
+                                  &action_id);
+    if (result == HOST_POPUP_MENU_RESULT_OK) {
+        croft_wit_host_popup_menu_reply_action_ok(reply_out, action_id);
+    } else if (result == HOST_POPUP_MENU_RESULT_EMPTY) {
+        croft_wit_host_popup_menu_reply_action_empty(reply_out);
+    } else {
+        croft_wit_host_popup_menu_reply_action_err(reply_out,
+                                                   croft_wit_host_popup_menu_map_result(result));
+    }
+    return 0;
+}
+
+static const SapWitHostPopupMenuDispatchOps g_croft_wit_host_popup_menu_dispatch_ops = {
+    .begin_popup = croft_wit_host_popup_menu_dispatch_begin_popup,
+    .add_item = croft_wit_host_popup_menu_dispatch_add_item,
+    .show_at = croft_wit_host_popup_menu_dispatch_show_at,
+};
+
 int32_t croft_wit_host_popup_menu_runtime_dispatch(croft_wit_host_popup_menu_runtime* runtime,
                                                    const SapWitHostPopupMenuCommand* command,
                                                    SapWitHostPopupMenuReply* reply_out)
 {
+    int32_t rc;
+
     if (!runtime || !command || !reply_out) {
         return -1;
     }
 
-    switch (command->case_tag) {
-        case SAP_WIT_HOST_POPUP_MENU_COMMAND_BEGIN_POPUP:
-            croft_wit_host_popup_menu_reset(runtime);
-            croft_wit_host_popup_menu_reply_status_ok(reply_out);
-            return 0;
-        case SAP_WIT_HOST_POPUP_MENU_COMMAND_ADD_ITEM:
-            if (!croft_wit_host_popup_menu_add_item(runtime, &command->val.add_item)) {
-                croft_wit_host_popup_menu_reply_status_err(reply_out, "internal");
-                return 0;
-            }
-            croft_wit_host_popup_menu_reply_status_ok(reply_out);
-            return 0;
-        case SAP_WIT_HOST_POPUP_MENU_COMMAND_SHOW_AT: {
-            int32_t action_id = 0;
-            host_popup_menu_result result = host_popup_menu_show(runtime->items,
-                                                                 runtime->item_count,
-                                                                 (float)command->val.show_at.x_milli / 1000.0f,
-                                                                 (float)command->val.show_at.y_milli / 1000.0f,
-                                                                 &action_id);
-            if (result == HOST_POPUP_MENU_RESULT_OK) {
-                croft_wit_host_popup_menu_reply_action_ok(reply_out, action_id);
-            } else if (result == HOST_POPUP_MENU_RESULT_EMPTY) {
-                croft_wit_host_popup_menu_reply_action_empty(reply_out);
-            } else {
-                croft_wit_host_popup_menu_reply_action_err(reply_out,
-                                                           croft_wit_host_popup_menu_map_result(result));
-            }
-            return 0;
-        }
-        default:
-            croft_wit_host_popup_menu_reply_status_err(reply_out, "internal");
-            return 0;
+    rc = sap_wit_dispatch_host_popup_menu(runtime,
+                                          &g_croft_wit_host_popup_menu_dispatch_ops,
+                                          command,
+                                          reply_out);
+    if (rc == -1) {
+        croft_wit_host_popup_menu_reply_status_err(reply_out, "internal");
+        return 0;
     }
+    return rc;
 }

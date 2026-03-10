@@ -14,63 +14,25 @@ interface types {
     drop: func() -> result<_, string>;
   }
 
-  resource db;
-  resource txn;
-  resource mailbox;
-
   type status = result<_, string>;
-
-  record db-open {
-    page-size: u32,
-  }
-
-  record db-drop {
-    db: db,
-  }
-
-  record txn-begin {
-    db: db,
-    read-only: bool,
-  }
-
-  record txn-commit {
-    txn: txn,
-  }
-
-  record txn-abort {
-    txn: txn,
-  }
-
-  record kv-put {
-    txn: txn,
-    key: bytes,
-    value: bytes,
-  }
-
-  record kv-get {
-    txn: txn,
-    key: bytes,
-  }
 
   type db-op-result = result<db, string>;
   type txn-op-result = result<txn, string>;
   type kv-get-result = result<option<bytes>, string>;
 
-  variant store-command {
-    db-open(db-open),
-    db-drop(db-drop),
-    txn-begin(txn-begin),
-    txn-commit(txn-commit),
-    txn-abort(txn-abort),
-    kv-put(kv-put),
-    kv-get(kv-get),
+  @croft-lower-group(store)
+  resource db {
+    open: static func(page-size: u32) -> db-op-result;
+    drop: func() -> status;
+    begin: func(read-only: bool) -> txn-op-result;
   }
 
-  variant store-reply {
-    db(db-op-result),
-    txn(txn-op-result),
-    status(status),
-    get(kv-get-result),
+  @croft-lower-group(store)
+  resource txn {
+    commit: func() -> status;
+    abort: func() -> status;
+    put: func(key: bytes, value: bytes) -> status;
+    get: func(key: bytes) -> kv-get-result;
   }
 
   type mailbox-recv-result = result<option<bytes>, string>;

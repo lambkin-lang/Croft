@@ -237,10 +237,11 @@ void* croft_wit_host_window_runtime_native_window(croft_wit_host_window_runtime*
     return host_ui_get_native_window();
 }
 
-static int32_t croft_wit_host_window_dispatch_open(croft_wit_host_window_runtime* runtime,
+static int32_t croft_wit_host_window_dispatch_open(void* ctx,
                                                    const SapWitHostWindowOpen* request,
                                                    SapWitHostWindowReply* reply_out)
 {
+    croft_wit_host_window_runtime* runtime = (croft_wit_host_window_runtime*)ctx;
     char* title = NULL;
 
     if (!runtime || !request || !reply_out) {
@@ -281,10 +282,11 @@ static int32_t croft_wit_host_window_dispatch_open(croft_wit_host_window_runtime
     return 0;
 }
 
-static int32_t croft_wit_host_window_dispatch_close(croft_wit_host_window_runtime* runtime,
+static int32_t croft_wit_host_window_dispatch_close(void* ctx,
                                                     const SapWitHostWindowClose* request,
                                                     SapWitHostWindowReply* reply_out)
 {
+    croft_wit_host_window_runtime* runtime = (croft_wit_host_window_runtime*)ctx;
     if (!croft_wit_host_window_valid(runtime, request ? request->window : 0u)) {
         croft_wit_host_window_reply_status_err(reply_out, "invalid-handle");
         return 0;
@@ -303,10 +305,11 @@ static int32_t croft_wit_host_window_dispatch_close(croft_wit_host_window_runtim
     return 0;
 }
 
-static int32_t croft_wit_host_window_dispatch_poll(croft_wit_host_window_runtime* runtime,
+static int32_t croft_wit_host_window_dispatch_poll(void* ctx,
                                                    const SapWitHostWindowPoll* request,
                                                    SapWitHostWindowReply* reply_out)
 {
+    croft_wit_host_window_runtime* runtime = (croft_wit_host_window_runtime*)ctx;
     if (!croft_wit_host_window_valid(runtime, request ? request->window : 0u)) {
         croft_wit_host_window_reply_status_err(reply_out, "invalid-handle");
         return 0;
@@ -317,10 +320,11 @@ static int32_t croft_wit_host_window_dispatch_poll(croft_wit_host_window_runtime
     return 0;
 }
 
-static int32_t croft_wit_host_window_dispatch_next_event(croft_wit_host_window_runtime* runtime,
+static int32_t croft_wit_host_window_dispatch_next_event(void* ctx,
                                                          const SapWitHostWindowNextEvent* request,
                                                          SapWitHostWindowReply* reply_out)
 {
+    croft_wit_host_window_runtime* runtime = (croft_wit_host_window_runtime*)ctx;
     SapWitHostWindowEvent event;
 
     if (!croft_wit_host_window_valid(runtime, request ? request->window : 0u)) {
@@ -339,10 +343,11 @@ static int32_t croft_wit_host_window_dispatch_next_event(croft_wit_host_window_r
     return 0;
 }
 
-static int32_t croft_wit_host_window_dispatch_should_close(croft_wit_host_window_runtime* runtime,
+static int32_t croft_wit_host_window_dispatch_should_close(void* ctx,
                                                            const SapWitHostWindowShouldClose* request,
                                                            SapWitHostWindowReply* reply_out)
 {
+    croft_wit_host_window_runtime* runtime = (croft_wit_host_window_runtime*)ctx;
     if (!croft_wit_host_window_valid(runtime, request ? request->window : 0u)) {
         croft_wit_host_window_reply_bool_err(reply_out, "invalid-handle");
         return 0;
@@ -353,10 +358,11 @@ static int32_t croft_wit_host_window_dispatch_should_close(croft_wit_host_window
 }
 
 static int32_t croft_wit_host_window_dispatch_framebuffer_size(
-    croft_wit_host_window_runtime* runtime,
+    void* ctx,
     const SapWitHostWindowFramebufferSize* request,
     SapWitHostWindowReply* reply_out)
 {
+    croft_wit_host_window_runtime* runtime = (croft_wit_host_window_runtime*)ctx;
     uint32_t width = 0u;
     uint32_t height = 0u;
 
@@ -370,31 +376,28 @@ static int32_t croft_wit_host_window_dispatch_framebuffer_size(
     return 0;
 }
 
+static const SapWitHostWindowDispatchOps g_croft_wit_host_window_dispatch_ops = {
+    .open = croft_wit_host_window_dispatch_open,
+    .close = croft_wit_host_window_dispatch_close,
+    .poll = croft_wit_host_window_dispatch_poll,
+    .next_event = croft_wit_host_window_dispatch_next_event,
+    .should_close = croft_wit_host_window_dispatch_should_close,
+    .framebuffer_size = croft_wit_host_window_dispatch_framebuffer_size,
+};
+
 int32_t croft_wit_host_window_runtime_dispatch(croft_wit_host_window_runtime* runtime,
                                                const SapWitHostWindowCommand* command,
                                                SapWitHostWindowReply* reply_out)
 {
+    int32_t rc;
+
     if (!runtime || !command || !reply_out) {
         return -1;
     }
 
-    switch (command->case_tag) {
-        case SAP_WIT_HOST_WINDOW_COMMAND_OPEN:
-            return croft_wit_host_window_dispatch_open(runtime, &command->val.open, reply_out);
-        case SAP_WIT_HOST_WINDOW_COMMAND_CLOSE:
-            return croft_wit_host_window_dispatch_close(runtime, &command->val.close, reply_out);
-        case SAP_WIT_HOST_WINDOW_COMMAND_POLL:
-            return croft_wit_host_window_dispatch_poll(runtime, &command->val.poll, reply_out);
-        case SAP_WIT_HOST_WINDOW_COMMAND_NEXT_EVENT:
-            return croft_wit_host_window_dispatch_next_event(runtime, &command->val.next_event,
-                                                             reply_out);
-        case SAP_WIT_HOST_WINDOW_COMMAND_SHOULD_CLOSE:
-            return croft_wit_host_window_dispatch_should_close(
-                runtime, &command->val.should_close, reply_out);
-        case SAP_WIT_HOST_WINDOW_COMMAND_FRAMEBUFFER_SIZE:
-            return croft_wit_host_window_dispatch_framebuffer_size(
-                runtime, &command->val.framebuffer_size, reply_out);
-        default:
-            return -1;
-    }
+    rc = sap_wit_dispatch_host_window(runtime,
+                                      &g_croft_wit_host_window_dispatch_ops,
+                                      command,
+                                      reply_out);
+    return rc == -1 ? -1 : rc;
 }

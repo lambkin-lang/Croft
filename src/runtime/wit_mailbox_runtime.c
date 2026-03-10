@@ -247,10 +247,11 @@ void croft_wit_mailbox_runtime_destroy(croft_wit_mailbox_runtime* runtime)
     free(runtime);
 }
 
-static int32_t croft_wit_mailbox_dispatch_open(croft_wit_mailbox_runtime* runtime,
+static int32_t croft_wit_mailbox_dispatch_open(void* ctx,
                                                const SapWitCommonCoreMailboxOpen* request,
                                                SapWitCommonCoreMailboxReply* reply_out)
 {
+    croft_wit_mailbox_runtime* runtime = (croft_wit_mailbox_runtime*)ctx;
     SapWitCommonCoreMailboxResource handle = SAP_WIT_COMMON_CORE_MAILBOX_RESOURCE_INVALID;
     int32_t rc;
 
@@ -268,10 +269,11 @@ static int32_t croft_wit_mailbox_dispatch_open(croft_wit_mailbox_runtime* runtim
     return ERR_OK;
 }
 
-static int32_t croft_wit_mailbox_dispatch_drop(croft_wit_mailbox_runtime* runtime,
+static int32_t croft_wit_mailbox_dispatch_drop(void* ctx,
                                                const SapWitCommonCoreMailboxDrop* request,
                                                SapWitCommonCoreMailboxReply* reply_out)
 {
+    croft_wit_mailbox_runtime* runtime = (croft_wit_mailbox_runtime*)ctx;
     croft_wit_mailbox_slot* slot;
 
     if (!runtime || !request || !reply_out) {
@@ -298,10 +300,11 @@ static int32_t croft_wit_mailbox_dispatch_drop(croft_wit_mailbox_runtime* runtim
  * replace this with shared transport, worker hops, or host queues, but the
  * common-core model keeps ownership explicit and local.
  */
-static int32_t croft_wit_mailbox_dispatch_send(croft_wit_mailbox_runtime* runtime,
+static int32_t croft_wit_mailbox_dispatch_send(void* ctx,
                                                const SapWitCommonCoreMailboxSend* request,
                                                SapWitCommonCoreMailboxReply* reply_out)
 {
+    croft_wit_mailbox_runtime* runtime = (croft_wit_mailbox_runtime*)ctx;
     croft_wit_mailbox_slot* slot;
     croft_wit_mailbox_message* message;
     size_t alloc_len;
@@ -352,10 +355,11 @@ static int32_t croft_wit_mailbox_dispatch_send(croft_wit_mailbox_runtime* runtim
     return ERR_OK;
 }
 
-static int32_t croft_wit_mailbox_dispatch_recv(croft_wit_mailbox_runtime* runtime,
+static int32_t croft_wit_mailbox_dispatch_recv(void* ctx,
                                                const SapWitCommonCoreMailboxRecv* request,
                                                SapWitCommonCoreMailboxReply* reply_out)
 {
+    croft_wit_mailbox_runtime* runtime = (croft_wit_mailbox_runtime*)ctx;
     croft_wit_mailbox_slot* slot;
     croft_wit_mailbox_message* message;
 
@@ -385,24 +389,26 @@ static int32_t croft_wit_mailbox_dispatch_recv(croft_wit_mailbox_runtime* runtim
     return ERR_OK;
 }
 
+static const SapWitCommonCoreMailboxDispatchOps g_croft_wit_mailbox_dispatch_ops = {
+    .open = croft_wit_mailbox_dispatch_open,
+    .send = croft_wit_mailbox_dispatch_send,
+    .recv = croft_wit_mailbox_dispatch_recv,
+    .drop = croft_wit_mailbox_dispatch_drop,
+};
+
 int32_t croft_wit_mailbox_runtime_dispatch(croft_wit_mailbox_runtime* runtime,
                                            const SapWitCommonCoreMailboxCommand* command,
                                            SapWitCommonCoreMailboxReply* reply_out)
 {
+    int32_t rc;
+
     if (!runtime || !command || !reply_out) {
         return ERR_INVALID;
     }
 
-    switch (command->case_tag) {
-        case SAP_WIT_COMMON_CORE_MAILBOX_COMMAND_OPEN:
-            return croft_wit_mailbox_dispatch_open(runtime, &command->val.open, reply_out);
-        case SAP_WIT_COMMON_CORE_MAILBOX_COMMAND_DROP:
-            return croft_wit_mailbox_dispatch_drop(runtime, &command->val.drop, reply_out);
-        case SAP_WIT_COMMON_CORE_MAILBOX_COMMAND_SEND:
-            return croft_wit_mailbox_dispatch_send(runtime, &command->val.send, reply_out);
-        case SAP_WIT_COMMON_CORE_MAILBOX_COMMAND_RECV:
-            return croft_wit_mailbox_dispatch_recv(runtime, &command->val.recv, reply_out);
-        default:
-            return ERR_INVALID;
-    }
+    rc = sap_wit_dispatch_common_core_mailbox(runtime,
+                                              &g_croft_wit_mailbox_dispatch_ops,
+                                              command,
+                                              reply_out);
+    return rc == -1 ? ERR_INVALID : rc;
 }

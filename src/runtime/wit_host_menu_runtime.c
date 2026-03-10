@@ -157,38 +157,73 @@ void croft_wit_host_menu_runtime_destroy(croft_wit_host_menu_runtime* runtime)
     free(runtime);
 }
 
+static int32_t croft_wit_host_menu_dispatch_begin_update(void* ctx, SapWitHostMenuReply* reply_out)
+{
+    (void)ctx;
+    croft_wit_host_menu_apply_begin();
+    croft_wit_host_menu_reply_status_ok(reply_out);
+    return 0;
+}
+
+static int32_t croft_wit_host_menu_dispatch_add_item(void* ctx,
+                                                     const SapWitHostMenuItem* item,
+                                                     SapWitHostMenuReply* reply_out)
+{
+    (void)ctx;
+    if (!item || !reply_out) {
+        return -1;
+    }
+    croft_wit_host_menu_apply_item(item);
+    croft_wit_host_menu_reply_status_ok(reply_out);
+    return 0;
+}
+
+static int32_t croft_wit_host_menu_dispatch_commit_update(void* ctx, SapWitHostMenuReply* reply_out)
+{
+    (void)ctx;
+    croft_wit_host_menu_apply_commit();
+    croft_wit_host_menu_reply_status_ok(reply_out);
+    return 0;
+}
+
+static int32_t croft_wit_host_menu_dispatch_next_action(void* ctx, SapWitHostMenuReply* reply_out)
+{
+    croft_wit_host_menu_runtime* runtime = (croft_wit_host_menu_runtime*)ctx;
+
+    if (!runtime || !reply_out) {
+        return -1;
+    }
+    if (runtime->action_count == 0u) {
+        croft_wit_host_menu_reply_action_empty(reply_out);
+        return 0;
+    }
+    croft_wit_host_menu_reply_action_ok(reply_out, runtime->actions[runtime->action_head]);
+    runtime->action_head = (runtime->action_head + 1u) % CROFT_WIT_HOST_MENU_ACTION_CAP;
+    runtime->action_count--;
+    return 0;
+}
+
+static const SapWitHostMenuDispatchOps g_croft_wit_host_menu_dispatch_ops = {
+    .begin_update = croft_wit_host_menu_dispatch_begin_update,
+    .add_item = croft_wit_host_menu_dispatch_add_item,
+    .commit_update = croft_wit_host_menu_dispatch_commit_update,
+    .next_action = croft_wit_host_menu_dispatch_next_action,
+};
+
 int32_t croft_wit_host_menu_runtime_dispatch(croft_wit_host_menu_runtime* runtime,
                                              const SapWitHostMenuCommand* command,
                                              SapWitHostMenuReply* reply_out)
 {
+    int32_t rc;
+
     if (!runtime || !command || !reply_out) {
         return -1;
     }
 
-    switch (command->case_tag) {
-        case SAP_WIT_HOST_MENU_COMMAND_BEGIN_UPDATE:
-            croft_wit_host_menu_apply_begin();
-            croft_wit_host_menu_reply_status_ok(reply_out);
-            return 0;
-        case SAP_WIT_HOST_MENU_COMMAND_ADD_ITEM:
-            croft_wit_host_menu_apply_item(&command->val.add_item);
-            croft_wit_host_menu_reply_status_ok(reply_out);
-            return 0;
-        case SAP_WIT_HOST_MENU_COMMAND_COMMIT_UPDATE:
-            croft_wit_host_menu_apply_commit();
-            croft_wit_host_menu_reply_status_ok(reply_out);
-            return 0;
-        case SAP_WIT_HOST_MENU_COMMAND_NEXT_ACTION:
-            if (runtime->action_count == 0u) {
-                croft_wit_host_menu_reply_action_empty(reply_out);
-                return 0;
-            }
-            croft_wit_host_menu_reply_action_ok(reply_out, runtime->actions[runtime->action_head]);
-            runtime->action_head = (runtime->action_head + 1u) % CROFT_WIT_HOST_MENU_ACTION_CAP;
-            runtime->action_count--;
-            return 0;
-        default:
-            croft_wit_host_menu_reply_status_err(reply_out, "internal");
-            return 0;
+    rc = sap_wit_dispatch_host_menu(runtime, &g_croft_wit_host_menu_dispatch_ops, command, reply_out);
+    if (rc == -1) {
+        croft_wit_host_menu_reply_status_err(reply_out, "internal");
+        return 0;
     }
+    return rc;
 }

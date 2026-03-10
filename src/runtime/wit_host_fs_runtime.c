@@ -233,10 +233,11 @@ static uint32_t croft_wit_host_fs_flags_from_open(const SapWitHostFsFileOpen* re
     return flags;
 }
 
-static int32_t croft_wit_host_fs_dispatch_open(croft_wit_host_fs_runtime* runtime,
+static int32_t croft_wit_host_fs_dispatch_open(void* ctx,
                                                const SapWitHostFsFileOpen* request,
                                                SapWitHostFsReply* reply_out)
 {
+    croft_wit_host_fs_runtime* runtime = (croft_wit_host_fs_runtime*)ctx;
     uint64_t fd = 0u;
     SapWitHostFsFileResource handle = SAP_WIT_HOST_FS_FILE_RESOURCE_INVALID;
     int32_t rc;
@@ -265,10 +266,11 @@ static int32_t croft_wit_host_fs_dispatch_open(croft_wit_host_fs_runtime* runtim
     return HOST_FS_OK;
 }
 
-static int32_t croft_wit_host_fs_dispatch_close(croft_wit_host_fs_runtime* runtime,
+static int32_t croft_wit_host_fs_dispatch_close(void* ctx,
                                                 const SapWitHostFsFileClose* request,
                                                 SapWitHostFsReply* reply_out)
 {
+    croft_wit_host_fs_runtime* runtime = (croft_wit_host_fs_runtime*)ctx;
     croft_wit_host_file_slot* slot;
     int32_t rc;
 
@@ -299,10 +301,11 @@ static int32_t croft_wit_host_fs_dispatch_close(croft_wit_host_fs_runtime* runti
  * `host_fs` substrate does not expose seek/reset, so repeated read-all on the
  * same handle is not yet modeled as a stable capability.
  */
-static int32_t croft_wit_host_fs_dispatch_read_all(croft_wit_host_fs_runtime* runtime,
+static int32_t croft_wit_host_fs_dispatch_read_all(void* ctx,
                                                    const SapWitHostFsFileReadAll* request,
                                                    SapWitHostFsReply* reply_out)
 {
+    croft_wit_host_fs_runtime* runtime = (croft_wit_host_fs_runtime*)ctx;
     croft_wit_host_file_slot* slot;
     uint64_t file_size = 0u;
     uint8_t* buffer = NULL;
@@ -358,22 +361,22 @@ static int32_t croft_wit_host_fs_dispatch_read_all(croft_wit_host_fs_runtime* ru
     return HOST_FS_OK;
 }
 
+static const SapWitHostFsDispatchOps g_croft_wit_host_fs_dispatch_ops = {
+    .open = croft_wit_host_fs_dispatch_open,
+    .close = croft_wit_host_fs_dispatch_close,
+    .read_all = croft_wit_host_fs_dispatch_read_all,
+};
+
 int32_t croft_wit_host_fs_runtime_dispatch(croft_wit_host_fs_runtime* runtime,
                                            const SapWitHostFsCommand* command,
                                            SapWitHostFsReply* reply_out)
 {
+    int32_t rc;
+
     if (!runtime || !command || !reply_out) {
         return HOST_FS_ERR_INVALID;
     }
 
-    switch (command->case_tag) {
-        case SAP_WIT_HOST_FS_COMMAND_OPEN:
-            return croft_wit_host_fs_dispatch_open(runtime, &command->val.open, reply_out);
-        case SAP_WIT_HOST_FS_COMMAND_CLOSE:
-            return croft_wit_host_fs_dispatch_close(runtime, &command->val.close, reply_out);
-        case SAP_WIT_HOST_FS_COMMAND_READ_ALL:
-            return croft_wit_host_fs_dispatch_read_all(runtime, &command->val.read_all, reply_out);
-        default:
-            return HOST_FS_ERR_INVALID;
-    }
+    rc = sap_wit_dispatch_host_fs(runtime, &g_croft_wit_host_fs_dispatch_ops, command, reply_out);
+    return rc == -1 ? HOST_FS_ERR_INVALID : rc;
 }

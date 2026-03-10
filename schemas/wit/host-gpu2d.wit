@@ -3,8 +3,6 @@ package lambkin:host-gpu2d@0.1.0;
 interface types {
   type utf8 = list<u8>;
 
-  resource surface;
-
   flags capabilities {
     text,
     transform,
@@ -12,88 +10,28 @@ interface types {
     present,
   }
 
-  record capabilities-query {}
-
-  record open {}
-
-  record surface-op {
-    surface: surface,
-  }
-
-  record begin-frame {
-    surface: surface,
-    width: u32,
-    height: u32,
-  }
-
-  record clear {
-    surface: surface,
-    color-rgba: u32,
-  }
-
-  record draw-rect {
-    surface: surface,
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
-    color-rgba: u32,
-  }
-
-  record draw-text {
-    surface: surface,
-    x: f32,
-    y: f32,
-    utf8: utf8,
-    font-size: f32,
-    color-rgba: u32,
-  }
-
-  record measure-text {
-    surface: surface,
-    utf8: utf8,
-    font-size: f32,
-  }
-
-  record translate {
-    surface: surface,
-    dx: f32,
-    dy: f32,
-  }
-
-  record scale {
-    surface: surface,
-    sx: f32,
-    sy: f32,
-  }
-
-  record clip-rect {
-    surface: surface,
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
-  }
-
   type surface-result = result<surface, string>;
   type status = result<_, string>;
   type capabilities-result = result<capabilities, string>;
   type measure-result = result<f32, string>;
 
-  capabilities: func(query: capabilities-query) -> capabilities-result;
-  open: func(request: open) -> surface-result;
-  drop: func(op: surface-op) -> status;
-  begin-frame: func(request: begin-frame) -> status;
-  clear: func(request: clear) -> status;
-  draw-rect: func(request: draw-rect) -> status;
-  draw-text: func(request: draw-text) -> status;
-  measure-text: func(request: measure-text) -> measure-result;
-  save: func(op: surface-op) -> status;
-  restore: func(op: surface-op) -> status;
-  translate: func(request: translate) -> status;
-  scale: func(request: scale) -> status;
-  clip-rect: func(request: clip-rect) -> status;
-  end-frame: func(op: surface-op) -> status;
+  @croft-lower-group(command)
+  resource surface {
+    capabilities: static func() -> capabilities-result;
+    open: static func() -> surface-result;
+    drop: func() -> status;
+    begin-frame: func(width: u32, height: u32) -> status;
+    clear: func(color-rgba: u32) -> status;
+    draw-rect: func(x: f32, y: f32, w: f32, h: f32, color-rgba: u32) -> status;
+    draw-text: func(x: f32, y: f32, utf8: utf8, font-size: f32, color-rgba: u32) -> status;
+    measure-text: func(utf8: utf8, font-size: f32) -> measure-result;
+    save: func() -> status;
+    restore: func() -> status;
+    translate: func(dx: f32, dy: f32) -> status;
+    scale: func(sx: f32, sy: f32) -> status;
+    clip-rect: func(x: f32, y: f32, w: f32, h: f32) -> status;
+    end-frame: func() -> status;
+  }
 }
 
 world host-gpu2d {

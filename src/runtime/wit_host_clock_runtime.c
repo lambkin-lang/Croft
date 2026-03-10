@@ -32,19 +32,31 @@ void croft_wit_host_clock_runtime_destroy(croft_wit_host_clock_runtime* runtime)
     free(runtime);
 }
 
+static int32_t croft_wit_host_clock_dispatch_monotonic_now(void* ctx,
+                                                           SapWitHostClockReply* reply_out)
+{
+    (void)ctx;
+    croft_wit_host_clock_reply_now_ok(reply_out, host_time_millis());
+    return 0;
+}
+
+static const SapWitHostClockDispatchOps g_croft_wit_host_clock_dispatch_ops = {
+    .monotonic_now = croft_wit_host_clock_dispatch_monotonic_now,
+};
+
 int32_t croft_wit_host_clock_runtime_dispatch(croft_wit_host_clock_runtime* runtime,
                                               const SapWitHostClockCommand* command,
                                               SapWitHostClockReply* reply_out)
 {
+    int32_t rc;
+
     if (!runtime || !command || !reply_out) {
         return -1;
     }
 
-    switch (command->case_tag) {
-        case SAP_WIT_HOST_CLOCK_COMMAND_MONOTONIC_NOW:
-            croft_wit_host_clock_reply_now_ok(reply_out, host_time_millis());
-            return 0;
-        default:
-            return -1;
-    }
+    rc = sap_wit_dispatch_host_clock(runtime,
+                                     &g_croft_wit_host_clock_dispatch_ops,
+                                     command,
+                                     reply_out);
+    return rc == -1 ? -1 : rc;
 }
