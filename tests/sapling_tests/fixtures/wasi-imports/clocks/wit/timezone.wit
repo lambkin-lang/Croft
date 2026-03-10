@@ -1,0 +1,13 @@
+package wasi:clocks@0.2.9;
+
+interface timezone {
+  use wall-clock.{datetime};
+
+  record timezone-display {
+    utc-offset: s32,
+    name: string,
+    in-daylight-saving-time: bool,
+  }
+
+  display: func(when: datetime) -> timezone-display;
+}

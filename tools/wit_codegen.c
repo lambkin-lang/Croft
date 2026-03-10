@@ -24,8 +24,11 @@
 #define MAX_NAME       128
 #define MAX_PACKAGE    128
 #define MAX_TRACE      512
-#define MAX_TYPE_NODES 512
-#define MAX_PATH_TEXT  1024
+#define MAX_TYPE_NODES    512
+#define MAX_PATH_TEXT     1024
+#define MAX_SYMBOL        384
+#define MAX_USE_BINDINGS  256
+#define MAX_LOADED_FILES  128
 
 /* ------------------------------------------------------------------ */
 /* Type expression AST                                                */
@@ -51,6 +54,13 @@ static WitTypeExpr g_type_pool[MAX_TYPE_NODES];
 static int         g_type_pool_count = 0;
 
 typedef struct WitRegistry WitRegistry;
+static int wit_symbol_has_scope(const char *name);
+static void wit_symbol_display_name(const WitRegistry *reg,
+                                    const char *scope_package_full,
+                                    const char *scope_interface_name,
+                                    const char *symbol_name,
+                                    char *out,
+                                    int n);
 
 static int type_alloc(void)
 {
@@ -103,6 +113,7 @@ static int type_to_str(int idx, char *buf, int bufsize)
 }
 
 static int type_to_display_str(const WitRegistry *reg,
+                               const char *scope_package_full,
                                const char *scope_interface_name,
                                int idx,
                                char *buf,
@@ -116,28 +127,14 @@ static int type_to_display_str(const WitRegistry *reg,
 
     WitTypeExpr *t = &g_type_pool[idx];
     if (t->kind == TYPE_IDENT) {
-        if (strstr(t->ident, "::") != NULL) {
-            const char *sep = strstr(t->ident, "::");
-            char interface_name[MAX_NAME];
-            char local_name[MAX_NAME];
-            size_t interface_len = (size_t)(sep - t->ident);
-
-            if (interface_len >= sizeof(interface_name)) interface_len = sizeof(interface_name) - 1u;
-            memcpy(interface_name, t->ident, interface_len);
-            interface_name[interface_len] = '\0';
-            snprintf(local_name, sizeof(local_name), "%s", sep + 2);
-
-            if (scope_interface_name && scope_interface_name[0] != '\0'
-                    && strcmp(scope_interface_name, interface_name) == 0) {
-                int n = snprintf(buf, bufsize, "%s", local_name);
-                return (n < bufsize) ? n : bufsize - 1;
-            }
-
-            {
-                (void)reg;
-                int n = snprintf(buf, bufsize, "%s-%s", interface_name, local_name);
-                return (n < bufsize) ? n : bufsize - 1;
-            }
+        if (wit_symbol_has_scope(t->ident)) {
+            wit_symbol_display_name(reg,
+                                    scope_package_full,
+                                    scope_interface_name,
+                                    t->ident,
+                                    buf,
+                                    bufsize);
+            return (int)strlen(buf);
         }
 
         {
@@ -163,6 +160,7 @@ static int type_to_display_str(const WitRegistry *reg,
         for (int i = 0; i < t->param_count; i++) {
             if (i > 0) n += snprintf(buf + n, bufsize - n, ", ");
             n += type_to_display_str(reg,
+                                     scope_package_full,
                                      scope_interface_name,
                                      t->params[i],
                                      buf + n,
@@ -395,8 +393,9 @@ typedef struct {
 
 typedef struct {
     char     name[MAX_NAME];
+    char     package_full[MAX_PACKAGE];
     char     interface_name[MAX_NAME];
-    char     symbol_name[MAX_NAME * 2];
+    char     symbol_name[MAX_SYMBOL];
     WitField fields[MAX_FIELDS];
     int      field_count;
 } WitRecord;
@@ -409,32 +408,36 @@ typedef struct {
 
 typedef struct {
     char           name[MAX_NAME];
+    char           package_full[MAX_PACKAGE];
     char           interface_name[MAX_NAME];
-    char           symbol_name[MAX_NAME * 2];
+    char           symbol_name[MAX_SYMBOL];
     WitVariantCase cases[MAX_CASES];
     int            case_count;
 } WitVariant;
 
 typedef struct {
     char name[MAX_NAME];
+    char package_full[MAX_PACKAGE];
     char interface_name[MAX_NAME];
-    char symbol_name[MAX_NAME * 2];
+    char symbol_name[MAX_SYMBOL];
     char cases[MAX_CASES][MAX_NAME];
     int  case_count;
 } WitEnum;
 
 typedef struct {
     char name[MAX_NAME];
+    char package_full[MAX_PACKAGE];
     char interface_name[MAX_NAME];
-    char symbol_name[MAX_NAME * 2];
+    char symbol_name[MAX_SYMBOL];
     char bits[MAX_CASES][MAX_NAME];
     int  bit_count;
 } WitFlags;
 
 typedef struct {
     char name[MAX_NAME];
+    char package_full[MAX_PACKAGE];
     char interface_name[MAX_NAME];
-    char symbol_name[MAX_NAME * 2];
+    char symbol_name[MAX_SYMBOL];
     int  target; /* index into g_type_pool */
 } WitAlias;
 
@@ -453,7 +456,7 @@ typedef enum {
 typedef struct {
     char        name[MAX_NAME];
     char        owner_name[MAX_NAME];
-    char        owner_symbol_name[MAX_NAME * 2];
+    char        owner_symbol_name[MAX_SYMBOL];
     char        interface_name[MAX_NAME];
     WitFuncKind kind;
     WitOwnerKind owner_kind;
@@ -465,10 +468,21 @@ typedef struct {
 
 typedef struct {
     char name[MAX_NAME];
+    char package_full[MAX_PACKAGE];
     char interface_name[MAX_NAME];
-    char symbol_name[MAX_NAME * 2];
+    char symbol_name[MAX_SYMBOL];
     int  imported;
 } WitResource;
+
+typedef struct {
+    char package_full[MAX_PACKAGE];
+    char interface_name[MAX_NAME];
+    char local_name[MAX_NAME];
+    char target_package_full[MAX_PACKAGE];
+    char target_interface_name[MAX_NAME];
+    char target_name[MAX_NAME];
+    char target_symbol_name[MAX_SYMBOL];
+} WitUseBinding;
 
 struct WitRegistry {
     char      package_full[MAX_PACKAGE];
@@ -491,8 +505,13 @@ struct WitRegistry {
     int        alias_count;
     WitResource resources[MAX_TYPES];
     int         resource_count;
+    WitUseBinding use_bindings[MAX_USE_BINDINGS];
+    int           use_binding_count;
     WitFunc     funcs[MAX_FUNCS];
     int         func_count;
+    char        source_path[MAX_PATH_TEXT];
+    char        loaded_paths[MAX_LOADED_FILES][MAX_PATH_TEXT];
+    int         loaded_path_count;
 };
 
 /* ------------------------------------------------------------------ */
@@ -1006,10 +1025,38 @@ static void path_to_project_relative(const char *path, char *out, int n)
 
 static int wit_symbol_has_scope(const char *name)
 {
-    return name && strstr(name, "::") != NULL;
+    return name && (strstr(name, "::") != NULL || strchr(name, '/') != NULL);
 }
 
-static void wit_build_scoped_symbol_name(const char *interface_name,
+static void wit_package_name_from_full(const char *package_full, char *out, int n)
+{
+    if (!out || n <= 0) return;
+    if (!package_full || package_full[0] == '\0') {
+        out[0] = '\0';
+        return;
+    }
+
+    {
+        const char *cursor = package_full;
+        const char *colon = strchr(cursor, ':');
+        const char *at = strrchr(cursor, '@');
+
+        if (colon) {
+            cursor = colon + 1;
+        }
+        if (at && at > cursor) {
+            size_t len = (size_t)(at - cursor);
+            if (len >= (size_t)n) len = (size_t)n - 1u;
+            memcpy(out, cursor, len);
+            out[len] = '\0';
+        } else {
+            snprintf(out, n, "%s", cursor);
+        }
+    }
+}
+
+static void wit_build_scoped_symbol_name(const char *package_full,
+                                         const char *interface_name,
                                          const char *local_name,
                                          char *out,
                                          int n)
@@ -1019,36 +1066,163 @@ static void wit_build_scoped_symbol_name(const char *interface_name,
         out[0] = '\0';
         return;
     }
-    if (interface_name && interface_name[0] != '\0') {
+    if (package_full && package_full[0] != '\0' && interface_name && interface_name[0] != '\0') {
+        snprintf(out, n, "%s/%s::%s", package_full, interface_name, local_name);
+    } else if (interface_name && interface_name[0] != '\0') {
         snprintf(out, n, "%s::%s", interface_name, local_name);
     } else {
         snprintf(out, n, "%s", local_name);
     }
 }
 
-static const char *wit_symbol_local_name(const char *name)
+static void wit_split_symbol_name(const char *name,
+                                  char *package_full,
+                                  int package_n,
+                                  char *interface_name,
+                                  int interface_n,
+                                  char *local_name,
+                                  int local_n)
 {
     const char *sep;
+    const char *slash = NULL;
+    size_t prefix_len;
 
-    if (!name) return "";
+    if (package_full && package_n > 0) package_full[0] = '\0';
+    if (interface_name && interface_n > 0) interface_name[0] = '\0';
+    if (local_name && local_n > 0) local_name[0] = '\0';
+    if (!name) return;
+
     sep = strstr(name, "::");
-    return (sep && sep[2] != '\0') ? (sep + 2) : name;
+    if (!sep) {
+        if (local_name && local_n > 0) {
+            snprintf(local_name, local_n, "%s", name);
+        }
+        return;
+    }
+
+    prefix_len = (size_t)(sep - name);
+    for (const char *p = name; p < sep; p++) {
+        if (*p == '/') slash = p;
+    }
+
+    if (slash && package_full && package_n > 0) {
+        size_t len = (size_t)(slash - name);
+        if (len >= (size_t)package_n) len = (size_t)package_n - 1u;
+        memcpy(package_full, name, len);
+        package_full[len] = '\0';
+    }
+    if (interface_name && interface_n > 0) {
+        const char *iface = slash ? (slash + 1) : name;
+        size_t len = prefix_len - (size_t)(iface - name);
+        if (len >= (size_t)interface_n) len = (size_t)interface_n - 1u;
+        memcpy(interface_name, iface, len);
+        interface_name[len] = '\0';
+    }
+    if (local_name && local_n > 0) {
+        snprintf(local_name, local_n, "%s", sep + 2);
+    }
 }
 
-static const char *wit_symbol_interface_name(const char *name)
+static const char *wit_symbol_local_name(const char *name)
 {
     static char buf[MAX_NAME];
-    const char *sep;
-    size_t len;
-
-    if (!name) return "";
-    sep = strstr(name, "::");
-    if (!sep) return "";
-    len = (size_t)(sep - name);
-    if (len >= sizeof(buf)) len = sizeof(buf) - 1u;
-    memcpy(buf, name, len);
-    buf[len] = '\0';
+    wit_split_symbol_name(name, NULL, 0, NULL, 0, buf, (int)sizeof(buf));
     return buf;
+}
+
+static int wit_local_name_occurrences(const WitRegistry *reg, const char *local_name);
+
+static int wit_interface_local_occurrences(const WitRegistry *reg,
+                                           const char *interface_name,
+                                           const char *local_name)
+{
+    int count = 0;
+
+    if (!reg || !interface_name || interface_name[0] == '\0'
+            || !local_name || local_name[0] == '\0') {
+        return 0;
+    }
+
+    for (int i = 0; i < reg->record_count; i++)
+        if (strcmp(reg->records[i].interface_name, interface_name) == 0
+                && strcmp(reg->records[i].name, local_name) == 0) count++;
+    for (int i = 0; i < reg->variant_count; i++)
+        if (strcmp(reg->variants[i].interface_name, interface_name) == 0
+                && strcmp(reg->variants[i].name, local_name) == 0) count++;
+    for (int i = 0; i < reg->enum_count; i++)
+        if (strcmp(reg->enums[i].interface_name, interface_name) == 0
+                && strcmp(reg->enums[i].name, local_name) == 0) count++;
+    for (int i = 0; i < reg->flags_count; i++)
+        if (strcmp(reg->flags[i].interface_name, interface_name) == 0
+                && strcmp(reg->flags[i].name, local_name) == 0) count++;
+    for (int i = 0; i < reg->alias_count; i++)
+        if (strcmp(reg->aliases[i].interface_name, interface_name) == 0
+                && strcmp(reg->aliases[i].name, local_name) == 0) count++;
+    for (int i = 0; i < reg->resource_count; i++)
+        if (strcmp(reg->resources[i].interface_name, interface_name) == 0
+                && strcmp(reg->resources[i].name, local_name) == 0) count++;
+
+    return count;
+}
+
+static void wit_symbol_display_name(const WitRegistry *reg,
+                                    const char *scope_package_full,
+                                    const char *scope_interface_name,
+                                    const char *symbol_name,
+                                    char *out,
+                                    int n)
+{
+    char package_full[MAX_PACKAGE];
+    char package_name[MAX_NAME];
+    char interface_name[MAX_NAME];
+    char local_name[MAX_NAME];
+
+    if (!out || n <= 0) return;
+    out[0] = '\0';
+    if (!symbol_name) return;
+
+    wit_split_symbol_name(symbol_name,
+                          package_full,
+                          (int)sizeof(package_full),
+                          interface_name,
+                          (int)sizeof(interface_name),
+                          local_name,
+                          (int)sizeof(local_name));
+    if (local_name[0] == '\0') {
+        snprintf(out, n, "%s", symbol_name);
+        return;
+    }
+
+    if ((!scope_package_full || scope_package_full[0] == '\0'
+            || strcmp(scope_package_full, package_full) == 0)
+            && scope_interface_name && scope_interface_name[0] != '\0'
+            && strcmp(scope_interface_name, interface_name) == 0) {
+        snprintf(out, n, "%s", local_name);
+        return;
+    }
+    if (!reg || !wit_symbol_has_scope(symbol_name)) {
+        snprintf(out, n, "%s", local_name);
+        return;
+    }
+    if (wit_local_name_occurrences(reg, local_name) <= 1) {
+        snprintf(out, n, "%s", local_name);
+        return;
+    }
+    if (interface_name[0] != '\0' && wit_interface_local_occurrences(reg, interface_name, local_name) <= 1) {
+        snprintf(out, n, "%s-%s", interface_name, local_name);
+        return;
+    }
+
+    wit_package_name_from_full(package_full, package_name, (int)sizeof(package_name));
+    if (package_name[0] != '\0' && interface_name[0] != '\0') {
+        snprintf(out, n, "%s-%s-%s", package_name, interface_name, local_name);
+    } else if (package_name[0] != '\0') {
+        snprintf(out, n, "%s-%s", package_name, local_name);
+    } else if (interface_name[0] != '\0') {
+        snprintf(out, n, "%s-%s", interface_name, local_name);
+    } else {
+        snprintf(out, n, "%s", local_name);
+    }
 }
 
 static void emit_trace_comment(FILE *out, const char *indent, const char *trace)
@@ -1058,6 +1232,7 @@ static void emit_trace_comment(FILE *out, const char *indent, const char *trace)
 }
 
 static void format_field_trace(const WitRegistry *reg,
+                               const char *scope_package_full,
                                const char *scope_interface_name,
                                const WitField *field,
                                char *out,
@@ -1069,7 +1244,12 @@ static void format_field_trace(const WitRegistry *reg,
     out[0] = '\0';
     if (!field) return;
 
-    type_to_display_str(reg, scope_interface_name, field->wit_type, typebuf, (int)sizeof(typebuf));
+    type_to_display_str(reg,
+                        scope_package_full,
+                        scope_interface_name,
+                        field->wit_type,
+                        typebuf,
+                        (int)sizeof(typebuf));
     snprintf(out, n, "%s: %s", field->name, typebuf);
 }
 
@@ -1111,6 +1291,7 @@ static void format_func_trace(const WitFunc *func, char *out, int n)
 }
 
 static void format_variant_case_trace(const WitRegistry *reg,
+                                      const char *scope_package_full,
                                       const char *scope_interface_name,
                                       const WitVariantCase *variant_case,
                                       char *out,
@@ -1128,6 +1309,7 @@ static void format_variant_case_trace(const WitRegistry *reg,
 
     if (variant_case->payload_type >= 0) {
         type_to_display_str(reg,
+                            scope_package_full,
                             scope_interface_name,
                             variant_case->payload_type,
                             typebuf,
@@ -1229,7 +1411,7 @@ static int parse_record(Scanner *s, WitRecord *rec)
         if (!expect_char(s, ':')) return 0;
         f->wit_type = parse_type_expr(s);
         if (f->wit_type < 0) return 0;
-        expect_char(s, ',');
+        (void)match_char(s, ',');
         rec->field_count++;
     }
     return expect_char(s, '}');
@@ -1254,7 +1436,7 @@ static int parse_variant(Scanner *s, WitVariant *var)
             if (c->payload_type < 0) return 0;
             if (!expect_char(s, ')')) return 0;
         }
-        expect_char(s, ',');
+        (void)match_char(s, ',');
         var->case_count++;
     }
     return expect_char(s, '}');
@@ -1269,7 +1451,7 @@ static int parse_enum(Scanner *s, WitEnum *en)
         skip_whitespace(s);
         if (scanner_peek(s) == '}') { scanner_advance(s); return 1; }
         if (!scan_ident(s, en->cases[en->case_count], MAX_NAME)) return 0;
-        expect_char(s, ',');
+        (void)match_char(s, ',');
         en->case_count++;
     }
     return expect_char(s, '}');
@@ -1284,7 +1466,7 @@ static int parse_flags(Scanner *s, WitFlags *fl)
         skip_whitespace(s);
         if (scanner_peek(s) == '}') { scanner_advance(s); return 1; }
         if (!scan_ident(s, fl->bits[fl->bit_count], MAX_NAME)) return 0;
-        expect_char(s, ',');
+        (void)match_char(s, ',');
         fl->bit_count++;
     }
     return expect_char(s, '}');
@@ -1315,8 +1497,121 @@ static int scan_source_for_package_decl(const char *src,
                                         int len,
                                         char *out,
                                         int n);
+static int parse_wit(Scanner *s, WitRegistry *reg);
+static int resolve_use_bindings(WitRegistry *reg);
+static int resolve_registry_symbol_scopes(WitRegistry *reg);
+static int parse_registry_source_file(WitRegistry *reg, const char *wit_path);
+static int ensure_import_interface_loaded(WitRegistry *reg,
+                                          const char *target_package_full,
+                                          const char *target_interface_name);
+
+static int registry_has_loaded_path(const WitRegistry *reg, const char *path)
+{
+    if (!reg || !path || path[0] == '\0') return 0;
+    for (int i = 0; i < reg->loaded_path_count; i++) {
+        if (strcmp(reg->loaded_paths[i], path) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int registry_mark_loaded_path(WitRegistry *reg, const char *path)
+{
+    if (!reg || !path || path[0] == '\0') return 0;
+    if (registry_has_loaded_path(reg, path)) return 1;
+    if (reg->loaded_path_count >= MAX_LOADED_FILES) {
+        fprintf(stderr, "wit_codegen: too many loaded WIT files\n");
+        return 0;
+    }
+    snprintf(reg->loaded_paths[reg->loaded_path_count],
+             sizeof(reg->loaded_paths[reg->loaded_path_count]),
+             "%s",
+             path);
+    reg->loaded_path_count++;
+    return 1;
+}
+
+static int registry_has_interface_symbols(const WitRegistry *reg,
+                                          const char *package_full,
+                                          const char *interface_name)
+{
+    if (!reg || !package_full || !interface_name) return 0;
+
+    for (int i = 0; i < reg->record_count; i++)
+        if (strcmp(reg->records[i].package_full, package_full) == 0
+                && strcmp(reg->records[i].interface_name, interface_name) == 0) return 1;
+    for (int i = 0; i < reg->variant_count; i++)
+        if (strcmp(reg->variants[i].package_full, package_full) == 0
+                && strcmp(reg->variants[i].interface_name, interface_name) == 0) return 1;
+    for (int i = 0; i < reg->enum_count; i++)
+        if (strcmp(reg->enums[i].package_full, package_full) == 0
+                && strcmp(reg->enums[i].interface_name, interface_name) == 0) return 1;
+    for (int i = 0; i < reg->flags_count; i++)
+        if (strcmp(reg->flags[i].package_full, package_full) == 0
+                && strcmp(reg->flags[i].interface_name, interface_name) == 0) return 1;
+    for (int i = 0; i < reg->alias_count; i++)
+        if (strcmp(reg->aliases[i].package_full, package_full) == 0
+                && strcmp(reg->aliases[i].interface_name, interface_name) == 0) return 1;
+    for (int i = 0; i < reg->resource_count; i++)
+        if (strcmp(reg->resources[i].package_full, package_full) == 0
+                && strcmp(reg->resources[i].interface_name, interface_name) == 0) return 1;
+    return 0;
+}
+
+static int registry_add_use_binding(WitRegistry *reg,
+                                    const char *interface_name,
+                                    const char *local_name,
+                                    const char *target_package_full,
+                                    const char *target_interface_name,
+                                    const char *target_name)
+{
+    WitUseBinding *binding;
+
+    if (!reg || !interface_name || interface_name[0] == '\0'
+            || !local_name || local_name[0] == '\0'
+            || !target_interface_name || target_interface_name[0] == '\0'
+            || !target_name || target_name[0] == '\0') {
+        return 0;
+    }
+
+    for (int i = 0; i < reg->use_binding_count; i++) {
+        binding = &reg->use_bindings[i];
+        if (strcmp(binding->package_full, reg->package_full) == 0
+                && strcmp(binding->interface_name, interface_name) == 0
+                && strcmp(binding->local_name, local_name) == 0) {
+            if (strcmp(binding->target_package_full, target_package_full ? target_package_full : reg->package_full) != 0
+                    || strcmp(binding->target_interface_name, target_interface_name) != 0
+                    || strcmp(binding->target_name, target_name) != 0) {
+                codegen_die("conflicting use binding for %s in interface %s",
+                            local_name,
+                            interface_name);
+            }
+            return 1;
+        }
+    }
+
+    if (reg->use_binding_count >= MAX_USE_BINDINGS) {
+        fprintf(stderr, "wit_codegen: too many use bindings\n");
+        return 0;
+    }
+
+    binding = &reg->use_bindings[reg->use_binding_count++];
+    memset(binding, 0, sizeof(*binding));
+    snprintf(binding->package_full, sizeof(binding->package_full), "%s", reg->package_full);
+    snprintf(binding->interface_name, sizeof(binding->interface_name), "%s", interface_name);
+    snprintf(binding->local_name, sizeof(binding->local_name), "%s", local_name);
+    snprintf(binding->target_package_full,
+             sizeof(binding->target_package_full),
+             "%s",
+             (target_package_full && target_package_full[0] != '\0') ? target_package_full : reg->package_full);
+    snprintf(binding->target_interface_name, sizeof(binding->target_interface_name), "%s", target_interface_name);
+    snprintf(binding->target_name, sizeof(binding->target_name), "%s", target_name);
+    return 1;
+}
 
 static int registry_add_resource(WitRegistry *reg,
+                                 const char *package_full,
                                  const char *name,
                                  const char *interface_name,
                                  int imported)
@@ -1327,6 +1622,7 @@ static int registry_add_resource(WitRegistry *reg,
 
     for (int i = 0; i < reg->resource_count; i++) {
         if (strcmp(reg->resources[i].name, name) == 0
+                && strcmp(reg->resources[i].package_full, package_full ? package_full : "") == 0
                 && strcmp(reg->resources[i].interface_name, interface_name ? interface_name : "") == 0) {
             if (imported) {
                 reg->resources[i].imported = 1;
@@ -1345,13 +1641,18 @@ static int registry_add_resource(WitRegistry *reg,
              sizeof(reg->resources[reg->resource_count].name),
              "%s",
              name);
+    snprintf(reg->resources[reg->resource_count].package_full,
+             sizeof(reg->resources[reg->resource_count].package_full),
+             "%s",
+             package_full ? package_full : "");
     if (interface_name && interface_name[0] != '\0') {
         snprintf(reg->resources[reg->resource_count].interface_name,
                  sizeof(reg->resources[reg->resource_count].interface_name),
                  "%s",
                  interface_name);
     }
-    wit_build_scoped_symbol_name(interface_name,
+    wit_build_scoped_symbol_name(package_full,
+                                 interface_name,
                                  name,
                                  reg->resources[reg->resource_count].symbol_name,
                                  (int)sizeof(reg->resources[reg->resource_count].symbol_name));
@@ -1437,7 +1738,8 @@ static int parse_named_func(Scanner *s,
     if (!expect_char(s, ';')) return 0;
 
     snprintf(func.owner_name, sizeof(func.owner_name), "%s", scope_name ? scope_name : "");
-    wit_build_scoped_symbol_name((scope == PARSE_SCOPE_RESOURCE) ? interface_name : NULL,
+    wit_build_scoped_symbol_name(reg->package_full,
+                                 (scope == PARSE_SCOPE_RESOURCE) ? interface_name : NULL,
                                  scope_name ? scope_name : "",
                                  func.owner_symbol_name,
                                  (int)sizeof(func.owner_symbol_name));
@@ -1486,7 +1788,8 @@ static int parse_constructor_func(Scanner *s,
     func.kind = WIT_FUNC_CONSTRUCTOR;
     func.owner_kind = WIT_OWNER_RESOURCE;
     snprintf(func.owner_name, sizeof(func.owner_name), "%s", scope_name ? scope_name : "");
-    wit_build_scoped_symbol_name(interface_name,
+    wit_build_scoped_symbol_name(reg->package_full,
+                                 interface_name,
                                  scope_name ? scope_name : "",
                                  func.owner_symbol_name,
                                  (int)sizeof(func.owner_symbol_name));
@@ -1529,13 +1832,71 @@ static int try_parse_constructor_func(Scanner *s,
     return parse_constructor_func(s, reg, scope_name, interface_name);
 }
 
+static void wit_trim_copy(char *out, int n, const char *src)
+{
+    if (!out || n <= 0) return;
+    snprintf(out, n, "%s", src ? src : "");
+    wit_trim(out);
+}
+
+static int parse_use_target_spec(const char *spec,
+                                 const char *current_package_full,
+                                 char *target_package_full,
+                                 int target_package_n,
+                                 char *target_interface_name,
+                                 int target_interface_n)
+{
+    char trimmed[256];
+    char package_part[MAX_PACKAGE];
+    char interface_part[MAX_NAME];
+    char *slash;
+    char *at;
+
+    wit_trim_copy(trimmed, (int)sizeof(trimmed), spec);
+    if (trimmed[0] == '\0') return 0;
+    while (trimmed[0] != '\0' && trimmed[strlen(trimmed) - 1u] == '.') {
+        trimmed[strlen(trimmed) - 1u] = '\0';
+    }
+
+    slash = strchr(trimmed, '/');
+    if (!slash) {
+        snprintf(target_package_full, target_package_n, "%s", current_package_full ? current_package_full : "");
+        snprintf(target_interface_name, target_interface_n, "%s", trimmed);
+        return target_interface_name[0] != '\0';
+    }
+
+    *slash = '\0';
+    snprintf(package_part, sizeof(package_part), "%s", trimmed);
+    snprintf(interface_part, sizeof(interface_part), "%s", slash + 1);
+    wit_trim(package_part);
+    wit_trim(interface_part);
+
+    at = strrchr(interface_part, '@');
+    if (at) {
+        *at = '\0';
+        wit_trim(interface_part);
+        snprintf(target_package_full, target_package_n, "%s@%s", package_part, at + 1);
+    } else {
+        snprintf(target_package_full, target_package_n, "%s", package_part);
+    }
+    snprintf(target_interface_name, target_interface_n, "%s", interface_part);
+    return target_package_full[0] != '\0' && target_interface_name[0] != '\0';
+}
+
 static int parse_use_decl(Scanner *s, WitRegistry *reg, const char *interface_name)
 {
     char raw[512];
-    int i = 0;
+    char target_spec[256];
+    char target_package_full[MAX_PACKAGE];
+    char target_interface_name[MAX_NAME];
     char *open_brace;
     char *close_brace;
     char *cursor;
+    int i = 0;
+
+    if (!interface_name || interface_name[0] == '\0') {
+        codegen_die("top-level use declarations are not supported");
+    }
 
     skip_whitespace(s);
     while (!scanner_eof(s) && scanner_peek(s) != ';' && i < (int)sizeof(raw) - 1) {
@@ -1550,28 +1911,68 @@ static int parse_use_decl(Scanner *s, WitRegistry *reg, const char *interface_na
         return 1;
     }
 
+    *open_brace = '\0';
     *close_brace = '\0';
-    cursor = open_brace + 1;
-    while (*cursor) {
-        char name[MAX_NAME];
-        int j = 0;
+    wit_trim_copy(target_spec, (int)sizeof(target_spec), raw);
+    if (!parse_use_target_spec(target_spec,
+                               reg->package_full,
+                               target_package_full,
+                               (int)sizeof(target_package_full),
+                               target_interface_name,
+                               (int)sizeof(target_interface_name))) {
+        codegen_die("invalid use target '%s' in %s", target_spec, reg->source_path);
+    }
 
-        while (*cursor == ' ' || *cursor == '\t' || *cursor == '\n' || *cursor == '\r' || *cursor == ',') {
-            cursor++;
-        }
-        while (*cursor && *cursor != ',' && *cursor != ' ' && *cursor != '\t'
-                && *cursor != '\n' && *cursor != '\r' && j < MAX_NAME - 1) {
-            name[j++] = *cursor++;
-        }
-        name[j] = '\0';
-        if (name[0] != '\0' && !registry_add_resource(reg, name, interface_name, 1)) {
+    if (!(strcmp(target_package_full, reg->package_full) == 0
+            && strcmp(target_interface_name, interface_name) == 0)
+            && !registry_has_interface_symbols(reg, target_package_full, target_interface_name)) {
+        if (!ensure_import_interface_loaded(reg, target_package_full, target_interface_name)) {
             return 0;
         }
-        while (*cursor && *cursor != ',') {
-            cursor++;
+    }
+
+    cursor = open_brace + 1;
+    while (*cursor) {
+        char entry[128];
+        char imported_name[MAX_NAME];
+        char local_name[MAX_NAME];
+        char *comma = strchr(cursor, ',');
+        char *as_kw;
+
+        if (comma) {
+            size_t len = (size_t)(comma - cursor);
+            if (len >= sizeof(entry)) len = sizeof(entry) - 1u;
+            memcpy(entry, cursor, len);
+            entry[len] = '\0';
+            cursor = comma + 1;
+        } else {
+            snprintf(entry, sizeof(entry), "%s", cursor);
+            cursor += strlen(cursor);
         }
-        if (*cursor == ',') {
-            cursor++;
+        wit_trim(entry);
+        if (entry[0] == '\0') {
+            continue;
+        }
+
+        as_kw = strstr(entry, " as ");
+        if (as_kw) {
+            *as_kw = '\0';
+            wit_trim(entry);
+            wit_trim_copy(imported_name, (int)sizeof(imported_name), entry);
+            wit_trim_copy(local_name, (int)sizeof(local_name), as_kw + 4);
+        } else {
+            wit_trim_copy(imported_name, (int)sizeof(imported_name), entry);
+            snprintf(local_name, sizeof(local_name), "%s", imported_name);
+        }
+
+        if (imported_name[0] != '\0'
+                && !registry_add_use_binding(reg,
+                                             interface_name,
+                                             local_name,
+                                             target_package_full,
+                                             target_interface_name,
+                                             imported_name)) {
+            return 0;
         }
     }
 
@@ -1616,7 +2017,7 @@ static int parse_resource_decl(Scanner *s,
     char name[MAX_NAME];
 
     if (!scan_ident(s, name, MAX_NAME)) return 0;
-    if (!registry_add_resource(reg, name, interface_name, 0)) return 0;
+    if (!registry_add_resource(reg, reg->package_full, name, interface_name, 0)) return 0;
 
     skip_whitespace(s);
     if (match_char(s, ';')) {
@@ -1795,6 +2196,241 @@ static int infer_package_decl_from_siblings(WitRegistry *reg, const char *wit_pa
     return 1;
 }
 
+static int find_package_wit_dir(const char *wit_path,
+                                const char *package_name,
+                                char *out,
+                                int n)
+{
+    char current[MAX_PATH_TEXT];
+    char parent[MAX_PATH_TEXT];
+
+    if (!wit_path || !package_name || package_name[0] == '\0' || !out || n <= 0) {
+        return 0;
+    }
+
+    path_dirname(wit_path, current, (int)sizeof(current));
+    while (current[0] != '\0') {
+        char base[MAX_NAME];
+        char package_dir[MAX_PATH_TEXT];
+        char package_base[MAX_NAME];
+
+        path_basename(current, base, (int)sizeof(base));
+        if (strcmp(base, "wit") == 0) {
+            path_dirname(current, package_dir, (int)sizeof(package_dir));
+            path_basename(package_dir, package_base, (int)sizeof(package_base));
+            if (strcmp(package_base, package_name) == 0) {
+                snprintf(out, n, "%s", current);
+                return 1;
+            }
+        }
+
+        path_dirname(current, parent, (int)sizeof(parent));
+        if (strcmp(parent, current) == 0) break;
+        snprintf(current, sizeof(current), "%s", parent);
+    }
+
+    return 0;
+}
+
+static int resolve_import_wit_path(const WitRegistry *reg,
+                                   const char *target_package_full,
+                                   const char *target_interface_name,
+                                   char *out,
+                                   int n)
+{
+    char current_wit_dir[MAX_PATH_TEXT];
+    char current_package_name[MAX_NAME];
+    char target_package_name[MAX_NAME];
+    char package_dir[MAX_PATH_TEXT];
+    char packages_root[MAX_PATH_TEXT];
+
+    if (!reg || !target_interface_name || target_interface_name[0] == '\0' || !out || n <= 0) {
+        return 0;
+    }
+    out[0] = '\0';
+
+    if (target_package_full && target_package_full[0] != '\0'
+            && strcmp(target_package_full, reg->package_full) != 0) {
+        wit_package_name_from_full(reg->package_full, current_package_name, (int)sizeof(current_package_name));
+        wit_package_name_from_full(target_package_full, target_package_name, (int)sizeof(target_package_name));
+        if (!find_package_wit_dir(reg->source_path, current_package_name, current_wit_dir, (int)sizeof(current_wit_dir))) {
+            return 0;
+        }
+        path_dirname(current_wit_dir, package_dir, (int)sizeof(package_dir));
+        path_dirname(package_dir, packages_root, (int)sizeof(packages_root));
+        snprintf(out, n, "%s/%s/wit/%s.wit", packages_root, target_package_name, target_interface_name);
+        return file_exists(out);
+    }
+
+    path_dirname(reg->source_path, current_wit_dir, (int)sizeof(current_wit_dir));
+    snprintf(out, n, "%s/%s.wit", current_wit_dir, target_interface_name);
+    return file_exists(out);
+}
+
+static int registry_has_exact_symbol(const WitRegistry *reg, const char *symbol_name)
+{
+    if (!reg || !symbol_name || symbol_name[0] == '\0') return 0;
+
+    for (int i = 0; i < reg->alias_count; i++)
+        if (strcmp(reg->aliases[i].symbol_name, symbol_name) == 0) return 1;
+    for (int i = 0; i < reg->record_count; i++)
+        if (strcmp(reg->records[i].symbol_name, symbol_name) == 0) return 1;
+    for (int i = 0; i < reg->variant_count; i++)
+        if (strcmp(reg->variants[i].symbol_name, symbol_name) == 0) return 1;
+    for (int i = 0; i < reg->enum_count; i++)
+        if (strcmp(reg->enums[i].symbol_name, symbol_name) == 0) return 1;
+    for (int i = 0; i < reg->flags_count; i++)
+        if (strcmp(reg->flags[i].symbol_name, symbol_name) == 0) return 1;
+    for (int i = 0; i < reg->resource_count; i++)
+        if (strcmp(reg->resources[i].symbol_name, symbol_name) == 0) return 1;
+    return 0;
+}
+
+static int merge_import_registry(WitRegistry *dst, const WitRegistry *src)
+{
+    if (!dst || !src) return 0;
+
+    for (int i = 0; i < src->alias_count; i++) {
+        if (!registry_has_exact_symbol(dst, src->aliases[i].symbol_name)) {
+            if (dst->alias_count >= MAX_TYPES) return 0;
+            dst->aliases[dst->alias_count++] = src->aliases[i];
+        }
+    }
+    for (int i = 0; i < src->record_count; i++) {
+        if (!registry_has_exact_symbol(dst, src->records[i].symbol_name)) {
+            if (dst->record_count >= MAX_TYPES) return 0;
+            dst->records[dst->record_count++] = src->records[i];
+        }
+    }
+    for (int i = 0; i < src->variant_count; i++) {
+        if (!registry_has_exact_symbol(dst, src->variants[i].symbol_name)) {
+            if (dst->variant_count >= MAX_TYPES) return 0;
+            dst->variants[dst->variant_count++] = src->variants[i];
+        }
+    }
+    for (int i = 0; i < src->enum_count; i++) {
+        if (!registry_has_exact_symbol(dst, src->enums[i].symbol_name)) {
+            if (dst->enum_count >= MAX_TYPES) return 0;
+            dst->enums[dst->enum_count++] = src->enums[i];
+        }
+    }
+    for (int i = 0; i < src->flags_count; i++) {
+        if (!registry_has_exact_symbol(dst, src->flags[i].symbol_name)) {
+            if (dst->flags_count >= MAX_TYPES) return 0;
+            dst->flags[dst->flags_count++] = src->flags[i];
+        }
+    }
+    for (int i = 0; i < src->resource_count; i++) {
+        if (!registry_has_exact_symbol(dst, src->resources[i].symbol_name)) {
+            if (dst->resource_count >= MAX_TYPES) return 0;
+            dst->resources[dst->resource_count++] = src->resources[i];
+        }
+    }
+    return 1;
+}
+
+static int init_registry_for_source(WitRegistry *reg,
+                                    const char *wit_path,
+                                    const char *src,
+                                    int src_len)
+{
+    char raw_package[MAX_PACKAGE];
+
+    if (!reg || !wit_path || !src) return 0;
+    memset(reg, 0, sizeof(*reg));
+    snprintf(reg->source_path, sizeof(reg->source_path), "%s", wit_path);
+
+    raw_package[0] = '\0';
+    if (scan_source_for_package_decl(src, src_len, raw_package, (int)sizeof(raw_package))) {
+        if (!apply_package_decl(reg, raw_package)) return 0;
+    } else if (!infer_package_decl_from_siblings(reg, wit_path)) {
+        return 0;
+    }
+
+    if (!registry_mark_loaded_path(reg, wit_path)) return 0;
+    return 1;
+}
+
+static int ensure_import_interface_loaded(WitRegistry *reg,
+                                          const char *target_package_full,
+                                          const char *target_interface_name)
+{
+    char import_path[MAX_PATH_TEXT];
+    WitRegistry imported;
+
+    if (!reg || !target_interface_name || target_interface_name[0] == '\0') return 0;
+    if (registry_has_interface_symbols(reg,
+                                       target_package_full ? target_package_full : reg->package_full,
+                                       target_interface_name)) {
+        return 1;
+    }
+    if (!resolve_import_wit_path(reg,
+                                 target_package_full ? target_package_full : reg->package_full,
+                                 target_interface_name,
+                                 import_path,
+                                 (int)sizeof(import_path))) {
+        if (target_package_full && target_package_full[0] != '\0'
+                && strcmp(target_package_full, reg->package_full) != 0) {
+            codegen_die("unable to locate imported interface %s from package %s for %s",
+                        target_interface_name,
+                        target_package_full,
+                        reg->source_path);
+        }
+        return 1;
+    }
+    if (registry_has_loaded_path(reg, import_path)) {
+        return 1;
+    }
+    if (!parse_registry_source_file(&imported, import_path)) {
+        return 0;
+    }
+    if (!merge_import_registry(reg, &imported)) {
+        return 0;
+    }
+    if (!registry_mark_loaded_path(reg, import_path)) {
+        return 0;
+    }
+    return 1;
+}
+
+static int parse_registry_source_file(WitRegistry *reg, const char *wit_path)
+{
+    char *src;
+    long src_len = 0;
+    Scanner scanner;
+
+    if (!reg || !wit_path || wit_path[0] == '\0') return 0;
+
+    src = read_text_file(wit_path, &src_len);
+    if (!src) {
+        fprintf(stderr, "wit_codegen: cannot open %s\n", wit_path);
+        return 0;
+    }
+    if (!init_registry_for_source(reg, wit_path, src, (int)src_len)) {
+        free(src);
+        return 0;
+    }
+
+    scanner_init(&scanner, src, (int)src_len);
+    if (!parse_wit(&scanner, reg)) {
+        fprintf(stderr, "wit_codegen: parse failed at line %d col %d\n",
+                scanner.line, scanner.col);
+        free(src);
+        return 0;
+    }
+    if (!resolve_use_bindings(reg)) {
+        free(src);
+        return 0;
+    }
+    if (!resolve_registry_symbol_scopes(reg)) {
+        free(src);
+        return 0;
+    }
+    finalize_package_info(reg, wit_path);
+    free(src);
+    return 1;
+}
+
 static int parse_scope_items(Scanner *s,
                              WitRegistry *reg,
                              ParseScope scope,
@@ -1842,11 +2478,16 @@ static int parse_scope_items(Scanner *s,
                 fprintf(stderr, "wit_codegen: too many records\n"); return 0;
             }
             if (!parse_record(s, &reg->records[reg->record_count])) return 0;
+            snprintf(reg->records[reg->record_count].package_full,
+                     sizeof(reg->records[reg->record_count].package_full),
+                     "%s",
+                     reg->package_full);
             snprintf(reg->records[reg->record_count].interface_name,
                      sizeof(reg->records[reg->record_count].interface_name),
                      "%s",
                      interface_name ? interface_name : "");
-            wit_build_scoped_symbol_name(interface_name,
+            wit_build_scoped_symbol_name(reg->package_full,
+                                         interface_name,
                                          reg->records[reg->record_count].name,
                                          reg->records[reg->record_count].symbol_name,
                                          (int)sizeof(reg->records[reg->record_count].symbol_name));
@@ -1856,11 +2497,16 @@ static int parse_scope_items(Scanner *s,
                 fprintf(stderr, "wit_codegen: too many variants\n"); return 0;
             }
             if (!parse_variant(s, &reg->variants[reg->variant_count])) return 0;
+            snprintf(reg->variants[reg->variant_count].package_full,
+                     sizeof(reg->variants[reg->variant_count].package_full),
+                     "%s",
+                     reg->package_full);
             snprintf(reg->variants[reg->variant_count].interface_name,
                      sizeof(reg->variants[reg->variant_count].interface_name),
                      "%s",
                      interface_name ? interface_name : "");
-            wit_build_scoped_symbol_name(interface_name,
+            wit_build_scoped_symbol_name(reg->package_full,
+                                         interface_name,
                                          reg->variants[reg->variant_count].name,
                                          reg->variants[reg->variant_count].symbol_name,
                                          (int)sizeof(reg->variants[reg->variant_count].symbol_name));
@@ -1870,11 +2516,16 @@ static int parse_scope_items(Scanner *s,
                 fprintf(stderr, "wit_codegen: too many enums\n"); return 0;
             }
             if (!parse_enum(s, &reg->enums[reg->enum_count])) return 0;
+            snprintf(reg->enums[reg->enum_count].package_full,
+                     sizeof(reg->enums[reg->enum_count].package_full),
+                     "%s",
+                     reg->package_full);
             snprintf(reg->enums[reg->enum_count].interface_name,
                      sizeof(reg->enums[reg->enum_count].interface_name),
                      "%s",
                      interface_name ? interface_name : "");
-            wit_build_scoped_symbol_name(interface_name,
+            wit_build_scoped_symbol_name(reg->package_full,
+                                         interface_name,
                                          reg->enums[reg->enum_count].name,
                                          reg->enums[reg->enum_count].symbol_name,
                                          (int)sizeof(reg->enums[reg->enum_count].symbol_name));
@@ -1884,11 +2535,16 @@ static int parse_scope_items(Scanner *s,
                 fprintf(stderr, "wit_codegen: too many flags\n"); return 0;
             }
             if (!parse_flags(s, &reg->flags[reg->flags_count])) return 0;
+            snprintf(reg->flags[reg->flags_count].package_full,
+                     sizeof(reg->flags[reg->flags_count].package_full),
+                     "%s",
+                     reg->package_full);
             snprintf(reg->flags[reg->flags_count].interface_name,
                      sizeof(reg->flags[reg->flags_count].interface_name),
                      "%s",
                      interface_name ? interface_name : "");
-            wit_build_scoped_symbol_name(interface_name,
+            wit_build_scoped_symbol_name(reg->package_full,
+                                         interface_name,
                                          reg->flags[reg->flags_count].name,
                                          reg->flags[reg->flags_count].symbol_name,
                                          (int)sizeof(reg->flags[reg->flags_count].symbol_name));
@@ -1898,11 +2554,16 @@ static int parse_scope_items(Scanner *s,
                 fprintf(stderr, "wit_codegen: too many aliases\n"); return 0;
             }
             if (!parse_alias(s, &reg->aliases[reg->alias_count])) return 0;
+            snprintf(reg->aliases[reg->alias_count].package_full,
+                     sizeof(reg->aliases[reg->alias_count].package_full),
+                     "%s",
+                     reg->package_full);
             snprintf(reg->aliases[reg->alias_count].interface_name,
                      sizeof(reg->aliases[reg->alias_count].interface_name),
                      "%s",
                      interface_name ? interface_name : "");
-            wit_build_scoped_symbol_name(interface_name,
+            wit_build_scoped_symbol_name(reg->package_full,
+                                         interface_name,
                                          reg->aliases[reg->alias_count].name,
                                          reg->aliases[reg->alias_count].symbol_name,
                                          (int)sizeof(reg->aliases[reg->alias_count].symbol_name));
@@ -1918,7 +2579,6 @@ static int parse_scope_items(Scanner *s,
 
 static int parse_wit(Scanner *s, WitRegistry *reg)
 {
-    memset(reg, 0, sizeof(*reg));
     return parse_scope_items(s, reg, PARSE_SCOPE_TOP, NULL, NULL);
 }
 
@@ -1965,6 +2625,7 @@ static int resolve_type(const WitRegistry *reg, int type_idx);
 static int unwrap_borrow_type(const WitRegistry *reg, int type_idx);
 static const char *prim_c_type(const char *name);
 static int is_primitive(const char *name);
+static int resolve_use_bindings(WitRegistry *reg);
 static int resolve_registry_symbol_scopes(WitRegistry *reg);
 
 static int same_type_shape(const WitRegistry *reg, int a, int b)
@@ -2510,58 +3171,103 @@ static int is_builtin_ident(const char *name)
     return name && (strcmp(name, "string") == 0 || is_primitive(name));
 }
 
-static int lookup_scoped_symbol_name(const WitRegistry *reg,
-                                     const char *interface_name,
-                                     const char *local_name,
-                                     char *out,
-                                     int n)
+static int lookup_decl_symbol_name(const WitRegistry *reg,
+                                   const char *package_full,
+                                   const char *interface_name,
+                                   const char *local_name,
+                                   char *out,
+                                   int n)
 {
-    const char *scope = interface_name ? interface_name : "";
+    const char *pkg = package_full ? package_full : "";
+    const char *iface = interface_name ? interface_name : "";
     const char *match = NULL;
 
     if (!reg || !local_name || local_name[0] == '\0') return 0;
 
-#define CHECK_SCOPE_MATCH(sym_interface, sym_local, sym_name) \
+#define CHECK_DECL_SCOPE(sym_package, sym_interface, sym_local, sym_name) \
     do { \
-        if (strcmp((sym_interface), scope) == 0 && strcmp((sym_local), local_name) == 0) { \
+        if (strcmp((sym_package), pkg) == 0 \
+                && strcmp((sym_interface), iface) == 0 \
+                && strcmp((sym_local), local_name) == 0) { \
             if (match && strcmp(match, (sym_name)) != 0) { \
-                codegen_die("ambiguous scoped WIT name %s in interface %s", \
-                            local_name, scope[0] ? scope : "<top-level>"); \
+                codegen_die("ambiguous WIT name %s in %s/%s", \
+                            local_name, \
+                            pkg[0] ? pkg : "<none>", \
+                            iface[0] ? iface : "<top-level>"); \
             } \
             match = (sym_name); \
         } \
     } while (0)
 
     for (int i = 0; i < reg->alias_count; i++)
-        CHECK_SCOPE_MATCH(reg->aliases[i].interface_name, reg->aliases[i].name, reg->aliases[i].symbol_name);
+        CHECK_DECL_SCOPE(reg->aliases[i].package_full, reg->aliases[i].interface_name,
+                         reg->aliases[i].name, reg->aliases[i].symbol_name);
     for (int i = 0; i < reg->record_count; i++)
-        CHECK_SCOPE_MATCH(reg->records[i].interface_name, reg->records[i].name, reg->records[i].symbol_name);
+        CHECK_DECL_SCOPE(reg->records[i].package_full, reg->records[i].interface_name,
+                         reg->records[i].name, reg->records[i].symbol_name);
     for (int i = 0; i < reg->variant_count; i++)
-        CHECK_SCOPE_MATCH(reg->variants[i].interface_name, reg->variants[i].name, reg->variants[i].symbol_name);
+        CHECK_DECL_SCOPE(reg->variants[i].package_full, reg->variants[i].interface_name,
+                         reg->variants[i].name, reg->variants[i].symbol_name);
     for (int i = 0; i < reg->enum_count; i++)
-        CHECK_SCOPE_MATCH(reg->enums[i].interface_name, reg->enums[i].name, reg->enums[i].symbol_name);
+        CHECK_DECL_SCOPE(reg->enums[i].package_full, reg->enums[i].interface_name,
+                         reg->enums[i].name, reg->enums[i].symbol_name);
     for (int i = 0; i < reg->flags_count; i++)
-        CHECK_SCOPE_MATCH(reg->flags[i].interface_name, reg->flags[i].name, reg->flags[i].symbol_name);
+        CHECK_DECL_SCOPE(reg->flags[i].package_full, reg->flags[i].interface_name,
+                         reg->flags[i].name, reg->flags[i].symbol_name);
     for (int i = 0; i < reg->resource_count; i++)
-        CHECK_SCOPE_MATCH(reg->resources[i].interface_name, reg->resources[i].name, reg->resources[i].symbol_name);
+        CHECK_DECL_SCOPE(reg->resources[i].package_full, reg->resources[i].interface_name,
+                         reg->resources[i].name, reg->resources[i].symbol_name);
 
-#undef CHECK_SCOPE_MATCH
+#undef CHECK_DECL_SCOPE
 
-    if (!match && scope[0] != '\0') {
-        return lookup_scoped_symbol_name(reg, "", local_name, out, n);
-    }
-    if (!match) {
-        return 0;
-    }
-
+    if (!match) return 0;
     if (out && n > 0) {
         snprintf(out, n, "%s", match);
     }
     return 1;
 }
 
+static int lookup_scoped_symbol_name(const WitRegistry *reg,
+                                     const char *package_full,
+                                     const char *interface_name,
+                                     const char *local_name,
+                                     char *out,
+                                     int n)
+{
+    const char *pkg = package_full ? package_full : "";
+    const char *iface = interface_name ? interface_name : "";
+
+    if (!reg || !local_name || local_name[0] == '\0') return 0;
+
+    if (lookup_decl_symbol_name(reg, pkg, iface, local_name, out, n)) {
+        return 1;
+    }
+
+    if (iface[0] != '\0') {
+        for (int i = 0; i < reg->use_binding_count; i++) {
+            if (strcmp(reg->use_bindings[i].package_full, pkg) == 0
+                    && strcmp(reg->use_bindings[i].interface_name, iface) == 0
+                    && strcmp(reg->use_bindings[i].local_name, local_name) == 0) {
+                if (reg->use_bindings[i].target_symbol_name[0] == '\0') {
+                    codegen_die("unresolved use binding for %s in %s/%s",
+                                local_name,
+                                pkg,
+                                iface);
+                }
+                if (out && n > 0) {
+                    snprintf(out, n, "%s", reg->use_bindings[i].target_symbol_name);
+                }
+                return 1;
+            }
+        }
+        return lookup_decl_symbol_name(reg, pkg, "", local_name, out, n);
+    }
+    return 0;
+}
+
 static int qualify_type_expr_symbols(const WitRegistry *reg,
                                      int type_idx,
+                                     const char *package_full,
                                      const char *interface_name)
 {
     WitTypeExpr *t;
@@ -2570,33 +3276,70 @@ static int qualify_type_expr_symbols(const WitRegistry *reg,
     t = &g_type_pool[type_idx];
 
     if (t->kind == TYPE_IDENT) {
-        char symbol_name[MAX_NAME * 2];
+        char symbol_name[MAX_SYMBOL];
 
         if (t->ident[0] == '\0' || is_builtin_ident(t->ident) || wit_symbol_has_scope(t->ident)) {
             return 1;
         }
-        if (lookup_scoped_symbol_name(reg, interface_name, t->ident, symbol_name, (int)sizeof(symbol_name))) {
+        if (lookup_scoped_symbol_name(reg,
+                                      package_full,
+                                      interface_name,
+                                      t->ident,
+                                      symbol_name,
+                                      (int)sizeof(symbol_name))) {
             snprintf(t->ident, sizeof(t->ident), "%s", symbol_name);
         }
         return 1;
     }
 
     for (int i = 0; i < t->param_count; i++) {
-        if (t->params[i] >= 0 && !qualify_type_expr_symbols(reg, t->params[i], interface_name)) {
+        if (t->params[i] >= 0
+                && !qualify_type_expr_symbols(reg, t->params[i], package_full, interface_name)) {
             return 0;
         }
     }
     return 1;
 }
 
+static int resolve_use_bindings(WitRegistry *reg)
+{
+    char symbol_name[MAX_SYMBOL];
+
+    if (!reg) return 0;
+
+    for (int i = 0; i < reg->use_binding_count; i++) {
+        if (!lookup_decl_symbol_name(reg,
+                                     reg->use_bindings[i].target_package_full,
+                                     reg->use_bindings[i].target_interface_name,
+                                     reg->use_bindings[i].target_name,
+                                     symbol_name,
+                                     (int)sizeof(symbol_name))) {
+            codegen_die("unknown imported WIT name %s from %s/%s in %s/%s",
+                        reg->use_bindings[i].target_name,
+                        reg->use_bindings[i].target_package_full,
+                        reg->use_bindings[i].target_interface_name,
+                        reg->use_bindings[i].package_full,
+                        reg->use_bindings[i].interface_name);
+        }
+        snprintf(reg->use_bindings[i].target_symbol_name,
+                 sizeof(reg->use_bindings[i].target_symbol_name),
+                 "%s",
+                 symbol_name);
+    }
+    return 1;
+}
+
 static int resolve_registry_symbol_scopes(WitRegistry *reg)
 {
-    char owner_symbol[MAX_NAME * 2];
+    char owner_symbol[MAX_SYMBOL];
 
     if (!reg) return 0;
 
     for (int i = 0; i < reg->alias_count; i++) {
-        if (!qualify_type_expr_symbols(reg, reg->aliases[i].target, reg->aliases[i].interface_name)) {
+        if (!qualify_type_expr_symbols(reg,
+                                       reg->aliases[i].target,
+                                       reg->aliases[i].package_full,
+                                       reg->aliases[i].interface_name)) {
             return 0;
         }
     }
@@ -2604,6 +3347,7 @@ static int resolve_registry_symbol_scopes(WitRegistry *reg)
         for (int j = 0; j < reg->records[i].field_count; j++) {
             if (!qualify_type_expr_symbols(reg,
                                            reg->records[i].fields[j].wit_type,
+                                           reg->records[i].package_full,
                                            reg->records[i].interface_name)) {
                 return 0;
             }
@@ -2614,6 +3358,7 @@ static int resolve_registry_symbol_scopes(WitRegistry *reg)
             if (reg->variants[i].cases[j].payload_type >= 0
                     && !qualify_type_expr_symbols(reg,
                                                   reg->variants[i].cases[j].payload_type,
+                                                  reg->variants[i].package_full,
                                                   reg->variants[i].interface_name)) {
                 return 0;
             }
@@ -2623,6 +3368,7 @@ static int resolve_registry_symbol_scopes(WitRegistry *reg)
         for (int j = 0; j < reg->funcs[i].param_count; j++) {
             if (!qualify_type_expr_symbols(reg,
                                            reg->funcs[i].params[j].wit_type,
+                                           reg->package_full,
                                            reg->funcs[i].interface_name)) {
                 return 0;
             }
@@ -2630,11 +3376,13 @@ static int resolve_registry_symbol_scopes(WitRegistry *reg)
         if (reg->funcs[i].result_type >= 0
                 && !qualify_type_expr_symbols(reg,
                                               reg->funcs[i].result_type,
+                                              reg->package_full,
                                               reg->funcs[i].interface_name)) {
-            return 0;
+                return 0;
         }
         if (reg->funcs[i].owner_kind == WIT_OWNER_RESOURCE) {
             if (!lookup_scoped_symbol_name(reg,
+                                           reg->package_full,
                                            reg->funcs[i].interface_name,
                                            reg->funcs[i].owner_name,
                                            owner_symbol,
@@ -2801,37 +3549,10 @@ static void wit_emit_name_from_symbol(const WitRegistry *reg,
                                       char *out,
                                       int n)
 {
-    const char *sep;
-    char interface_name[MAX_NAME];
-    char local_name[MAX_NAME];
-
     if (!out || n <= 0) return;
     out[0] = '\0';
     if (!wit_name) return;
-
-    sep = strstr(wit_name, "::");
-    if (!sep) {
-        snprintf(out, n, "%s", wit_name);
-        return;
-    }
-
-    {
-        size_t interface_len = (size_t)(sep - wit_name);
-        size_t local_len = strlen(sep + 2);
-
-        if (interface_len >= sizeof(interface_name)) interface_len = sizeof(interface_name) - 1u;
-        if (local_len >= sizeof(local_name)) local_len = sizeof(local_name) - 1u;
-        memcpy(interface_name, wit_name, interface_len);
-        interface_name[interface_len] = '\0';
-        memcpy(local_name, sep + 2, local_len);
-        local_name[local_len] = '\0';
-    }
-
-    if (wit_local_name_occurrences(reg, local_name) <= 1) {
-        snprintf(out, n, "%s", local_name);
-    } else {
-        snprintf(out, n, "%s-%s", interface_name, local_name);
-    }
+    wit_symbol_display_name(reg, NULL, NULL, wit_name, out, n);
 }
 
 static const char *wit_record_symbol_name(const WitRecord *rec)
@@ -2863,9 +3584,9 @@ static const char *wit_resource_symbol_name(const WitResource *resource)
 
 static void wit_type_c_typename(const WitRegistry *reg, const char *wit_name, char *out, int n)
 {
-    char emitted[MAX_NAME * 2];
-    char normalized[MAX_NAME];
-    char camel[MAX_NAME];
+    char emitted[MAX_SYMBOL];
+    char normalized[MAX_SYMBOL];
+    char camel[MAX_SYMBOL];
 
     wit_emit_name_from_symbol(reg, wit_name, emitted, (int)sizeof(emitted));
     wit_trim_leading_package_tail(reg, emitted, normalized, (int)sizeof(normalized));
@@ -2893,9 +3614,9 @@ static void wit_resource_c_typename(const WitRegistry *reg, const char *resource
 
 static void wit_macro_name(const WitRegistry *reg, const char *wit_name, char *out, int n)
 {
-    char emitted[MAX_NAME * 2];
-    char normalized[MAX_NAME];
-    char upper[MAX_NAME];
+    char emitted[MAX_SYMBOL];
+    char normalized[MAX_SYMBOL];
+    char upper[MAX_SYMBOL];
 
     wit_emit_name_from_symbol(reg, wit_name, emitted, (int)sizeof(emitted));
     wit_trim_leading_package_tail(reg, emitted, normalized, (int)sizeof(normalized));
@@ -2914,9 +3635,9 @@ static void wit_macro_name(const WitRegistry *reg, const char *wit_name, char *o
 
 static void wit_function_suffix(const WitRegistry *reg, const char *wit_name, char *out, int n)
 {
-    char emitted[MAX_NAME * 2];
-    char normalized[MAX_NAME];
-    char snake[MAX_NAME];
+    char emitted[MAX_SYMBOL];
+    char normalized[MAX_SYMBOL];
+    char snake[MAX_SYMBOL];
 
     wit_emit_name_from_symbol(reg, wit_name, emitted, (int)sizeof(emitted));
     wit_trim_leading_package_tail(reg, emitted, normalized, (int)sizeof(normalized));
@@ -3656,6 +4377,7 @@ static void emit_header(FILE *out, const WitRegistry *reg,
             char case_trace[256];
             wit_name_to_upper_ident(var->cases[j].name, case_upper, (int)sizeof(case_upper));
             format_variant_case_trace(reg,
+                                      var->package_full,
                                       var->interface_name,
                                       &var->cases[j],
                                       case_trace,
@@ -3681,6 +4403,7 @@ static void emit_header(FILE *out, const WitRegistry *reg,
                 char field_trace[256];
                 wit_name_to_snake_ident(rec->fields[j].name, field_name, (int)sizeof(field_name));
                 format_field_trace(reg,
+                                   rec->package_full,
                                    rec->interface_name,
                                    &rec->fields[j],
                                    field_trace,
@@ -3708,6 +4431,7 @@ static void emit_header(FILE *out, const WitRegistry *reg,
                     char case_trace[256];
                     wit_name_to_snake_ident(var->cases[j].name, case_name, (int)sizeof(case_name));
                     format_variant_case_trace(reg,
+                                              var->package_full,
                                               var->interface_name,
                                               &var->cases[j],
                                               case_trace,
@@ -4860,12 +5584,20 @@ int main(int argc, char **argv)
     }
 
     Scanner scanner;
-    scanner_init(&scanner, src, (int)fsize);
-
     WitRegistry reg;
+    if (!init_registry_for_source(&reg, wit_path, src, (int)fsize)) {
+        free(src);
+        return 1;
+    }
+
+    scanner_init(&scanner, src, (int)fsize);
     if (!parse_wit(&scanner, &reg)) {
         fprintf(stderr, "wit_codegen: parse failed at line %d col %d\n",
                 scanner.line, scanner.col);
+        free(src);
+        return 1;
+    }
+    if (!resolve_use_bindings(&reg)) {
         free(src);
         return 1;
     }
@@ -4874,10 +5606,6 @@ int main(int argc, char **argv)
         return 1;
     }
     if (!lower_operations(&reg)) {
-        free(src);
-        return 1;
-    }
-    if (!infer_package_decl_from_siblings(&reg, wit_path)) {
         free(src);
         return 1;
     }

@@ -274,6 +274,14 @@ set(WASI_RANDOM_INSECURE_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/tests/gene
 set(WASI_RANDOM_INSECURE_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/wasi_random_insecure.c")
 set(WASI_RANDOM_INSECURE_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/wasi_random_insecure.manifest")
 
+set(WASI_CLOCKS_TIMEZONE_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/wasi_clocks_timezone.h")
+set(WASI_CLOCKS_TIMEZONE_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/wasi_clocks_timezone.c")
+set(WASI_CLOCKS_TIMEZONE_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/wasi_clocks_timezone.manifest")
+
+set(WASI_CLOCKS_MONOTONIC_CLOCK_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/wasi_clocks_monotonic_clock.h")
+set(WASI_CLOCKS_MONOTONIC_CLOCK_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/wasi_clocks_monotonic_clock.c")
+set(WASI_CLOCKS_MONOTONIC_CLOCK_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/wasi_clocks_monotonic_clock.manifest")
+
 set(SCOPED_NAMES_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/scoped_names.h")
 set(SCOPED_NAMES_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/scoped_names.c")
 set(SCOPED_NAMES_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/scoped_names.manifest")
@@ -445,6 +453,38 @@ add_custom_target(wasi_random_insecure_wit_schema_gen
     DEPENDS ${WASI_RANDOM_INSECURE_WIT_GENERATED_H}
             ${WASI_RANDOM_INSECURE_WIT_GENERATED_C}
             ${WASI_RANDOM_INSECURE_WIT_GENERATED_MANIFEST})
+
+# WASI clocks timezone fixture
+add_custom_command(
+    OUTPUT ${WASI_CLOCKS_TIMEZONE_WIT_GENERATED_H} ${WASI_CLOCKS_TIMEZONE_WIT_GENERATED_C} ${WASI_CLOCKS_TIMEZONE_WIT_GENERATED_MANIFEST}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/tests/generated"
+    COMMAND wit_codegen --wit "${CMAKE_CURRENT_SOURCE_DIR}/tests/sapling_tests/fixtures/wasi-imports/clocks/wit/timezone.wit"
+                        --header "${WASI_CLOCKS_TIMEZONE_WIT_GENERATED_H}" --source "${WASI_CLOCKS_TIMEZONE_WIT_GENERATED_C}" --manifest "${WASI_CLOCKS_TIMEZONE_WIT_GENERATED_MANIFEST}"
+    DEPENDS wit_codegen
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/sapling_tests/fixtures/wasi-imports/clocks/wit/timezone.wit"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/sapling_tests/fixtures/wasi-imports/clocks/wit/wall-clock.wit"
+    COMMENT "Generating WASI clocks timezone fixture bindings..."
+)
+add_custom_target(wasi_clocks_timezone_wit_schema_gen
+    DEPENDS ${WASI_CLOCKS_TIMEZONE_WIT_GENERATED_H}
+            ${WASI_CLOCKS_TIMEZONE_WIT_GENERATED_C}
+            ${WASI_CLOCKS_TIMEZONE_WIT_GENERATED_MANIFEST})
+
+# WASI clocks monotonic-clock fixture
+add_custom_command(
+    OUTPUT ${WASI_CLOCKS_MONOTONIC_CLOCK_WIT_GENERATED_H} ${WASI_CLOCKS_MONOTONIC_CLOCK_WIT_GENERATED_C} ${WASI_CLOCKS_MONOTONIC_CLOCK_WIT_GENERATED_MANIFEST}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/tests/generated"
+    COMMAND wit_codegen --wit "${CMAKE_CURRENT_SOURCE_DIR}/tests/sapling_tests/fixtures/wasi-imports/clocks/wit/monotonic-clock.wit"
+                        --header "${WASI_CLOCKS_MONOTONIC_CLOCK_WIT_GENERATED_H}" --source "${WASI_CLOCKS_MONOTONIC_CLOCK_WIT_GENERATED_C}" --manifest "${WASI_CLOCKS_MONOTONIC_CLOCK_WIT_GENERATED_MANIFEST}"
+    DEPENDS wit_codegen
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/sapling_tests/fixtures/wasi-imports/clocks/wit/monotonic-clock.wit"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/sapling_tests/fixtures/wasi-imports/io/wit/poll.wit"
+    COMMENT "Generating WASI clocks monotonic-clock fixture bindings..."
+)
+add_custom_target(wasi_clocks_monotonic_clock_wit_schema_gen
+    DEPENDS ${WASI_CLOCKS_MONOTONIC_CLOCK_WIT_GENERATED_H}
+            ${WASI_CLOCKS_MONOTONIC_CLOCK_WIT_GENERATED_C}
+            ${WASI_CLOCKS_MONOTONIC_CLOCK_WIT_GENERATED_MANIFEST})
 
 # Scoped-name regression fixture
 add_custom_command(
@@ -793,6 +833,16 @@ add_library(croft_wit_wasi_random_insecure STATIC ${WASI_RANDOM_INSECURE_WIT_GEN
 add_dependencies(croft_wit_wasi_random_insecure wasi_random_insecure_wit_schema_gen)
 croft_apply_public_includes(croft_wit_wasi_random_insecure)
 target_link_libraries(croft_wit_wasi_random_insecure PUBLIC croft_thatch_core)
+
+add_library(croft_wit_wasi_clocks_timezone STATIC ${WASI_CLOCKS_TIMEZONE_WIT_GENERATED_C})
+add_dependencies(croft_wit_wasi_clocks_timezone wasi_clocks_timezone_wit_schema_gen)
+croft_apply_public_includes(croft_wit_wasi_clocks_timezone)
+target_link_libraries(croft_wit_wasi_clocks_timezone PUBLIC croft_thatch_core)
+
+add_library(croft_wit_wasi_clocks_monotonic_clock STATIC ${WASI_CLOCKS_MONOTONIC_CLOCK_WIT_GENERATED_C})
+add_dependencies(croft_wit_wasi_clocks_monotonic_clock wasi_clocks_monotonic_clock_wit_schema_gen)
+croft_apply_public_includes(croft_wit_wasi_clocks_monotonic_clock)
+target_link_libraries(croft_wit_wasi_clocks_monotonic_clock PUBLIC croft_thatch_core)
 
 add_library(croft_wit_scoped_names STATIC ${SCOPED_NAMES_WIT_GENERATED_C})
 add_dependencies(croft_wit_scoped_names scoped_names_wit_schema_gen)
@@ -2084,6 +2134,12 @@ if(CROFT_BUILD_TESTS)
                 croft_wit_wasi_random_insecure
             )
         endif()
+        if(test_name STREQUAL "wasi_wit_imports_smoke")
+            target_link_libraries(${test_name} PRIVATE
+                croft_wit_wasi_clocks_timezone
+                croft_wit_wasi_clocks_monotonic_clock
+            )
+        endif()
         if(test_name STREQUAL "test_wit_scoped_names_smoke")
             target_link_libraries(${test_name} PRIVATE croft_wit_scoped_names)
         endif()
@@ -2096,6 +2152,13 @@ if(CROFT_BUILD_TESTS)
             add_dependencies(${test_name}
                 wasi_cli_environment_wit_schema_gen
                 wasi_random_insecure_wit_schema_gen
+            )
+            target_include_directories(${test_name} PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
+        endif()
+        if(test_name STREQUAL "wasi_wit_imports_smoke")
+            add_dependencies(${test_name}
+                wasi_clocks_timezone_wit_schema_gen
+                wasi_clocks_monotonic_clock_wit_schema_gen
             )
             target_include_directories(${test_name} PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
         endif()
