@@ -1,7 +1,107 @@
 cmake_minimum_required(VERSION 3.15)
+
+option(CROFT_PREFER_HOMEBREW_LLVM_21
+       "Prefer Homebrew llvm@21/lld@21 on macOS for fresh configure runs"
+       ON)
+set(CROFT_LLVM_21_ROOT "" CACHE PATH
+    "Optional override for the preferred LLVM 21 install prefix (expects bin/clang and bin/clang++)")
+set(CROFT_LLD_21_ROOT "" CACHE PATH
+    "Optional override for the preferred LLD 21 install prefix (expects bin/wasm-ld)")
+
+function(croft_collect_preferred_prefixes out_var explicit_root formula_name)
+    set(prefixes "")
+    if(explicit_root)
+        list(APPEND prefixes "${explicit_root}")
+    endif()
+    if(APPLE)
+        list(APPEND prefixes
+            "/opt/homebrew/opt/${formula_name}"
+            "/usr/local/opt/${formula_name}")
+    endif()
+    list(REMOVE_DUPLICATES prefixes)
+    set(${out_var} "${prefixes}" PARENT_SCOPE)
+endfunction()
+
+function(croft_find_tool_in_prefixes out_var tool_name)
+    set(prefixes ${ARGN})
+    foreach(prefix IN LISTS prefixes)
+        if(prefix AND EXISTS "${prefix}/bin/${tool_name}")
+            set(${out_var} "${prefix}/bin/${tool_name}" PARENT_SCOPE)
+            return()
+        endif()
+    endforeach()
+    set(${out_var} "" PARENT_SCOPE)
+endfunction()
+
+set(CROFT_LLVM_CLANG_TOOL "" CACHE FILEPATH
+    "Resolved clang path used by Croft tool discovery")
+set(CROFT_LLVM_CLANGXX_TOOL "" CACHE FILEPATH
+    "Resolved clang++ path used by Croft tool discovery")
+set(CROFT_WASM_LD_TOOL "" CACHE FILEPATH
+    "Resolved wasm-ld path used by Croft Wasm guest tooling")
+
+if(CROFT_PREFER_HOMEBREW_LLVM_21)
+    croft_collect_preferred_prefixes(_croft_llvm_prefixes "${CROFT_LLVM_21_ROOT}" "llvm@21")
+    croft_collect_preferred_prefixes(_croft_lld_prefixes "${CROFT_LLD_21_ROOT}" "lld@21")
+    croft_find_tool_in_prefixes(_croft_clang clang ${_croft_llvm_prefixes})
+    croft_find_tool_in_prefixes(_croft_clangxx clang++ ${_croft_llvm_prefixes})
+    croft_find_tool_in_prefixes(_croft_wasm_ld wasm-ld ${_croft_lld_prefixes})
+
+    if(_croft_clang AND _croft_clangxx)
+        set(CROFT_LLVM_CLANG_TOOL "${_croft_clang}" CACHE FILEPATH
+            "Resolved clang path used by Croft tool discovery" FORCE)
+        set(CROFT_LLVM_CLANGXX_TOOL "${_croft_clangxx}" CACHE FILEPATH
+            "Resolved clang++ path used by Croft tool discovery" FORCE)
+        get_filename_component(_croft_llvm_bin_dir "${_croft_clang}" DIRECTORY)
+        list(PREPEND CMAKE_PROGRAM_PATH "${_croft_llvm_bin_dir}")
+        if(NOT DEFINED CMAKE_C_COMPILER)
+            set(CMAKE_C_COMPILER "${_croft_clang}" CACHE FILEPATH
+                "C compiler selected by Croft tool discovery")
+        endif()
+        if(NOT DEFINED CMAKE_CXX_COMPILER)
+            set(CMAKE_CXX_COMPILER "${_croft_clangxx}" CACHE FILEPATH
+                "C++ compiler selected by Croft tool discovery")
+        endif()
+        if(NOT DEFINED CMAKE_OBJC_COMPILER)
+            set(CMAKE_OBJC_COMPILER "${_croft_clang}" CACHE FILEPATH
+                "Objective-C compiler selected by Croft tool discovery")
+        endif()
+        if(NOT DEFINED CMAKE_OBJCXX_COMPILER)
+            set(CMAKE_OBJCXX_COMPILER "${_croft_clangxx}" CACHE FILEPATH
+                "Objective-C++ compiler selected by Croft tool discovery")
+        endif()
+    endif()
+
+    if(_croft_wasm_ld)
+        set(CROFT_WASM_LD_TOOL "${_croft_wasm_ld}" CACHE FILEPATH
+            "Resolved wasm-ld path used by Croft Wasm guest tooling" FORCE)
+        get_filename_component(_croft_lld_bin_dir "${_croft_wasm_ld}" DIRECTORY)
+        list(PREPEND CMAKE_PROGRAM_PATH "${_croft_lld_bin_dir}")
+    endif()
+endif()
+
+if(CMAKE_PROGRAM_PATH)
+    list(REMOVE_DUPLICATES CMAKE_PROGRAM_PATH)
+endif()
+
 project(croft C CXX OBJC OBJCXX)
 
 include(FetchContent)
+
+if(CROFT_PREFER_HOMEBREW_LLVM_21)
+    if(CROFT_LLVM_CLANG_TOOL)
+        if(CMAKE_C_COMPILER STREQUAL CROFT_LLVM_CLANG_TOOL)
+            message(STATUS "Croft compiler toolchain: ${CMAKE_C_COMPILER}")
+        else()
+            message(STATUS
+                "Croft preferred llvm@21 detected at ${CROFT_LLVM_CLANG_TOOL}, "
+                "but active compiler is ${CMAKE_C_COMPILER}. Use a fresh build dir to adopt the preferred toolchain.")
+        endif()
+    endif()
+    if(CROFT_WASM_LD_TOOL)
+        message(STATUS "Croft Wasm linker: ${CROFT_WASM_LD_TOOL}")
+    endif()
+endif()
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
