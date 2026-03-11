@@ -16,7 +16,8 @@ int main(void)
     timezone_command.case_tag = SAP_WIT_CLOCKS_TIMEZONE_COMMAND_DISPLAY;
     timezone_command.val.display = when;
     timezone_reply.case_tag = SAP_WIT_CLOCKS_TIMEZONE_REPLY_TIMEZONE_DISPLAY;
-    monotonic_command.case_tag = SAP_WIT_CLOCKS_MONOTONIC_CLOCK_COMMAND_SUBSCRIBE;
+    monotonic_command.case_tag = SAP_WIT_CLOCKS_MONOTONIC_CLOCK_COMMAND_SUBSCRIBE_DURATION;
+    monotonic_command.val.subscribe_duration.when = 1u;
     monotonic_reply.case_tag = SAP_WIT_CLOCKS_MONOTONIC_CLOCK_REPLY_POLLABLE;
     monotonic_reply.val.pollable = pollable;
 

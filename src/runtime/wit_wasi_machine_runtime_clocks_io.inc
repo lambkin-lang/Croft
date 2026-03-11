@@ -20,24 +20,71 @@ static int32_t croft_wit_wasi_dispatch_monotonic_now(void* ctx,
     return ERR_OK;
 }
 
-static int32_t croft_wit_wasi_dispatch_monotonic_subscribe(
+static int32_t croft_wit_wasi_dispatch_monotonic_resolution(
     void* ctx,
+    SapWitClocksMonotonicClockReply* reply_out)
+{
+    struct timespec ts = {0};
+    uint64_t resolution_ns = 0u;
+
+    (void)ctx;
+    if (!reply_out) {
+        return ERR_INVALID;
+    }
+    if (clock_getres(CLOCK_MONOTONIC, &ts) != 0) {
+        return ERR_INVALID;
+    }
+    resolution_ns = (uint64_t)ts.tv_sec * 1000000000ull + (uint64_t)ts.tv_nsec;
+
+    sap_wit_zero_clocks_monotonic_clock_reply(reply_out);
+    reply_out->case_tag = SAP_WIT_CLOCKS_MONOTONIC_CLOCK_REPLY_RESOLUTION;
+    reply_out->val.resolution = resolution_ns;
+    return ERR_OK;
+}
+
+static int32_t croft_wit_wasi_dispatch_monotonic_subscribe_instant(
+    void* ctx,
+    const SapWitClocksSubscribeInstant* payload,
+    SapWitClocksMonotonicClockReply* reply_out)
+{
+    croft_wit_wasi_machine_runtime* runtime = (croft_wit_wasi_machine_runtime*)ctx;
+    uint32_t handle = 0u;
+    int rc;
+
+    if (!runtime || !payload || !reply_out) {
+        return ERR_INVALID;
+    }
+    rc = croft_wit_wasi_pollable_insert(runtime, payload->when, &handle);
+    if (rc != ERR_OK) {
+        return rc;
+    }
+
+    sap_wit_zero_clocks_monotonic_clock_reply(reply_out);
+    reply_out->case_tag = SAP_WIT_CLOCKS_MONOTONIC_CLOCK_REPLY_POLLABLE;
+    reply_out->val.pollable = (SapWitClocksPollableResource)handle;
+    return ERR_OK;
+}
+
+static int32_t croft_wit_wasi_dispatch_monotonic_subscribe_duration(
+    void* ctx,
+    const SapWitClocksSubscribeDuration* payload,
     SapWitClocksMonotonicClockReply* reply_out)
 {
     croft_wit_wasi_machine_runtime* runtime = (croft_wit_wasi_machine_runtime*)ctx;
     uint64_t now_ns = 0u;
+    uint64_t due_ns = 0u;
     uint32_t handle = 0u;
     int rc;
 
-    if (!runtime || !reply_out) {
+    if (!runtime || !payload || !reply_out) {
         return ERR_INVALID;
     }
-
     rc = croft_wit_wasi_clock_get_ns(CLOCK_MONOTONIC, &now_ns);
     if (rc != ERR_OK) {
         return rc;
     }
-    rc = croft_wit_wasi_pollable_insert(runtime, now_ns, &handle);
+    due_ns = (UINT64_MAX - now_ns < payload->when) ? UINT64_MAX : (now_ns + payload->when);
+    rc = croft_wit_wasi_pollable_insert(runtime, due_ns, &handle);
     if (rc != ERR_OK) {
         return rc;
     }
@@ -1526,7 +1573,9 @@ static int32_t croft_wit_wasi_dispatch_io_error_to_debug_string(
 
 static const SapWitClocksMonotonicClockDispatchOps g_croft_wit_wasi_monotonic_ops = {
     .now = croft_wit_wasi_dispatch_monotonic_now,
-    .subscribe = croft_wit_wasi_dispatch_monotonic_subscribe,
+    .resolution = croft_wit_wasi_dispatch_monotonic_resolution,
+    .subscribe_instant = croft_wit_wasi_dispatch_monotonic_subscribe_instant,
+    .subscribe_duration = croft_wit_wasi_dispatch_monotonic_subscribe_duration,
 };
 
 static const SapWitClocksWallClockDispatchOps g_croft_wit_wasi_wall_clock_ops = {

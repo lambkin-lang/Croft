@@ -184,6 +184,8 @@ endfunction()
 function(croft_select_wasi_wit out_var relative_path fallback_path)
     if(CROFT_WASI_PROPOSALS_DIR AND EXISTS "${CROFT_WASI_PROPOSALS_DIR}/${relative_path}")
         set(selected "${CROFT_WASI_PROPOSALS_DIR}/${relative_path}")
+    elseif(IS_ABSOLUTE "${fallback_path}")
+        set(selected "${fallback_path}")
     else()
         set(selected "${CMAKE_CURRENT_SOURCE_DIR}/${fallback_path}")
     endif()
@@ -231,7 +233,7 @@ function(croft_json_string out_var value)
 endfunction()
 
 function(croft_register_artifact target kind)
-    cmake_parse_arguments(ART "" "PROFILE" "TAGS;DEPENDS" ${ARGN})
+    cmake_parse_arguments(ART "" "PROFILE;UPSTREAM_PACKAGE;UPSTREAM_VERSION;SUPPORT_STATUS" "TAGS;DEPENDS" ${ARGN})
     if(ART_PROFILE)
         set(profile "${ART_PROFILE}")
     else()
@@ -242,9 +244,24 @@ function(croft_register_artifact target kind)
     else()
         set(profile_json "null")
     endif()
+    if(ART_UPSTREAM_PACKAGE)
+        croft_json_string(upstream_package_json "${ART_UPSTREAM_PACKAGE}")
+    else()
+        set(upstream_package_json "null")
+    endif()
+    if(ART_UPSTREAM_VERSION)
+        croft_json_string(upstream_version_json "${ART_UPSTREAM_VERSION}")
+    else()
+        set(upstream_version_json "null")
+    endif()
+    if(ART_SUPPORT_STATUS)
+        croft_json_string(support_status_json "${ART_SUPPORT_STATUS}")
+    else()
+        set(support_status_json "null")
+    endif()
     croft_json_array(tags_json ${ART_TAGS})
     croft_json_array(depends_json ${ART_DEPENDS})
-    set(entry "    {\n      \"name\": \"${target}\",\n      \"kind\": \"${kind}\",\n      \"profile\": ${profile_json},\n      \"tags\": ${tags_json},\n      \"depends\": ${depends_json}\n    }")
+    set(entry "    {\n      \"name\": \"${target}\",\n      \"kind\": \"${kind}\",\n      \"profile\": ${profile_json},\n      \"upstream_package\": ${upstream_package_json},\n      \"upstream_version\": ${upstream_version_json},\n      \"support_status\": ${support_status_json},\n      \"tags\": ${tags_json},\n      \"depends\": ${depends_json}\n    }")
     set_property(GLOBAL APPEND PROPERTY CROFT_ARTIFACT_ENTRIES "${entry}")
     set_property(GLOBAL APPEND PROPERTY CROFT_INSTALL_TARGETS "${target}")
 endfunction()
@@ -496,104 +513,123 @@ set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
 
 # ── WIT Schema Codegen ──────────────────────────────────────────────────
+set(CROFT_WASI_VENDOR_0_2_9_PROPOSALS_DIR
+    "${CMAKE_CURRENT_SOURCE_DIR}/vendor/wasi/0.2.9/proposals")
+set(CROFT_WASI_CURRENT_MACHINE_0_2_9_DIR
+    "${CMAKE_CURRENT_SOURCE_DIR}/schemas/wit/wasi-current-machine/0.2.9")
+file(GLOB_RECURSE CROFT_WASI_VENDOR_0_2_9_WIT_INPUTS CONFIGURE_DEPENDS
+    "${CROFT_WASI_VENDOR_0_2_9_PROPOSALS_DIR}/*/wit/*.wit")
+if(CROFT_WASI_PROPOSALS_DIR)
+    set(CROFT_WASI_CURRENT_MACHINE_PACKAGE_ROOT_ARGS "")
+else()
+    set(CROFT_WASI_CURRENT_MACHINE_PACKAGE_ROOT_ARGS
+        --package-root "${CROFT_WASI_VENDOR_0_2_9_PROPOSALS_DIR}")
+endif()
+
 croft_select_wasi_wit(WASI_CLI_ENVIRONMENT_WIT_PATH
     "cli/wit/environment.wit"
-    "tests/sapling_tests/fixtures/wasi-imports/cli/wit/environment.wit")
+    "${CROFT_WASI_CURRENT_MACHINE_0_2_9_DIR}/cli/wit/environment.wit")
 croft_collect_wit_dir_depends(WASI_CLI_ENVIRONMENT_WIT_DEPENDS "${WASI_CLI_ENVIRONMENT_WIT_PATH}")
+list(APPEND WASI_CLI_ENVIRONMENT_WIT_DEPENDS ${CROFT_WASI_VENDOR_0_2_9_WIT_INPUTS})
 
 croft_select_wasi_wit(WASI_CLI_STDIO_WIT_PATH
     "cli/wit/stdio.wit"
-    "tests/sapling_tests/fixtures/wasi-imports/cli/wit/stdio.wit")
+    "${CROFT_WASI_CURRENT_MACHINE_0_2_9_DIR}/cli/wit/stdio.wit")
 croft_collect_wit_dir_depends(WASI_CLI_STDIO_WIT_DEPENDS "${WASI_CLI_STDIO_WIT_PATH}")
+list(APPEND WASI_CLI_STDIO_WIT_DEPENDS ${CROFT_WASI_VENDOR_0_2_9_WIT_INPUTS})
 
 croft_select_wasi_wit(WASI_CLI_TERMINAL_WIT_PATH
     "cli/wit/terminal.wit"
-    "tests/sapling_tests/fixtures/wasi-imports/cli/wit/terminal.wit")
+    "${CROFT_WASI_CURRENT_MACHINE_0_2_9_DIR}/cli/wit/terminal.wit")
 croft_collect_wit_dir_depends(WASI_CLI_TERMINAL_WIT_DEPENDS "${WASI_CLI_TERMINAL_WIT_PATH}")
+list(APPEND WASI_CLI_TERMINAL_WIT_DEPENDS ${CROFT_WASI_VENDOR_0_2_9_WIT_INPUTS})
 
 croft_select_wasi_wit(WASI_CLI_RUN_WIT_PATH
     "cli/wit/run.wit"
-    "tests/sapling_tests/fixtures/wasi-imports/cli/wit/run.wit")
+    "${CROFT_WASI_CURRENT_MACHINE_0_2_9_DIR}/cli/wit/run.wit")
 croft_collect_wit_dir_depends(WASI_CLI_RUN_WIT_DEPENDS "${WASI_CLI_RUN_WIT_PATH}")
+list(APPEND WASI_CLI_RUN_WIT_DEPENDS ${CROFT_WASI_VENDOR_0_2_9_WIT_INPUTS})
 
 croft_select_wasi_wit(WASI_CLI_IMPORTS_WIT_PATH
     "cli/wit/imports.wit"
-    "tests/sapling_tests/fixtures/wasi-imports/cli/wit/imports.wit")
+    "${CROFT_WASI_CURRENT_MACHINE_0_2_9_DIR}/cli/wit/imports.wit")
 croft_collect_wit_dir_depends(WASI_CLI_IMPORTS_WIT_DEPENDS "${WASI_CLI_IMPORTS_WIT_PATH}")
+list(APPEND WASI_CLI_IMPORTS_WIT_DEPENDS ${CROFT_WASI_VENDOR_0_2_9_WIT_INPUTS})
 
 croft_select_wasi_wit(WASI_CLI_COMMAND_WIT_PATH
     "cli/wit/command.wit"
-    "tests/sapling_tests/fixtures/wasi-imports/cli/wit/command.wit")
+    "${CROFT_WASI_CURRENT_MACHINE_0_2_9_DIR}/cli/wit/command.wit")
 croft_collect_wit_dir_depends(WASI_CLI_COMMAND_WIT_DEPENDS "${WASI_CLI_COMMAND_WIT_PATH}")
+list(APPEND WASI_CLI_COMMAND_WIT_DEPENDS ${CROFT_WASI_VENDOR_0_2_9_WIT_INPUTS})
 
 croft_select_wasi_wit(WASI_RANDOM_RANDOM_WIT_PATH
     "random/wit/random.wit"
-    "tests/sapling_tests/fixtures/wasi/random/random.wit")
+    "${CROFT_WASI_VENDOR_0_2_9_PROPOSALS_DIR}/random/wit/random.wit")
 croft_collect_wit_dir_depends(WASI_RANDOM_RANDOM_WIT_DEPENDS "${WASI_RANDOM_RANDOM_WIT_PATH}")
 
 croft_select_wasi_wit(WASI_RANDOM_INSECURE_WIT_PATH
     "random/wit/insecure.wit"
-    "tests/sapling_tests/fixtures/wasi/random/insecure.wit")
+    "${CROFT_WASI_VENDOR_0_2_9_PROPOSALS_DIR}/random/wit/insecure.wit")
 croft_collect_wit_dir_depends(WASI_RANDOM_INSECURE_WIT_DEPENDS "${WASI_RANDOM_INSECURE_WIT_PATH}")
 
 croft_select_wasi_wit(WASI_RANDOM_INSECURE_SEED_WIT_PATH
     "random/wit/insecure-seed.wit"
-    "tests/sapling_tests/fixtures/wasi/random/insecure-seed.wit")
+    "${CROFT_WASI_VENDOR_0_2_9_PROPOSALS_DIR}/random/wit/insecure-seed.wit")
 croft_collect_wit_dir_depends(WASI_RANDOM_INSECURE_SEED_WIT_DEPENDS "${WASI_RANDOM_INSECURE_SEED_WIT_PATH}")
 
 croft_select_wasi_wit(WASI_RANDOM_WORLD_WIT_PATH
     "random/wit/world.wit"
-    "tests/sapling_tests/fixtures/wasi/random/world.wit")
+    "${CROFT_WASI_VENDOR_0_2_9_PROPOSALS_DIR}/random/wit/world.wit")
 croft_collect_wit_dir_depends(WASI_RANDOM_WORLD_WIT_DEPENDS "${WASI_RANDOM_WORLD_WIT_PATH}")
 
 croft_select_wasi_wit(WASI_CLOCKS_TIMEZONE_WIT_PATH
     "clocks/wit/timezone.wit"
-    "tests/sapling_tests/fixtures/wasi-imports/clocks/wit/timezone.wit")
+    "${CROFT_WASI_VENDOR_0_2_9_PROPOSALS_DIR}/clocks/wit/timezone.wit")
 croft_collect_wit_dir_depends(WASI_CLOCKS_TIMEZONE_WIT_DEPENDS "${WASI_CLOCKS_TIMEZONE_WIT_PATH}")
 
 croft_select_wasi_wit(WASI_CLOCKS_WALL_CLOCK_WIT_PATH
     "clocks/wit/wall-clock.wit"
-    "tests/sapling_tests/fixtures/wasi-imports/clocks/wit/wall-clock.wit")
+    "${CROFT_WASI_VENDOR_0_2_9_PROPOSALS_DIR}/clocks/wit/wall-clock.wit")
 croft_collect_wit_dir_depends(WASI_CLOCKS_WALL_CLOCK_WIT_DEPENDS "${WASI_CLOCKS_WALL_CLOCK_WIT_PATH}")
 
 croft_select_wasi_wit(WASI_IO_POLL_WIT_PATH
     "io/wit/poll.wit"
-    "tests/sapling_tests/fixtures/wasi-imports/io/wit/poll.wit")
+    "${CROFT_WASI_VENDOR_0_2_9_PROPOSALS_DIR}/io/wit/poll.wit")
 croft_collect_wit_dir_depends(WASI_IO_POLL_WIT_DEPENDS "${WASI_IO_POLL_WIT_PATH}")
 
 croft_select_wasi_wit(WASI_IO_STREAMS_WIT_PATH
     "io/wit/streams.wit"
-    "tests/sapling_tests/fixtures/wasi-imports/io/wit/streams.wit")
+    "${CROFT_WASI_VENDOR_0_2_9_PROPOSALS_DIR}/io/wit/streams.wit")
 croft_collect_wit_dir_depends(WASI_IO_STREAMS_WIT_DEPENDS "${WASI_IO_STREAMS_WIT_PATH}")
 
 croft_select_wasi_wit(WASI_IO_WORLD_WIT_PATH
     "io/wit/world.wit"
-    "tests/sapling_tests/fixtures/wasi-imports/io/wit/world.wit")
+    "${CROFT_WASI_VENDOR_0_2_9_PROPOSALS_DIR}/io/wit/world.wit")
 croft_collect_wit_dir_depends(WASI_IO_WORLD_WIT_DEPENDS "${WASI_IO_WORLD_WIT_PATH}")
 
 croft_select_wasi_wit(WASI_CLOCKS_MONOTONIC_CLOCK_WIT_PATH
     "clocks/wit/monotonic-clock.wit"
-    "tests/sapling_tests/fixtures/wasi-imports/clocks/wit/monotonic-clock.wit")
+    "${CROFT_WASI_VENDOR_0_2_9_PROPOSALS_DIR}/clocks/wit/monotonic-clock.wit")
 croft_collect_wit_dir_depends(WASI_CLOCKS_MONOTONIC_CLOCK_WIT_DEPENDS "${WASI_CLOCKS_MONOTONIC_CLOCK_WIT_PATH}")
 
 croft_select_wasi_wit(WASI_CLOCKS_WORLD_WIT_PATH
     "clocks/wit/world.wit"
-    "tests/sapling_tests/fixtures/wasi-imports/clocks/wit/world.wit")
+    "${CROFT_WASI_VENDOR_0_2_9_PROPOSALS_DIR}/clocks/wit/world.wit")
 croft_collect_wit_dir_depends(WASI_CLOCKS_WORLD_WIT_DEPENDS "${WASI_CLOCKS_WORLD_WIT_PATH}")
 
 croft_select_wasi_wit(WASI_FILESYSTEM_TYPES_WIT_PATH
     "filesystem/wit/types.wit"
-    "tests/sapling_tests/fixtures/wasi-imports/filesystem/wit/types.wit")
+    "${CROFT_WASI_VENDOR_0_2_9_PROPOSALS_DIR}/filesystem/wit/types.wit")
 croft_collect_wit_dir_depends(WASI_FILESYSTEM_TYPES_WIT_DEPENDS "${WASI_FILESYSTEM_TYPES_WIT_PATH}")
 
 croft_select_wasi_wit(WASI_FILESYSTEM_PREOPENS_WIT_PATH
     "filesystem/wit/preopens.wit"
-    "tests/sapling_tests/fixtures/wasi-imports/filesystem/wit/preopens.wit")
+    "${CROFT_WASI_VENDOR_0_2_9_PROPOSALS_DIR}/filesystem/wit/preopens.wit")
 croft_collect_wit_dir_depends(WASI_FILESYSTEM_PREOPENS_WIT_DEPENDS "${WASI_FILESYSTEM_PREOPENS_WIT_PATH}")
 
 croft_select_wasi_wit(WASI_FILESYSTEM_WORLD_WIT_PATH
     "filesystem/wit/world.wit"
-    "tests/sapling_tests/fixtures/wasi-imports/filesystem/wit/world.wit")
+    "${CROFT_WASI_VENDOR_0_2_9_PROPOSALS_DIR}/filesystem/wit/world.wit")
 croft_collect_wit_dir_depends(WASI_FILESYSTEM_WORLD_WIT_DEPENDS "${WASI_FILESYSTEM_WORLD_WIT_PATH}")
 
 set(WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_schema_dbis.h")
@@ -887,6 +923,7 @@ add_custom_command(
     OUTPUT ${WASI_CLI_ENVIRONMENT_WIT_GENERATED_H} ${WASI_CLI_ENVIRONMENT_WIT_GENERATED_C} ${WASI_CLI_ENVIRONMENT_WIT_GENERATED_MANIFEST}
     COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
     COMMAND wit_codegen --wit "${WASI_CLI_ENVIRONMENT_WIT_PATH}"
+                        ${CROFT_WASI_CURRENT_MACHINE_PACKAGE_ROOT_ARGS}
                         --header "${WASI_CLI_ENVIRONMENT_WIT_GENERATED_H}" --source "${WASI_CLI_ENVIRONMENT_WIT_GENERATED_C}" --manifest "${WASI_CLI_ENVIRONMENT_WIT_GENERATED_MANIFEST}"
     DEPENDS wit_codegen ${WASI_CLI_ENVIRONMENT_WIT_DEPENDS}
     COMMENT "Generating WASI CLI environment bindings..."
@@ -901,6 +938,7 @@ add_custom_command(
     OUTPUT ${WASI_CLI_STDIO_WIT_GENERATED_H} ${WASI_CLI_STDIO_WIT_GENERATED_C} ${WASI_CLI_STDIO_WIT_GENERATED_MANIFEST}
     COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
     COMMAND wit_codegen --wit "${WASI_CLI_STDIO_WIT_PATH}"
+                        ${CROFT_WASI_CURRENT_MACHINE_PACKAGE_ROOT_ARGS}
                         --header "${WASI_CLI_STDIO_WIT_GENERATED_H}" --source "${WASI_CLI_STDIO_WIT_GENERATED_C}" --manifest "${WASI_CLI_STDIO_WIT_GENERATED_MANIFEST}"
     DEPENDS wit_codegen ${WASI_CLI_STDIO_WIT_DEPENDS}
     COMMENT "Generating WASI CLI stdio bindings..."
@@ -915,6 +953,7 @@ add_custom_command(
     OUTPUT ${WASI_CLI_TERMINAL_WIT_GENERATED_H} ${WASI_CLI_TERMINAL_WIT_GENERATED_C} ${WASI_CLI_TERMINAL_WIT_GENERATED_MANIFEST}
     COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
     COMMAND wit_codegen --wit "${WASI_CLI_TERMINAL_WIT_PATH}"
+                        ${CROFT_WASI_CURRENT_MACHINE_PACKAGE_ROOT_ARGS}
                         --header "${WASI_CLI_TERMINAL_WIT_GENERATED_H}" --source "${WASI_CLI_TERMINAL_WIT_GENERATED_C}" --manifest "${WASI_CLI_TERMINAL_WIT_GENERATED_MANIFEST}"
     DEPENDS wit_codegen ${WASI_CLI_TERMINAL_WIT_DEPENDS}
     COMMENT "Generating WASI CLI terminal bindings..."
@@ -929,6 +968,7 @@ add_custom_command(
     OUTPUT ${WASI_CLI_RUN_WIT_GENERATED_H} ${WASI_CLI_RUN_WIT_GENERATED_C} ${WASI_CLI_RUN_WIT_GENERATED_MANIFEST}
     COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
     COMMAND wit_codegen --wit "${WASI_CLI_RUN_WIT_PATH}"
+                        ${CROFT_WASI_CURRENT_MACHINE_PACKAGE_ROOT_ARGS}
                         --header "${WASI_CLI_RUN_WIT_GENERATED_H}" --source "${WASI_CLI_RUN_WIT_GENERATED_C}" --manifest "${WASI_CLI_RUN_WIT_GENERATED_MANIFEST}"
     DEPENDS wit_codegen ${WASI_CLI_RUN_WIT_DEPENDS}
     COMMENT "Generating WASI CLI run bindings..."
@@ -943,6 +983,7 @@ add_custom_command(
     OUTPUT ${WASI_CLI_IMPORTS_WIT_GENERATED_H} ${WASI_CLI_IMPORTS_WIT_GENERATED_C} ${WASI_CLI_IMPORTS_WIT_GENERATED_MANIFEST}
     COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
     COMMAND wit_codegen --wit "${WASI_CLI_IMPORTS_WIT_PATH}"
+                        ${CROFT_WASI_CURRENT_MACHINE_PACKAGE_ROOT_ARGS}
                         --header "${WASI_CLI_IMPORTS_WIT_GENERATED_H}" --source "${WASI_CLI_IMPORTS_WIT_GENERATED_C}" --manifest "${WASI_CLI_IMPORTS_WIT_GENERATED_MANIFEST}"
     DEPENDS wit_codegen ${WASI_CLI_IMPORTS_WIT_DEPENDS}
     COMMENT "Generating WASI CLI imports world bindings..."
@@ -957,6 +998,7 @@ add_custom_command(
     OUTPUT ${WASI_CLI_COMMAND_WIT_GENERATED_H} ${WASI_CLI_COMMAND_WIT_GENERATED_C} ${WASI_CLI_COMMAND_WIT_GENERATED_MANIFEST}
     COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
     COMMAND wit_codegen --wit "${WASI_CLI_COMMAND_WIT_PATH}"
+                        ${CROFT_WASI_CURRENT_MACHINE_PACKAGE_ROOT_ARGS}
                         --header "${WASI_CLI_COMMAND_WIT_GENERATED_H}" --source "${WASI_CLI_COMMAND_WIT_GENERATED_C}" --manifest "${WASI_CLI_COMMAND_WIT_GENERATED_MANIFEST}"
     DEPENDS wit_codegen ${WASI_CLI_COMMAND_WIT_DEPENDS}
     COMMENT "Generating WASI CLI command world bindings..."
@@ -1581,6 +1623,9 @@ add_dependencies(croft_wit_wasi_cli_environment wasi_cli_environment_wit_schema_
 croft_apply_public_includes(croft_wit_wasi_cli_environment)
 target_link_libraries(croft_wit_wasi_cli_environment PUBLIC croft_thatch_core)
 croft_register_artifact(croft_wit_wasi_cli_environment wit
+    UPSTREAM_PACKAGE "wasi:cli"
+    UPSTREAM_VERSION "0.2.9"
+    SUPPORT_STATUS "declaration-only"
     TAGS wit wasi cli environment service metadata current-machine unix
     DEPENDS croft_thatch_core
 )
@@ -1590,6 +1635,9 @@ add_dependencies(croft_wit_wasi_cli_stdio wasi_cli_stdio_wit_schema_gen)
 croft_apply_public_includes(croft_wit_wasi_cli_stdio)
 target_link_libraries(croft_wit_wasi_cli_stdio PUBLIC croft_thatch_core)
 croft_register_artifact(croft_wit_wasi_cli_stdio wit
+    UPSTREAM_PACKAGE "wasi:cli"
+    UPSTREAM_VERSION "0.2.9"
+    SUPPORT_STATUS "declaration-only"
     TAGS wit wasi cli stdio service metadata current-machine unix
     DEPENDS croft_thatch_core
 )
@@ -1599,6 +1647,9 @@ add_dependencies(croft_wit_wasi_cli_terminal wasi_cli_terminal_wit_schema_gen)
 croft_apply_public_includes(croft_wit_wasi_cli_terminal)
 target_link_libraries(croft_wit_wasi_cli_terminal PUBLIC croft_thatch_core)
 croft_register_artifact(croft_wit_wasi_cli_terminal wit
+    UPSTREAM_PACKAGE "wasi:cli"
+    UPSTREAM_VERSION "0.2.9"
+    SUPPORT_STATUS "declaration-only"
     TAGS wit wasi cli terminal service metadata current-machine unix
     DEPENDS croft_thatch_core
 )
@@ -1608,6 +1659,9 @@ add_dependencies(croft_wit_wasi_cli_run wasi_cli_run_wit_schema_gen)
 croft_apply_public_includes(croft_wit_wasi_cli_run)
 target_link_libraries(croft_wit_wasi_cli_run PUBLIC croft_thatch_core)
 croft_register_artifact(croft_wit_wasi_cli_run wit
+    UPSTREAM_PACKAGE "wasi:cli"
+    UPSTREAM_VERSION "0.2.9"
+    SUPPORT_STATUS "declaration-only"
     TAGS wit wasi cli run service metadata current-machine unix
     DEPENDS croft_thatch_core
 )
@@ -1617,6 +1671,9 @@ add_dependencies(croft_wit_wasi_cli_imports wasi_cli_imports_wit_schema_gen)
 croft_apply_public_includes(croft_wit_wasi_cli_imports)
 target_link_libraries(croft_wit_wasi_cli_imports PUBLIC croft_thatch_core)
 croft_register_artifact(croft_wit_wasi_cli_imports wit
+    UPSTREAM_PACKAGE "wasi:cli"
+    UPSTREAM_VERSION "0.2.9"
+    SUPPORT_STATUS "declaration-only"
     TAGS wit wasi cli world imports metadata current-machine unix
     DEPENDS croft_thatch_core
 )
@@ -1626,6 +1683,9 @@ add_dependencies(croft_wit_wasi_cli_command wasi_cli_command_wit_schema_gen)
 croft_apply_public_includes(croft_wit_wasi_cli_command)
 target_link_libraries(croft_wit_wasi_cli_command PUBLIC croft_thatch_core)
 croft_register_artifact(croft_wit_wasi_cli_command wit
+    UPSTREAM_PACKAGE "wasi:cli"
+    UPSTREAM_VERSION "0.2.9"
+    SUPPORT_STATUS "declaration-only"
     TAGS wit wasi cli world command metadata current-machine unix
     DEPENDS croft_thatch_core
 )
@@ -1635,6 +1695,9 @@ add_dependencies(croft_wit_wasi_random_random wasi_random_random_wit_schema_gen)
 croft_apply_public_includes(croft_wit_wasi_random_random)
 target_link_libraries(croft_wit_wasi_random_random PUBLIC croft_thatch_core)
 croft_register_artifact(croft_wit_wasi_random_random wit
+    UPSTREAM_PACKAGE "wasi:random"
+    UPSTREAM_VERSION "0.2.9"
+    SUPPORT_STATUS "declaration-only"
     TAGS wit wasi random service metadata current-machine
     DEPENDS croft_thatch_core
 )
@@ -1644,6 +1707,9 @@ add_dependencies(croft_wit_wasi_random_insecure wasi_random_insecure_wit_schema_
 croft_apply_public_includes(croft_wit_wasi_random_insecure)
 target_link_libraries(croft_wit_wasi_random_insecure PUBLIC croft_thatch_core)
 croft_register_artifact(croft_wit_wasi_random_insecure wit
+    UPSTREAM_PACKAGE "wasi:random"
+    UPSTREAM_VERSION "0.2.9"
+    SUPPORT_STATUS "declaration-only"
     TAGS wit wasi random insecure service metadata current-machine
     DEPENDS croft_thatch_core
 )
@@ -1653,6 +1719,9 @@ add_dependencies(croft_wit_wasi_random_insecure_seed wasi_random_insecure_seed_w
 croft_apply_public_includes(croft_wit_wasi_random_insecure_seed)
 target_link_libraries(croft_wit_wasi_random_insecure_seed PUBLIC croft_thatch_core)
 croft_register_artifact(croft_wit_wasi_random_insecure_seed wit
+    UPSTREAM_PACKAGE "wasi:random"
+    UPSTREAM_VERSION "0.2.9"
+    SUPPORT_STATUS "declaration-only"
     TAGS wit wasi random insecure-seed service metadata current-machine
     DEPENDS croft_thatch_core
 )
@@ -1662,6 +1731,9 @@ add_dependencies(croft_wit_wasi_random_world wasi_random_world_wit_schema_gen)
 croft_apply_public_includes(croft_wit_wasi_random_world)
 target_link_libraries(croft_wit_wasi_random_world PUBLIC croft_thatch_core)
 croft_register_artifact(croft_wit_wasi_random_world wit
+    UPSTREAM_PACKAGE "wasi:random"
+    UPSTREAM_VERSION "0.2.9"
+    SUPPORT_STATUS "declaration-only"
     TAGS wit wasi random world imports metadata current-machine
     DEPENDS croft_thatch_core
 )
@@ -1671,6 +1743,9 @@ add_dependencies(croft_wit_wasi_clocks_timezone wasi_clocks_timezone_wit_schema_
 croft_apply_public_includes(croft_wit_wasi_clocks_timezone)
 target_link_libraries(croft_wit_wasi_clocks_timezone PUBLIC croft_thatch_core)
 croft_register_artifact(croft_wit_wasi_clocks_timezone wit
+    UPSTREAM_PACKAGE "wasi:clocks"
+    UPSTREAM_VERSION "0.2.9"
+    SUPPORT_STATUS "declaration-only"
     TAGS wit wasi clocks timezone service metadata current-machine unix
     DEPENDS croft_thatch_core
 )
@@ -1680,6 +1755,9 @@ add_dependencies(croft_wit_wasi_clocks_wall_clock wasi_clocks_wall_clock_wit_sch
 croft_apply_public_includes(croft_wit_wasi_clocks_wall_clock)
 target_link_libraries(croft_wit_wasi_clocks_wall_clock PUBLIC croft_thatch_core)
 croft_register_artifact(croft_wit_wasi_clocks_wall_clock wit
+    UPSTREAM_PACKAGE "wasi:clocks"
+    UPSTREAM_VERSION "0.2.9"
+    SUPPORT_STATUS "declaration-only"
     TAGS wit wasi clocks wall-clock service metadata current-machine unix
     DEPENDS croft_thatch_core
 )
@@ -1689,6 +1767,9 @@ add_dependencies(croft_wit_wasi_io_poll wasi_io_poll_wit_schema_gen)
 croft_apply_public_includes(croft_wit_wasi_io_poll)
 target_link_libraries(croft_wit_wasi_io_poll PUBLIC croft_thatch_core)
 croft_register_artifact(croft_wit_wasi_io_poll wit
+    UPSTREAM_PACKAGE "wasi:io"
+    UPSTREAM_VERSION "0.2.9"
+    SUPPORT_STATUS "declaration-only"
     TAGS wit wasi io poll resource-handles metadata current-machine unix
     DEPENDS croft_thatch_core
 )
@@ -1698,6 +1779,9 @@ add_dependencies(croft_wit_wasi_io_streams wasi_io_streams_wit_schema_gen)
 croft_apply_public_includes(croft_wit_wasi_io_streams)
 target_link_libraries(croft_wit_wasi_io_streams PUBLIC croft_thatch_core)
 croft_register_artifact(croft_wit_wasi_io_streams wit
+    UPSTREAM_PACKAGE "wasi:io"
+    UPSTREAM_VERSION "0.2.9"
+    SUPPORT_STATUS "declaration-only"
     TAGS wit wasi io streams resource-handles metadata current-machine unix
     DEPENDS croft_thatch_core
 )
@@ -1707,6 +1791,9 @@ add_dependencies(croft_wit_wasi_io_world wasi_io_world_wit_schema_gen)
 croft_apply_public_includes(croft_wit_wasi_io_world)
 target_link_libraries(croft_wit_wasi_io_world PUBLIC croft_thatch_core)
 croft_register_artifact(croft_wit_wasi_io_world wit
+    UPSTREAM_PACKAGE "wasi:io"
+    UPSTREAM_VERSION "0.2.9"
+    SUPPORT_STATUS "declaration-only"
     TAGS wit wasi io world imports metadata current-machine unix
     DEPENDS croft_thatch_core
 )
@@ -1716,6 +1803,9 @@ add_dependencies(croft_wit_wasi_clocks_monotonic_clock wasi_clocks_monotonic_clo
 croft_apply_public_includes(croft_wit_wasi_clocks_monotonic_clock)
 target_link_libraries(croft_wit_wasi_clocks_monotonic_clock PUBLIC croft_thatch_core croft_wit_wasi_io_poll)
 croft_register_artifact(croft_wit_wasi_clocks_monotonic_clock wit
+    UPSTREAM_PACKAGE "wasi:clocks"
+    UPSTREAM_VERSION "0.2.9"
+    SUPPORT_STATUS "declaration-only"
     TAGS wit wasi clocks monotonic-clock poll service metadata current-machine unix
     DEPENDS croft_thatch_core croft_wit_wasi_io_poll
 )
@@ -1725,6 +1815,9 @@ add_dependencies(croft_wit_wasi_clocks_world wasi_clocks_world_wit_schema_gen)
 croft_apply_public_includes(croft_wit_wasi_clocks_world)
 target_link_libraries(croft_wit_wasi_clocks_world PUBLIC croft_thatch_core)
 croft_register_artifact(croft_wit_wasi_clocks_world wit
+    UPSTREAM_PACKAGE "wasi:clocks"
+    UPSTREAM_VERSION "0.2.9"
+    SUPPORT_STATUS "declaration-only"
     TAGS wit wasi clocks world imports metadata current-machine unix
     DEPENDS croft_thatch_core
 )
@@ -1734,6 +1827,9 @@ add_dependencies(croft_wit_wasi_filesystem_types wasi_filesystem_types_wit_schem
 croft_apply_public_includes(croft_wit_wasi_filesystem_types)
 target_link_libraries(croft_wit_wasi_filesystem_types PUBLIC croft_thatch_core)
 croft_register_artifact(croft_wit_wasi_filesystem_types wit
+    UPSTREAM_PACKAGE "wasi:filesystem"
+    UPSTREAM_VERSION "0.2.9"
+    SUPPORT_STATUS "declaration-only"
     TAGS wit wasi filesystem types resource-handles metadata current-machine unix
     DEPENDS croft_thatch_core
 )
@@ -1743,6 +1839,9 @@ add_dependencies(croft_wit_wasi_filesystem_preopens wasi_filesystem_preopens_wit
 croft_apply_public_includes(croft_wit_wasi_filesystem_preopens)
 target_link_libraries(croft_wit_wasi_filesystem_preopens PUBLIC croft_thatch_core)
 croft_register_artifact(croft_wit_wasi_filesystem_preopens wit
+    UPSTREAM_PACKAGE "wasi:filesystem"
+    UPSTREAM_VERSION "0.2.9"
+    SUPPORT_STATUS "declaration-only"
     TAGS wit wasi filesystem preopens metadata current-machine unix
     DEPENDS croft_thatch_core
 )
@@ -1752,6 +1851,9 @@ add_dependencies(croft_wit_wasi_filesystem_world wasi_filesystem_world_wit_schem
 croft_apply_public_includes(croft_wit_wasi_filesystem_world)
 target_link_libraries(croft_wit_wasi_filesystem_world PUBLIC croft_thatch_core)
 croft_register_artifact(croft_wit_wasi_filesystem_world wit
+    UPSTREAM_PACKAGE "wasi:filesystem"
+    UPSTREAM_VERSION "0.2.9"
+    SUPPORT_STATUS "declaration-only"
     TAGS wit wasi filesystem world imports metadata current-machine unix
     DEPENDS croft_thatch_core
 )
@@ -2048,6 +2150,9 @@ target_link_libraries(croft_wit_wasi_machine_runtime PUBLIC
     croft_wit_wasi_clocks_world
     croft_wit_wasi_filesystem_world)
 croft_register_artifact(croft_wit_wasi_machine_runtime wit
+    UPSTREAM_PACKAGE "wasi"
+    UPSTREAM_VERSION "0.2.9"
+    SUPPORT_STATUS "host-implemented-subset"
     TAGS tier8 wit wasi runtime current-machine unix generated-glue host
     DEPENDS croft_wit_world_runtime
             croft_wit_wasi_cli_command

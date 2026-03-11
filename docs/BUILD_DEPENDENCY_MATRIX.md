@@ -51,7 +51,7 @@ The table below covers the external dependencies that affect which Croft artifac
 | `llvm@21` | Preferred Clang toolchain on this macOS workstation | Fresh CMake configure for Croft host/native builds and current C-to-Wasm guest builds | Standalone formula. | Let CMake auto-discover `/opt/homebrew/opt/llvm@21` on fresh configure, or override with `CROFT_LLVM_21_ROOT`. | `CROFT_PREFER_HOMEBREW_LLVM_21`, `CROFT_LLVM_21_ROOT` | No user-level `PATH` mutation is required. Existing build directories keep their already-cached compiler until reconfigured cleanly. | Present at `/opt/homebrew/opt/llvm@21`. |
 | `lld@21` | Preferred Wasm linker for Croft guest tooling | Current C-to-Wasm guest compilation and other explicit Wasm link steps | Standalone formula, paired with `llvm@21`. | Let CMake auto-discover `/opt/homebrew/opt/lld@21` on fresh configure, or override with `CROFT_LLD_21_ROOT`. | `CROFT_WASM_LD_TOOL`, `CROFT_LLD_21_ROOT` | No user-level `PATH` mutation is required. Croft resolves `wasm-ld` by absolute path for build-scoped use. | Present at `/opt/homebrew/opt/lld@21/bin/wasm-ld`. |
 | `miniaudio` | Single-header native audio library | `croft_audio_miniaudio` | Standalone. It is not hiding inside `tgfx`, `makepad`, or the Microsoft editor repos. | Stage the pinned `miniaudio.h` header into `local_deps/src/miniaudio/` with `tools/bootstrap_deps.sh`. A full repo checkout is unnecessary because Croft only includes the header. | `CROFT_MINIAUDIO_SOURCE_DIR`; fallback: `CROFT_FETCH_MINIAUDIO` with `CROFT_MINIAUDIO_GIT_REPOSITORY` and `CROFT_MINIAUDIO_GIT_TAG` | Consult the official `miniaudio` repo/header documentation if you need a local override. The bootstrap uses the raw header URL pinned in `tools/deps.lock.sh`. | Not installed locally before bootstrap. |
-| WASI proposals checkout (optional) | Upstream WIT definitions | Current-machine WASI bindings and manifests when you want Croft to generate from upstream definitions instead of the in-tree fixtures | Standalone spec repo checkout. It is not a runtime dependency and Croft still builds without it. | Keep it outside the Croft tree and point CMake at the `proposals/` directory. | `CROFT_WASI_PROPOSALS_DIR` | Useful when validating parser/codegen changes against upstream `wasi:*` packages. If unset, Croft falls back to the curated in-tree WIT fixtures. | Present on this machine at `/Users/mshonle/Projects/WebAssembly/WASI/proposals`. |
+| WASI proposals checkout (optional) | Upstream WIT definitions | Validation against an external upstream checkout instead of Croft's vendored `0.2.9` snapshot | Standalone spec repo checkout. It is not a runtime dependency and Croft still builds without it. | Keep it outside the Croft tree and point CMake at the `proposals/` directory. | `CROFT_WASI_PROPOSALS_DIR` | Useful when validating parser/codegen changes against upstream `wasi:*` packages. If unset, Croft uses `vendor/wasi/0.2.9/proposals/` plus any explicit current-machine overlays under `schemas/wit/wasi-current-machine/0.2.9/`. | Present on this machine at `/Users/mshonle/Projects/WebAssembly/WASI/proposals`. |
 
 ## Platform-Specific Build Inputs
 
@@ -71,7 +71,7 @@ These repositories are useful design references or future integration candidates
 | `vscode-textmate` | Future grammar/tokenization reference | Relevant only if Croft later adopts TextMate grammar tooling | `/Users/mshonle/Projects/microsoft/vscode-textmate` |
 | `vscode-oniguruma` | Future Oniguruma/WASM grammar support reference | Not part of the current native Croft build | `/Users/mshonle/Projects/microsoft/vscode-oniguruma` |
 | Makepad | UI/runtime architecture reference | Design inspiration only; not linked into Croft | `/Users/mshonle/Projects/makepad` |
-| WASI spec repo | Standards reference and optional WIT source checkout | Croft can read `proposals/` via `CROFT_WASI_PROPOSALS_DIR`, but the repo is still not a host runtime implementation for Croft | `/Users/mshonle/Projects/WebAssembly/WASI` |
+| WASI spec repo | Standards reference and optional WIT source checkout | Croft can read `proposals/` via `CROFT_WASI_PROPOSALS_DIR`, but the repo is still not a host runtime implementation for Croft and is no longer required for the default build because `0.2.9` is vendored in-tree | `/Users/mshonle/Projects/WebAssembly/WASI` |
 | WebAssembly Micro Runtime (WAMR) | Alternative Wasm runtime candidate | Separate runtime with a different embedding model; not a drop-in replacement for the current `wasm3` integration | `/Users/mshonle/Projects/WebAssembly/wasm-micro-runtime` |
 
 ## Canonical Configure Patterns
@@ -104,6 +104,11 @@ source local_deps/env.sh
 cmake -S . -B build -C local_deps/croft-deps.cmake \
   -DCROFT_WASI_PROPOSALS_DIR=/Users/mshonle/Projects/WebAssembly/WASI/proposals
 ```
+
+By default, Croft now generates current-machine WASI bindings from the vendored
+`vendor/wasi/0.2.9/proposals/` snapshot. A smaller overlay under
+`schemas/wit/wasi-current-machine/0.2.9/` is used only where Croft's host
+implementation intentionally narrows the raw upstream world surface.
 
 Ensure `wat2wasm` is on `PATH` before configuring if WAT guest tests are expected to build:
 

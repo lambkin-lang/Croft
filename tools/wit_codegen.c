@@ -33,6 +33,7 @@
 #define MAX_SYMBOL        384
 #define MAX_USE_BINDINGS  512
 #define MAX_LOADED_FILES  256
+#define MAX_PACKAGE_ROOTS 16
 
 /* ------------------------------------------------------------------ */
 /* Type expression AST                                                */
@@ -56,6 +57,8 @@ typedef struct {
 
 static WitTypeExpr g_type_pool[MAX_TYPE_NODES];
 static int         g_type_pool_count = 0;
+static char        g_package_roots[MAX_PACKAGE_ROOTS][MAX_PATH_TEXT];
+static int         g_package_root_count = 0;
 
 typedef struct WitRegistry WitRegistry;
 static int wit_symbol_has_scope(const char *name);
@@ -1125,6 +1128,39 @@ static int file_exists(const char *path)
     f = fopen(path, "rb");
     if (!f) return 0;
     fclose(f);
+    return 1;
+}
+
+static int directory_exists(const char *path)
+{
+    DIR *dir;
+
+    if (!path || path[0] == '\0') return 0;
+    dir = opendir(path);
+    if (!dir) return 0;
+    closedir(dir);
+    return 1;
+}
+
+static int register_package_root(const char *path)
+{
+    int i;
+
+    if (!path || path[0] == '\0') return 0;
+    for (i = 0; i < g_package_root_count; i++) {
+        if (strcmp(g_package_roots[i], path) == 0) {
+            return 1;
+        }
+    }
+    if (g_package_root_count >= MAX_PACKAGE_ROOTS) {
+        fprintf(stderr, "wit_codegen: too many package roots\n");
+        return 0;
+    }
+    snprintf(g_package_roots[g_package_root_count],
+             sizeof(g_package_roots[g_package_root_count]),
+             "%s",
+             path);
+    g_package_root_count++;
     return 1;
 }
 
@@ -3140,15 +3176,32 @@ static int find_target_package_wit_dir(const WitRegistry *reg,
 
     if (target_package_full && target_package_full[0] != '\0'
             && strcmp(target_package_full, reg->package_full) != 0) {
+        char candidate[MAX_PATH_TEXT];
+
         wit_package_name_from_full(reg->package_full, current_package_name, (int)sizeof(current_package_name));
         wit_package_name_from_full(target_package_full, target_package_name, (int)sizeof(target_package_name));
         if (!find_package_wit_dir(reg->source_path, current_package_name, current_wit_dir, (int)sizeof(current_wit_dir))) {
-            return 0;
+            current_wit_dir[0] = '\0';
         }
-        path_dirname(current_wit_dir, package_dir, (int)sizeof(package_dir));
-        path_dirname(package_dir, packages_root, (int)sizeof(packages_root));
-        snprintf(out, n, "%s/%s/wit", packages_root, target_package_name);
-        return 1;
+        if (current_wit_dir[0] != '\0') {
+            path_dirname(current_wit_dir, package_dir, (int)sizeof(package_dir));
+            path_dirname(package_dir, packages_root, (int)sizeof(packages_root));
+            snprintf(candidate, sizeof(candidate), "%s/%s/wit", packages_root, target_package_name);
+            if (directory_exists(candidate)) {
+                snprintf(out, n, "%s", candidate);
+                return 1;
+            }
+        }
+
+        for (int i = 0; i < g_package_root_count; i++) {
+            snprintf(candidate, sizeof(candidate), "%s/%s/wit", g_package_roots[i], target_package_name);
+            if (!directory_exists(candidate)) {
+                continue;
+            }
+            snprintf(out, n, "%s", candidate);
+            return 1;
+        }
+        return 0;
     }
 
     path_dirname(reg->source_path, current_wit_dir, (int)sizeof(current_wit_dir));
@@ -9078,10 +9131,16 @@ int main(int argc, char **argv)
     const char *header_path = NULL;
     const char *source_path = NULL;
     const char *manifest_path = NULL;
+    int i;
 
-    for (int i = 1; i < argc; i++) {
+    for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--wit") == 0 && i + 1 < argc)
             wit_path = argv[++i];
+        else if (strcmp(argv[i], "--package-root") == 0 && i + 1 < argc) {
+            if (!register_package_root(argv[++i])) {
+                return 1;
+            }
+        }
         else if (strcmp(argv[i], "--header") == 0 && i + 1 < argc)
             header_path = argv[++i];
         else if (strcmp(argv[i], "--source") == 0 && i + 1 < argc)
@@ -9095,6 +9154,7 @@ int main(int argc, char **argv)
     if (!wit_path) {
         fprintf(stderr,
             "usage: wit_codegen [--wit] <schema.wit> "
+            "[--package-root <path>] "
             "[--header <path>] [--source <path>] [--manifest <path>]\n");
         return 1;
     }

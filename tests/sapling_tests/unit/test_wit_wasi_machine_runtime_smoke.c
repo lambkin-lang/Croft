@@ -760,14 +760,27 @@ int main(void)
                      SAP_WIT_CLOCKS_MONOTONIC_CLOCK_REPLY_NOW);
     ok &= expect_true("monotonic now value", monotonic_reply.val.now > 0u);
 
-    monotonic_command.case_tag = SAP_WIT_CLOCKS_MONOTONIC_CLOCK_COMMAND_SUBSCRIBE;
-    ok &= expect_u32("monotonic subscribe",
+    monotonic_command.case_tag = SAP_WIT_CLOCKS_MONOTONIC_CLOCK_COMMAND_RESOLUTION;
+    ok &= expect_u32("monotonic resolution",
                      (uint32_t)sap_wit_world_clocks_imports_import_monotonic_clock(
                          &clocks_imports,
                          &monotonic_command,
                          &monotonic_reply),
                      0u);
-    ok &= expect_u32("monotonic subscribe case",
+    ok &= expect_u32("monotonic resolution case",
+                     monotonic_reply.case_tag,
+                     SAP_WIT_CLOCKS_MONOTONIC_CLOCK_REPLY_RESOLUTION);
+    ok &= expect_true("monotonic resolution value", monotonic_reply.val.resolution > 0u);
+
+    monotonic_command.case_tag = SAP_WIT_CLOCKS_MONOTONIC_CLOCK_COMMAND_SUBSCRIBE_DURATION;
+    monotonic_command.val.subscribe_duration.when = 0u;
+    ok &= expect_u32("monotonic subscribe duration",
+                     (uint32_t)sap_wit_world_clocks_imports_import_monotonic_clock(
+                         &clocks_imports,
+                         &monotonic_command,
+                         &monotonic_reply),
+                     0u);
+    ok &= expect_u32("monotonic subscribe duration case",
                      monotonic_reply.case_tag,
                      SAP_WIT_CLOCKS_MONOTONIC_CLOCK_REPLY_POLLABLE);
     pollable_handle = monotonic_reply.val.pollable;

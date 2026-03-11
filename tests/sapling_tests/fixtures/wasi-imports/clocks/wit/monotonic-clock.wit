@@ -1,8 +1,0 @@
-package wasi:clocks@0.2.9;
-
-interface monotonic-clock {
-  use wasi:io/poll@0.2.9.{pollable};
-
-  now: func() -> u64;
-  subscribe: func() -> pollable;
-}

@@ -1,6 +1,0 @@
-package wasi:cli@0.2.9;
-
-world command {
-  include imports;
-  export run;
-}

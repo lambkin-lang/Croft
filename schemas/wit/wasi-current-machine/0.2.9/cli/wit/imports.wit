@@ -1,0 +1,24 @@
+/// Croft current-machine overlay for wasi:cli@0.2.9 imports.
+///
+/// The raw upstream snapshot is vendored under `vendor/wasi/0.2.9/proposals`.
+/// This overlay narrows the `imports` world to the subset Croft currently binds
+/// directly on native and Croft-hosted Wasm targets.
+package wasi:cli@0.2.9;
+
+@since(version = 0.2.0)
+world imports {
+  @since(version = 0.2.0)
+  import environment;
+  @since(version = 0.2.0)
+  import stdin;
+  @since(version = 0.2.0)
+  import stdout;
+  @since(version = 0.2.0)
+  import stderr;
+  @since(version = 0.2.0)
+  import terminal-stdin;
+  @since(version = 0.2.0)
+  import terminal-stdout;
+  @since(version = 0.2.0)
+  import terminal-stderr;
+}

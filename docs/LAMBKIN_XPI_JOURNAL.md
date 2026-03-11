@@ -61,6 +61,29 @@ need both views:
 - and the expanded endpoint/capability surface, because that is what the host
   actually has to bind and validate.
 
+## March 11, 2026: Vendored Upstream And Host Overlays Should Stay Separate
+
+Promoting WASI `0.2.9` out of `tests/...` forced a useful realignment.
+
+There are really two different kinds of source material:
+
+- vendored upstream declarations, which should preserve the standards layout and
+  version boundary exactly,
+- and Croft overlays, which express the narrower capability bundles the current
+  host/runtime actually binds today.
+
+Collapsing those into one tree makes it too easy to confuse "Croft knows how to
+parse this upstream package" with "Croft implements this world on the current
+machine". The repo structure should keep those separate for the same reason the
+solver metadata should: declaration provenance and implementation support are
+different facts.
+
+That separation is especially important for `wasi:cli`: the raw upstream worlds
+pull in more capability bundles than Croft currently binds directly, while the
+underlying interface declarations remain useful and authoritative. Keeping a
+vendored upstream snapshot plus an explicit current-machine overlay turns that
+difference from an implicit workaround into a stable modeling choice.
+
 ## March 9, 2026: Broad Sweeps Beat Local Fixes At The WIT Boundary
 
 Two recent cleanup passes reinforced the same process lesson:
