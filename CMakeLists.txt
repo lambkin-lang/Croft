@@ -396,6 +396,83 @@ function(croft_register_xpi_bundle name)
     set_property(GLOBAL APPEND PROPERTY CROFT_XPI_BUNDLE_ENTRIES "${entry}")
 endfunction()
 
+function(croft_define_xpi_substrate_spec name)
+    cmake_parse_arguments(XPI
+        ""
+        "KIND;APPLICABILITY;DESCRIPTION"
+        "ARTIFACTS;INTERFACES"
+        ${ARGN})
+    string(MAKE_C_IDENTIFIER "${name}" key)
+    set_property(GLOBAL APPEND PROPERTY CROFT_DEFINED_XPI_SUBSTRATES "${name}")
+    set_property(GLOBAL PROPERTY "CROFT_XPI_SUBSTRATE_${key}_KIND" "${XPI_KIND}")
+    set_property(GLOBAL PROPERTY "CROFT_XPI_SUBSTRATE_${key}_APPLICABILITY" "${XPI_APPLICABILITY}")
+    set_property(GLOBAL PROPERTY "CROFT_XPI_SUBSTRATE_${key}_DESCRIPTION" "${XPI_DESCRIPTION}")
+    set_property(GLOBAL PROPERTY "CROFT_XPI_SUBSTRATE_${key}_ARTIFACTS" "${XPI_ARTIFACTS}")
+    set_property(GLOBAL PROPERTY "CROFT_XPI_SUBSTRATE_${key}_INTERFACES" "${XPI_INTERFACES}")
+    croft_register_xpi_substrate(${name}
+        KIND "${XPI_KIND}"
+        APPLICABILITY "${XPI_APPLICABILITY}"
+        DESCRIPTION "${XPI_DESCRIPTION}"
+        ARTIFACTS ${XPI_ARTIFACTS}
+        INTERFACES ${XPI_INTERFACES}
+    )
+endfunction()
+
+function(croft_define_xpi_bundle_spec name)
+    cmake_parse_arguments(XPI
+        ""
+        "SUPPORT_STATUS;APPLICABILITY;DESCRIPTION"
+        "ARTIFACTS;SUBSTRATES;DECLARED_WORLDS;EXPANDED_SURFACES;HELPER_INTERFACES"
+        ${ARGN})
+    string(MAKE_C_IDENTIFIER "${name}" key)
+    set_property(GLOBAL APPEND PROPERTY CROFT_DEFINED_XPI_BUNDLES "${name}")
+    set_property(GLOBAL PROPERTY "CROFT_XPI_BUNDLE_${key}_SUPPORT_STATUS" "${XPI_SUPPORT_STATUS}")
+    set_property(GLOBAL PROPERTY "CROFT_XPI_BUNDLE_${key}_APPLICABILITY" "${XPI_APPLICABILITY}")
+    set_property(GLOBAL PROPERTY "CROFT_XPI_BUNDLE_${key}_DESCRIPTION" "${XPI_DESCRIPTION}")
+    set_property(GLOBAL PROPERTY "CROFT_XPI_BUNDLE_${key}_ARTIFACTS" "${XPI_ARTIFACTS}")
+    set_property(GLOBAL PROPERTY "CROFT_XPI_BUNDLE_${key}_SUBSTRATES" "${XPI_SUBSTRATES}")
+    set_property(GLOBAL PROPERTY "CROFT_XPI_BUNDLE_${key}_DECLARED_WORLDS" "${XPI_DECLARED_WORLDS}")
+    set_property(GLOBAL PROPERTY "CROFT_XPI_BUNDLE_${key}_EXPANDED_SURFACES" "${XPI_EXPANDED_SURFACES}")
+    set_property(GLOBAL PROPERTY "CROFT_XPI_BUNDLE_${key}_HELPER_INTERFACES" "${XPI_HELPER_INTERFACES}")
+    croft_register_xpi_bundle(${name}
+        SUPPORT_STATUS "${XPI_SUPPORT_STATUS}"
+        APPLICABILITY "${XPI_APPLICABILITY}"
+        DESCRIPTION "${XPI_DESCRIPTION}"
+        ARTIFACTS ${XPI_ARTIFACTS}
+        SUBSTRATES ${XPI_SUBSTRATES}
+        DECLARED_WORLDS ${XPI_DECLARED_WORLDS}
+        EXPANDED_SURFACES ${XPI_EXPANDED_SURFACES}
+        HELPER_INTERFACES ${XPI_HELPER_INTERFACES}
+    )
+endfunction()
+
+function(croft_get_xpi_bundle_field out_var name field)
+    string(MAKE_C_IDENTIFIER "${name}" key)
+    get_property(values GLOBAL PROPERTY "CROFT_XPI_BUNDLE_${key}_${field}")
+    if(NOT values OR values MATCHES "-NOTFOUND$")
+        set(values "")
+    endif()
+    set(${out_var} ${values} PARENT_SCOPE)
+endfunction()
+
+function(croft_collect_xpi_bundle_field out_var field)
+    get_property(bundle_names GLOBAL PROPERTY CROFT_DEFINED_XPI_BUNDLES)
+    if(NOT bundle_names OR bundle_names MATCHES "-NOTFOUND$")
+        set(${out_var} "" PARENT_SCOPE)
+        return()
+    endif()
+
+    set(values "")
+    foreach(name IN LISTS bundle_names)
+        croft_get_xpi_bundle_field(bundle_values "${name}" "${field}")
+        list(APPEND values ${bundle_values})
+    endforeach()
+    if(values)
+        list(REMOVE_DUPLICATES values)
+    endif()
+    set(${out_var} ${values} PARENT_SCOPE)
+endfunction()
+
 function(croft_register_example target)
     cmake_parse_arguments(EXAMPLE "" "FOCUS" "TAGS;REQUIRES" ${ARGN})
     croft_json_string(focus_json "${EXAMPLE_FOCUS}")
@@ -2065,74 +2142,7 @@ croft_register_artifact(croft_wit_world_runtime wit
     TAGS tier8 wit world runtime metadata generated-glue
 )
 
-add_library(croft_wit_wasi_machine_runtime STATIC src/runtime/wit_wasi_machine_runtime.c)
-add_dependencies(croft_wit_wasi_machine_runtime
-    wasi_cli_command_wit_schema_gen
-    wasi_random_world_wit_schema_gen
-    wasi_io_world_wit_schema_gen
-    wasi_clocks_world_wit_schema_gen
-    wasi_filesystem_world_wit_schema_gen)
-croft_apply_public_includes(croft_wit_wasi_machine_runtime)
-croft_set_target_profile(croft_wit_wasi_machine_runtime single-thread)
-target_link_libraries(croft_wit_wasi_machine_runtime PUBLIC
-    croft_wit_world_runtime
-    croft_wit_wasi_cli_command
-    croft_wit_wasi_random_world
-    croft_wit_wasi_io_world
-    croft_wit_wasi_clocks_world
-    croft_wit_wasi_filesystem_world)
-croft_register_artifact(croft_wit_wasi_machine_runtime wit
-    UPSTREAM_PACKAGE "wasi"
-    UPSTREAM_VERSION "0.2.9"
-    SUPPORT_STATUS "host-implemented-subset"
-    APPLICABILITY "current-machine-unix"
-    CAPABILITY_BUNDLES
-        wasi-cli-stdio-terminal-current-machine
-        wasi-random-current-machine
-        wasi-clocks-poll-current-machine
-        wasi-filesystem-streams-current-machine
-    SHARED_SUBSTRATES
-        wasi-process-context
-        wasi-byte-streams
-        wasi-descriptor-table
-        wasi-pollables
-        wasi-system-random
-        wasi-time-base
-    HELPER_INTERFACES
-        "wasi:io@0.2.9/error"
-        "wasi:filesystem@0.2.9/error"
-    DECLARED_WORLDS
-        "wasi:cli@0.2.9/imports"
-        "wasi:cli@0.2.9/command"
-        "wasi:random@0.2.9/world"
-        "wasi:clocks@0.2.9/world"
-        "wasi:io@0.2.9/world"
-        "wasi:filesystem@0.2.9/world"
-    EXPANDED_SURFACES
-        "wasi:cli@0.2.9/environment"
-        "wasi:cli@0.2.9/stdio"
-        "wasi:cli@0.2.9/terminal"
-        "wasi:cli@0.2.9/run"
-        "wasi:random@0.2.9/random"
-        "wasi:random@0.2.9/insecure"
-        "wasi:random@0.2.9/insecure-seed"
-        "wasi:clocks@0.2.9/monotonic-clock"
-        "wasi:clocks@0.2.9/wall-clock"
-        "wasi:clocks@0.2.9/timezone"
-        "wasi:io@0.2.9/poll"
-        "wasi:io@0.2.9/streams"
-        "wasi:filesystem@0.2.9/types"
-        "wasi:filesystem@0.2.9/preopens"
-    TAGS tier8 wit wasi runtime current-machine unix generated-glue host
-    DEPENDS croft_wit_world_runtime
-            croft_wit_wasi_cli_command
-            croft_wit_wasi_random_world
-            croft_wit_wasi_io_world
-            croft_wit_wasi_clocks_world
-            croft_wit_wasi_filesystem_world
-)
-
-croft_register_xpi_substrate(wasi-process-context
+croft_define_xpi_substrate_spec(wasi-process-context
     KIND "process-context"
     APPLICABILITY "current-machine-unix"
     DESCRIPTION "Process argv/env/cwd and run-status substrate shared by current-machine CLI surfaces."
@@ -2146,7 +2156,7 @@ croft_register_xpi_substrate(wasi-process-context
         "wasi:cli@0.2.9/environment"
         "wasi:cli@0.2.9/run"
 )
-croft_register_xpi_substrate(wasi-byte-streams
+croft_define_xpi_substrate_spec(wasi-byte-streams
     KIND "byte-streams"
     APPLICABILITY "current-machine-unix"
     DESCRIPTION "Shared byte-stream substrate backing stdio, filesystem stream handles, and io/streams."
@@ -2162,7 +2172,7 @@ croft_register_xpi_substrate(wasi-byte-streams
         "wasi:io@0.2.9/streams"
         "wasi:filesystem@0.2.9/types"
 )
-croft_register_xpi_substrate(wasi-descriptor-table
+croft_define_xpi_substrate_spec(wasi-descriptor-table
     KIND "descriptor-table"
     APPLICABILITY "current-machine-unix"
     DESCRIPTION "Shared descriptor/resource handle table backing stdio, terminal authority, filesystem descriptors, and streams."
@@ -2184,7 +2194,7 @@ croft_register_xpi_substrate(wasi-descriptor-table
         "wasi:filesystem@0.2.9/types"
         "wasi:filesystem@0.2.9/preopens"
 )
-croft_register_xpi_substrate(wasi-pollables
+croft_define_xpi_substrate_spec(wasi-pollables
     KIND "pollable-set"
     APPLICABILITY "current-machine-unix"
     DESCRIPTION "Shared pollable handle set used by monotonic clock subscriptions and io/poll readiness."
@@ -2198,7 +2208,7 @@ croft_register_xpi_substrate(wasi-pollables
         "wasi:io@0.2.9/poll"
         "wasi:clocks@0.2.9/monotonic-clock"
 )
-croft_register_xpi_substrate(wasi-system-random
+croft_define_xpi_substrate_spec(wasi-system-random
     KIND "entropy-source"
     APPLICABILITY "current-machine"
     DESCRIPTION "Current-machine system entropy source shared by secure and insecure WASI random surfaces."
@@ -2213,7 +2223,7 @@ croft_register_xpi_substrate(wasi-system-random
         "wasi:random@0.2.9/insecure"
         "wasi:random@0.2.9/insecure-seed"
 )
-croft_register_xpi_substrate(wasi-time-base
+croft_define_xpi_substrate_spec(wasi-time-base
     KIND "clock-source"
     APPLICABILITY "current-machine-unix"
     DESCRIPTION "Host time and timezone substrate shared by wall-clock, monotonic-clock, and timezone surfaces."
@@ -2229,7 +2239,7 @@ croft_register_xpi_substrate(wasi-time-base
         "wasi:clocks@0.2.9/timezone"
 )
 
-croft_register_xpi_bundle(wasi-cli-stdio-terminal-current-machine
+croft_define_xpi_bundle_spec(wasi-cli-stdio-terminal-current-machine
     SUPPORT_STATUS "host-implemented-subset"
     APPLICABILITY "current-machine-unix"
     DESCRIPTION "CLI imports/command bundle over shared process-context, byte-stream, and descriptor substrates."
@@ -2254,7 +2264,7 @@ croft_register_xpi_bundle(wasi-cli-stdio-terminal-current-machine
         "wasi:cli@0.2.9/terminal"
         "wasi:cli@0.2.9/run"
 )
-croft_register_xpi_bundle(wasi-random-current-machine
+croft_define_xpi_bundle_spec(wasi-random-current-machine
     SUPPORT_STATUS "host-implemented-subset"
     APPLICABILITY "current-machine"
     DESCRIPTION "Current-machine random bundle sharing one system entropy substrate."
@@ -2271,7 +2281,7 @@ croft_register_xpi_bundle(wasi-random-current-machine
         "wasi:random@0.2.9/insecure"
         "wasi:random@0.2.9/insecure-seed"
 )
-croft_register_xpi_bundle(wasi-clocks-poll-current-machine
+croft_define_xpi_bundle_spec(wasi-clocks-poll-current-machine
     SUPPORT_STATUS "host-implemented-subset"
     APPLICABILITY "current-machine-unix"
     DESCRIPTION "Current-machine clocks/poll bundle sharing time-base and pollable substrates."
@@ -2295,7 +2305,7 @@ croft_register_xpi_bundle(wasi-clocks-poll-current-machine
         "wasi:clocks@0.2.9/timezone"
         "wasi:io@0.2.9/poll"
 )
-croft_register_xpi_bundle(wasi-filesystem-streams-current-machine
+croft_define_xpi_bundle_spec(wasi-filesystem-streams-current-machine
     SUPPORT_STATUS "host-implemented-subset"
     APPLICABILITY "current-machine-unix"
     DESCRIPTION "Current-machine filesystem/streams bundle sharing descriptor and byte-stream substrates plus helper errors."
@@ -2319,6 +2329,50 @@ croft_register_xpi_bundle(wasi-filesystem-streams-current-machine
     HELPER_INTERFACES
         "wasi:io@0.2.9/error"
         "wasi:filesystem@0.2.9/error"
+)
+
+croft_collect_xpi_bundle_field(CROFT_WASI_MACHINE_RUNTIME_SUBSTRATES SUBSTRATES)
+croft_collect_xpi_bundle_field(CROFT_WASI_MACHINE_RUNTIME_HELPER_INTERFACES HELPER_INTERFACES)
+croft_collect_xpi_bundle_field(CROFT_WASI_MACHINE_RUNTIME_DECLARED_WORLDS DECLARED_WORLDS)
+croft_collect_xpi_bundle_field(CROFT_WASI_MACHINE_RUNTIME_EXPANDED_SURFACES EXPANDED_SURFACES)
+get_property(CROFT_WASI_MACHINE_RUNTIME_BUNDLES GLOBAL PROPERTY CROFT_DEFINED_XPI_BUNDLES)
+if(NOT CROFT_WASI_MACHINE_RUNTIME_BUNDLES OR CROFT_WASI_MACHINE_RUNTIME_BUNDLES MATCHES "-NOTFOUND$")
+    set(CROFT_WASI_MACHINE_RUNTIME_BUNDLES "")
+endif()
+
+add_library(croft_wit_wasi_machine_runtime STATIC src/runtime/wit_wasi_machine_runtime.c)
+add_dependencies(croft_wit_wasi_machine_runtime
+    wasi_cli_command_wit_schema_gen
+    wasi_random_world_wit_schema_gen
+    wasi_io_world_wit_schema_gen
+    wasi_clocks_world_wit_schema_gen
+    wasi_filesystem_world_wit_schema_gen)
+croft_apply_public_includes(croft_wit_wasi_machine_runtime)
+croft_set_target_profile(croft_wit_wasi_machine_runtime single-thread)
+target_link_libraries(croft_wit_wasi_machine_runtime PUBLIC
+    croft_wit_world_runtime
+    croft_wit_wasi_cli_command
+    croft_wit_wasi_random_world
+    croft_wit_wasi_io_world
+    croft_wit_wasi_clocks_world
+    croft_wit_wasi_filesystem_world)
+croft_register_artifact(croft_wit_wasi_machine_runtime wit
+    UPSTREAM_PACKAGE "wasi"
+    UPSTREAM_VERSION "0.2.9"
+    SUPPORT_STATUS "host-implemented-subset"
+    APPLICABILITY "current-machine-unix"
+    CAPABILITY_BUNDLES ${CROFT_WASI_MACHINE_RUNTIME_BUNDLES}
+    SHARED_SUBSTRATES ${CROFT_WASI_MACHINE_RUNTIME_SUBSTRATES}
+    HELPER_INTERFACES ${CROFT_WASI_MACHINE_RUNTIME_HELPER_INTERFACES}
+    DECLARED_WORLDS ${CROFT_WASI_MACHINE_RUNTIME_DECLARED_WORLDS}
+    EXPANDED_SURFACES ${CROFT_WASI_MACHINE_RUNTIME_EXPANDED_SURFACES}
+    TAGS tier8 wit wasi runtime current-machine unix generated-glue host
+    DEPENDS croft_wit_world_runtime
+            croft_wit_wasi_cli_command
+            croft_wit_wasi_random_world
+            croft_wit_wasi_io_world
+            croft_wit_wasi_clocks_world
+            croft_wit_wasi_filesystem_world
 )
 
 add_library(croft_wit_text_runtime STATIC src/runtime/wit_text_runtime.c)
