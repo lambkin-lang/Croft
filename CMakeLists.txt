@@ -483,6 +483,45 @@ function(croft_link_libraries_checked target)
     endforeach()
 endfunction()
 
+function(croft_add_generated_wit_library target)
+    cmake_parse_arguments(WIT
+        ""
+        "SCHEMA_TARGET;GENERATED_SOURCE;KIND;UPSTREAM_PACKAGE;UPSTREAM_VERSION;SUPPORT_STATUS;APPLICABILITY"
+        "PUBLIC_LINKS;TAGS;DEPENDS;CAPABILITY_BUNDLES;SHARED_SUBSTRATES;HELPER_INTERFACES;DECLARED_WORLDS;EXPANDED_SURFACES"
+        ${ARGN})
+    if(NOT WIT_SCHEMA_TARGET)
+        message(FATAL_ERROR "croft_add_generated_wit_library(${target}) requires SCHEMA_TARGET")
+    endif()
+    if(NOT WIT_GENERATED_SOURCE)
+        message(FATAL_ERROR "croft_add_generated_wit_library(${target}) requires GENERATED_SOURCE")
+    endif()
+    if(WIT_KIND)
+        set(kind "${WIT_KIND}")
+    else()
+        set(kind "wit")
+    endif()
+
+    add_library(${target} STATIC ${WIT_GENERATED_SOURCE})
+    add_dependencies(${target} ${WIT_SCHEMA_TARGET})
+    croft_apply_public_includes(${target})
+    if(WIT_PUBLIC_LINKS)
+        croft_link_libraries_checked(${target} PUBLIC ${WIT_PUBLIC_LINKS})
+    endif()
+    croft_register_artifact(${target} ${kind}
+        UPSTREAM_PACKAGE "${WIT_UPSTREAM_PACKAGE}"
+        UPSTREAM_VERSION "${WIT_UPSTREAM_VERSION}"
+        SUPPORT_STATUS "${WIT_SUPPORT_STATUS}"
+        APPLICABILITY "${WIT_APPLICABILITY}"
+        CAPABILITY_BUNDLES ${WIT_CAPABILITY_BUNDLES}
+        SHARED_SUBSTRATES ${WIT_SHARED_SUBSTRATES}
+        HELPER_INTERFACES ${WIT_HELPER_INTERFACES}
+        DECLARED_WORLDS ${WIT_DECLARED_WORLDS}
+        EXPANDED_SURFACES ${WIT_EXPANDED_SURFACES}
+        TAGS ${WIT_TAGS}
+        DEPENDS ${WIT_DEPENDS}
+    )
+endfunction()
+
 function(croft_add_wat_wasm_guest target)
     cmake_parse_arguments(WASM_GUEST "" "SOURCE;OUTPUT_NAME;OUTPUT_SUBDIR;OUT_VAR" "DEPENDS" ${ARGN})
     if(NOT TARGET croft_wasm_wasm3 OR NOT CROFT_WAT2WASM_TOOL)
@@ -1422,11 +1461,10 @@ croft_register_artifact(croft_wit_host_a11y wit
     DEPENDS croft_thatch_core
 )
 
-add_library(croft_wit_wasi_cli_environment STATIC ${WASI_CLI_ENVIRONMENT_WIT_GENERATED_C})
-add_dependencies(croft_wit_wasi_cli_environment wasi_cli_environment_wit_schema_gen)
-croft_apply_public_includes(croft_wit_wasi_cli_environment)
-target_link_libraries(croft_wit_wasi_cli_environment PUBLIC croft_thatch_core)
-croft_register_artifact(croft_wit_wasi_cli_environment wit
+croft_add_generated_wit_library(croft_wit_wasi_cli_environment
+    SCHEMA_TARGET wasi_cli_environment_wit_schema_gen
+    GENERATED_SOURCE ${WASI_CLI_ENVIRONMENT_WIT_GENERATED_C}
+    PUBLIC_LINKS croft_thatch_core
     UPSTREAM_PACKAGE "wasi:cli"
     UPSTREAM_VERSION "0.2.9"
     SUPPORT_STATUS "declaration-only"
@@ -1438,11 +1476,10 @@ croft_register_artifact(croft_wit_wasi_cli_environment wit
     DEPENDS croft_thatch_core
 )
 
-add_library(croft_wit_wasi_cli_stdio STATIC ${WASI_CLI_STDIO_WIT_GENERATED_C})
-add_dependencies(croft_wit_wasi_cli_stdio wasi_cli_stdio_wit_schema_gen)
-croft_apply_public_includes(croft_wit_wasi_cli_stdio)
-target_link_libraries(croft_wit_wasi_cli_stdio PUBLIC croft_thatch_core)
-croft_register_artifact(croft_wit_wasi_cli_stdio wit
+croft_add_generated_wit_library(croft_wit_wasi_cli_stdio
+    SCHEMA_TARGET wasi_cli_stdio_wit_schema_gen
+    GENERATED_SOURCE ${WASI_CLI_STDIO_WIT_GENERATED_C}
+    PUBLIC_LINKS croft_thatch_core
     UPSTREAM_PACKAGE "wasi:cli"
     UPSTREAM_VERSION "0.2.9"
     SUPPORT_STATUS "declaration-only"
@@ -1454,11 +1491,10 @@ croft_register_artifact(croft_wit_wasi_cli_stdio wit
     DEPENDS croft_thatch_core
 )
 
-add_library(croft_wit_wasi_cli_terminal STATIC ${WASI_CLI_TERMINAL_WIT_GENERATED_C})
-add_dependencies(croft_wit_wasi_cli_terminal wasi_cli_terminal_wit_schema_gen)
-croft_apply_public_includes(croft_wit_wasi_cli_terminal)
-target_link_libraries(croft_wit_wasi_cli_terminal PUBLIC croft_thatch_core)
-croft_register_artifact(croft_wit_wasi_cli_terminal wit
+croft_add_generated_wit_library(croft_wit_wasi_cli_terminal
+    SCHEMA_TARGET wasi_cli_terminal_wit_schema_gen
+    GENERATED_SOURCE ${WASI_CLI_TERMINAL_WIT_GENERATED_C}
+    PUBLIC_LINKS croft_thatch_core
     UPSTREAM_PACKAGE "wasi:cli"
     UPSTREAM_VERSION "0.2.9"
     SUPPORT_STATUS "declaration-only"
@@ -1470,11 +1506,10 @@ croft_register_artifact(croft_wit_wasi_cli_terminal wit
     DEPENDS croft_thatch_core
 )
 
-add_library(croft_wit_wasi_cli_run STATIC ${WASI_CLI_RUN_WIT_GENERATED_C})
-add_dependencies(croft_wit_wasi_cli_run wasi_cli_run_wit_schema_gen)
-croft_apply_public_includes(croft_wit_wasi_cli_run)
-target_link_libraries(croft_wit_wasi_cli_run PUBLIC croft_thatch_core)
-croft_register_artifact(croft_wit_wasi_cli_run wit
+croft_add_generated_wit_library(croft_wit_wasi_cli_run
+    SCHEMA_TARGET wasi_cli_run_wit_schema_gen
+    GENERATED_SOURCE ${WASI_CLI_RUN_WIT_GENERATED_C}
+    PUBLIC_LINKS croft_thatch_core
     UPSTREAM_PACKAGE "wasi:cli"
     UPSTREAM_VERSION "0.2.9"
     SUPPORT_STATUS "declaration-only"
@@ -1486,11 +1521,10 @@ croft_register_artifact(croft_wit_wasi_cli_run wit
     DEPENDS croft_thatch_core
 )
 
-add_library(croft_wit_wasi_cli_imports STATIC ${WASI_CLI_IMPORTS_WIT_GENERATED_C})
-add_dependencies(croft_wit_wasi_cli_imports wasi_cli_imports_wit_schema_gen)
-croft_apply_public_includes(croft_wit_wasi_cli_imports)
-target_link_libraries(croft_wit_wasi_cli_imports PUBLIC croft_thatch_core)
-croft_register_artifact(croft_wit_wasi_cli_imports wit
+croft_add_generated_wit_library(croft_wit_wasi_cli_imports
+    SCHEMA_TARGET wasi_cli_imports_wit_schema_gen
+    GENERATED_SOURCE ${WASI_CLI_IMPORTS_WIT_GENERATED_C}
+    PUBLIC_LINKS croft_thatch_core
     UPSTREAM_PACKAGE "wasi:cli"
     UPSTREAM_VERSION "0.2.9"
     SUPPORT_STATUS "declaration-only"
@@ -1506,11 +1540,10 @@ croft_register_artifact(croft_wit_wasi_cli_imports wit
     DEPENDS croft_thatch_core
 )
 
-add_library(croft_wit_wasi_cli_command STATIC ${WASI_CLI_COMMAND_WIT_GENERATED_C})
-add_dependencies(croft_wit_wasi_cli_command wasi_cli_command_wit_schema_gen)
-croft_apply_public_includes(croft_wit_wasi_cli_command)
-target_link_libraries(croft_wit_wasi_cli_command PUBLIC croft_thatch_core)
-croft_register_artifact(croft_wit_wasi_cli_command wit
+croft_add_generated_wit_library(croft_wit_wasi_cli_command
+    SCHEMA_TARGET wasi_cli_command_wit_schema_gen
+    GENERATED_SOURCE ${WASI_CLI_COMMAND_WIT_GENERATED_C}
+    PUBLIC_LINKS croft_thatch_core
     UPSTREAM_PACKAGE "wasi:cli"
     UPSTREAM_VERSION "0.2.9"
     SUPPORT_STATUS "declaration-only"
@@ -1527,11 +1560,10 @@ croft_register_artifact(croft_wit_wasi_cli_command wit
     DEPENDS croft_thatch_core
 )
 
-add_library(croft_wit_wasi_random_random STATIC ${WASI_RANDOM_RANDOM_WIT_GENERATED_C})
-add_dependencies(croft_wit_wasi_random_random wasi_random_random_wit_schema_gen)
-croft_apply_public_includes(croft_wit_wasi_random_random)
-target_link_libraries(croft_wit_wasi_random_random PUBLIC croft_thatch_core)
-croft_register_artifact(croft_wit_wasi_random_random wit
+croft_add_generated_wit_library(croft_wit_wasi_random_random
+    SCHEMA_TARGET wasi_random_random_wit_schema_gen
+    GENERATED_SOURCE ${WASI_RANDOM_RANDOM_WIT_GENERATED_C}
+    PUBLIC_LINKS croft_thatch_core
     UPSTREAM_PACKAGE "wasi:random"
     UPSTREAM_VERSION "0.2.9"
     SUPPORT_STATUS "declaration-only"
@@ -1543,11 +1575,10 @@ croft_register_artifact(croft_wit_wasi_random_random wit
     DEPENDS croft_thatch_core
 )
 
-add_library(croft_wit_wasi_random_insecure STATIC ${WASI_RANDOM_INSECURE_WIT_GENERATED_C})
-add_dependencies(croft_wit_wasi_random_insecure wasi_random_insecure_wit_schema_gen)
-croft_apply_public_includes(croft_wit_wasi_random_insecure)
-target_link_libraries(croft_wit_wasi_random_insecure PUBLIC croft_thatch_core)
-croft_register_artifact(croft_wit_wasi_random_insecure wit
+croft_add_generated_wit_library(croft_wit_wasi_random_insecure
+    SCHEMA_TARGET wasi_random_insecure_wit_schema_gen
+    GENERATED_SOURCE ${WASI_RANDOM_INSECURE_WIT_GENERATED_C}
+    PUBLIC_LINKS croft_thatch_core
     UPSTREAM_PACKAGE "wasi:random"
     UPSTREAM_VERSION "0.2.9"
     SUPPORT_STATUS "declaration-only"
@@ -1559,11 +1590,10 @@ croft_register_artifact(croft_wit_wasi_random_insecure wit
     DEPENDS croft_thatch_core
 )
 
-add_library(croft_wit_wasi_random_insecure_seed STATIC ${WASI_RANDOM_INSECURE_SEED_WIT_GENERATED_C})
-add_dependencies(croft_wit_wasi_random_insecure_seed wasi_random_insecure_seed_wit_schema_gen)
-croft_apply_public_includes(croft_wit_wasi_random_insecure_seed)
-target_link_libraries(croft_wit_wasi_random_insecure_seed PUBLIC croft_thatch_core)
-croft_register_artifact(croft_wit_wasi_random_insecure_seed wit
+croft_add_generated_wit_library(croft_wit_wasi_random_insecure_seed
+    SCHEMA_TARGET wasi_random_insecure_seed_wit_schema_gen
+    GENERATED_SOURCE ${WASI_RANDOM_INSECURE_SEED_WIT_GENERATED_C}
+    PUBLIC_LINKS croft_thatch_core
     UPSTREAM_PACKAGE "wasi:random"
     UPSTREAM_VERSION "0.2.9"
     SUPPORT_STATUS "declaration-only"
@@ -1575,11 +1605,10 @@ croft_register_artifact(croft_wit_wasi_random_insecure_seed wit
     DEPENDS croft_thatch_core
 )
 
-add_library(croft_wit_wasi_random_world STATIC ${WASI_RANDOM_WORLD_WIT_GENERATED_C})
-add_dependencies(croft_wit_wasi_random_world wasi_random_world_wit_schema_gen)
-croft_apply_public_includes(croft_wit_wasi_random_world)
-target_link_libraries(croft_wit_wasi_random_world PUBLIC croft_thatch_core)
-croft_register_artifact(croft_wit_wasi_random_world wit
+croft_add_generated_wit_library(croft_wit_wasi_random_world
+    SCHEMA_TARGET wasi_random_world_wit_schema_gen
+    GENERATED_SOURCE ${WASI_RANDOM_WORLD_WIT_GENERATED_C}
+    PUBLIC_LINKS croft_thatch_core
     UPSTREAM_PACKAGE "wasi:random"
     UPSTREAM_VERSION "0.2.9"
     SUPPORT_STATUS "declaration-only"
@@ -1595,11 +1624,10 @@ croft_register_artifact(croft_wit_wasi_random_world wit
     DEPENDS croft_thatch_core
 )
 
-add_library(croft_wit_wasi_clocks_timezone STATIC ${WASI_CLOCKS_TIMEZONE_WIT_GENERATED_C})
-add_dependencies(croft_wit_wasi_clocks_timezone wasi_clocks_timezone_wit_schema_gen)
-croft_apply_public_includes(croft_wit_wasi_clocks_timezone)
-target_link_libraries(croft_wit_wasi_clocks_timezone PUBLIC croft_thatch_core)
-croft_register_artifact(croft_wit_wasi_clocks_timezone wit
+croft_add_generated_wit_library(croft_wit_wasi_clocks_timezone
+    SCHEMA_TARGET wasi_clocks_timezone_wit_schema_gen
+    GENERATED_SOURCE ${WASI_CLOCKS_TIMEZONE_WIT_GENERATED_C}
+    PUBLIC_LINKS croft_thatch_core
     UPSTREAM_PACKAGE "wasi:clocks"
     UPSTREAM_VERSION "0.2.9"
     SUPPORT_STATUS "declaration-only"
@@ -1611,11 +1639,10 @@ croft_register_artifact(croft_wit_wasi_clocks_timezone wit
     DEPENDS croft_thatch_core
 )
 
-add_library(croft_wit_wasi_clocks_wall_clock STATIC ${WASI_CLOCKS_WALL_CLOCK_WIT_GENERATED_C})
-add_dependencies(croft_wit_wasi_clocks_wall_clock wasi_clocks_wall_clock_wit_schema_gen)
-croft_apply_public_includes(croft_wit_wasi_clocks_wall_clock)
-target_link_libraries(croft_wit_wasi_clocks_wall_clock PUBLIC croft_thatch_core)
-croft_register_artifact(croft_wit_wasi_clocks_wall_clock wit
+croft_add_generated_wit_library(croft_wit_wasi_clocks_wall_clock
+    SCHEMA_TARGET wasi_clocks_wall_clock_wit_schema_gen
+    GENERATED_SOURCE ${WASI_CLOCKS_WALL_CLOCK_WIT_GENERATED_C}
+    PUBLIC_LINKS croft_thatch_core
     UPSTREAM_PACKAGE "wasi:clocks"
     UPSTREAM_VERSION "0.2.9"
     SUPPORT_STATUS "declaration-only"
@@ -1627,11 +1654,10 @@ croft_register_artifact(croft_wit_wasi_clocks_wall_clock wit
     DEPENDS croft_thatch_core
 )
 
-add_library(croft_wit_wasi_io_poll STATIC ${WASI_IO_POLL_WIT_GENERATED_C})
-add_dependencies(croft_wit_wasi_io_poll wasi_io_poll_wit_schema_gen)
-croft_apply_public_includes(croft_wit_wasi_io_poll)
-target_link_libraries(croft_wit_wasi_io_poll PUBLIC croft_thatch_core)
-croft_register_artifact(croft_wit_wasi_io_poll wit
+croft_add_generated_wit_library(croft_wit_wasi_io_poll
+    SCHEMA_TARGET wasi_io_poll_wit_schema_gen
+    GENERATED_SOURCE ${WASI_IO_POLL_WIT_GENERATED_C}
+    PUBLIC_LINKS croft_thatch_core
     UPSTREAM_PACKAGE "wasi:io"
     UPSTREAM_VERSION "0.2.9"
     SUPPORT_STATUS "declaration-only"
@@ -1643,11 +1669,10 @@ croft_register_artifact(croft_wit_wasi_io_poll wit
     DEPENDS croft_thatch_core
 )
 
-add_library(croft_wit_wasi_io_streams STATIC ${WASI_IO_STREAMS_WIT_GENERATED_C})
-add_dependencies(croft_wit_wasi_io_streams wasi_io_streams_wit_schema_gen)
-croft_apply_public_includes(croft_wit_wasi_io_streams)
-target_link_libraries(croft_wit_wasi_io_streams PUBLIC croft_thatch_core)
-croft_register_artifact(croft_wit_wasi_io_streams wit
+croft_add_generated_wit_library(croft_wit_wasi_io_streams
+    SCHEMA_TARGET wasi_io_streams_wit_schema_gen
+    GENERATED_SOURCE ${WASI_IO_STREAMS_WIT_GENERATED_C}
+    PUBLIC_LINKS croft_thatch_core
     UPSTREAM_PACKAGE "wasi:io"
     UPSTREAM_VERSION "0.2.9"
     SUPPORT_STATUS "declaration-only"
@@ -1660,11 +1685,10 @@ croft_register_artifact(croft_wit_wasi_io_streams wit
     DEPENDS croft_thatch_core
 )
 
-add_library(croft_wit_wasi_io_world STATIC ${WASI_IO_WORLD_WIT_GENERATED_C})
-add_dependencies(croft_wit_wasi_io_world wasi_io_world_wit_schema_gen)
-croft_apply_public_includes(croft_wit_wasi_io_world)
-target_link_libraries(croft_wit_wasi_io_world PUBLIC croft_thatch_core)
-croft_register_artifact(croft_wit_wasi_io_world wit
+croft_add_generated_wit_library(croft_wit_wasi_io_world
+    SCHEMA_TARGET wasi_io_world_wit_schema_gen
+    GENERATED_SOURCE ${WASI_IO_WORLD_WIT_GENERATED_C}
+    PUBLIC_LINKS croft_thatch_core
     UPSTREAM_PACKAGE "wasi:io"
     UPSTREAM_VERSION "0.2.9"
     SUPPORT_STATUS "declaration-only"
@@ -1682,11 +1706,10 @@ croft_register_artifact(croft_wit_wasi_io_world wit
     DEPENDS croft_thatch_core
 )
 
-add_library(croft_wit_wasi_clocks_monotonic_clock STATIC ${WASI_CLOCKS_MONOTONIC_CLOCK_WIT_GENERATED_C})
-add_dependencies(croft_wit_wasi_clocks_monotonic_clock wasi_clocks_monotonic_clock_wit_schema_gen)
-croft_apply_public_includes(croft_wit_wasi_clocks_monotonic_clock)
-target_link_libraries(croft_wit_wasi_clocks_monotonic_clock PUBLIC croft_thatch_core croft_wit_wasi_io_poll)
-croft_register_artifact(croft_wit_wasi_clocks_monotonic_clock wit
+croft_add_generated_wit_library(croft_wit_wasi_clocks_monotonic_clock
+    SCHEMA_TARGET wasi_clocks_monotonic_clock_wit_schema_gen
+    GENERATED_SOURCE ${WASI_CLOCKS_MONOTONIC_CLOCK_WIT_GENERATED_C}
+    PUBLIC_LINKS croft_thatch_core croft_wit_wasi_io_poll
     UPSTREAM_PACKAGE "wasi:clocks"
     UPSTREAM_VERSION "0.2.9"
     SUPPORT_STATUS "declaration-only"
@@ -1698,11 +1721,10 @@ croft_register_artifact(croft_wit_wasi_clocks_monotonic_clock wit
     DEPENDS croft_thatch_core croft_wit_wasi_io_poll
 )
 
-add_library(croft_wit_wasi_clocks_world STATIC ${WASI_CLOCKS_WORLD_WIT_GENERATED_C})
-add_dependencies(croft_wit_wasi_clocks_world wasi_clocks_world_wit_schema_gen)
-croft_apply_public_includes(croft_wit_wasi_clocks_world)
-target_link_libraries(croft_wit_wasi_clocks_world PUBLIC croft_thatch_core)
-croft_register_artifact(croft_wit_wasi_clocks_world wit
+croft_add_generated_wit_library(croft_wit_wasi_clocks_world
+    SCHEMA_TARGET wasi_clocks_world_wit_schema_gen
+    GENERATED_SOURCE ${WASI_CLOCKS_WORLD_WIT_GENERATED_C}
+    PUBLIC_LINKS croft_thatch_core
     UPSTREAM_PACKAGE "wasi:clocks"
     UPSTREAM_VERSION "0.2.9"
     SUPPORT_STATUS "declaration-only"
@@ -1718,11 +1740,10 @@ croft_register_artifact(croft_wit_wasi_clocks_world wit
     DEPENDS croft_thatch_core
 )
 
-add_library(croft_wit_wasi_filesystem_types STATIC ${WASI_FILESYSTEM_TYPES_WIT_GENERATED_C})
-add_dependencies(croft_wit_wasi_filesystem_types wasi_filesystem_types_wit_schema_gen)
-croft_apply_public_includes(croft_wit_wasi_filesystem_types)
-target_link_libraries(croft_wit_wasi_filesystem_types PUBLIC croft_thatch_core)
-croft_register_artifact(croft_wit_wasi_filesystem_types wit
+croft_add_generated_wit_library(croft_wit_wasi_filesystem_types
+    SCHEMA_TARGET wasi_filesystem_types_wit_schema_gen
+    GENERATED_SOURCE ${WASI_FILESYSTEM_TYPES_WIT_GENERATED_C}
+    PUBLIC_LINKS croft_thatch_core
     UPSTREAM_PACKAGE "wasi:filesystem"
     UPSTREAM_VERSION "0.2.9"
     SUPPORT_STATUS "declaration-only"
@@ -1735,11 +1756,10 @@ croft_register_artifact(croft_wit_wasi_filesystem_types wit
     DEPENDS croft_thatch_core
 )
 
-add_library(croft_wit_wasi_filesystem_preopens STATIC ${WASI_FILESYSTEM_PREOPENS_WIT_GENERATED_C})
-add_dependencies(croft_wit_wasi_filesystem_preopens wasi_filesystem_preopens_wit_schema_gen)
-croft_apply_public_includes(croft_wit_wasi_filesystem_preopens)
-target_link_libraries(croft_wit_wasi_filesystem_preopens PUBLIC croft_thatch_core)
-croft_register_artifact(croft_wit_wasi_filesystem_preopens wit
+croft_add_generated_wit_library(croft_wit_wasi_filesystem_preopens
+    SCHEMA_TARGET wasi_filesystem_preopens_wit_schema_gen
+    GENERATED_SOURCE ${WASI_FILESYSTEM_PREOPENS_WIT_GENERATED_C}
+    PUBLIC_LINKS croft_thatch_core
     UPSTREAM_PACKAGE "wasi:filesystem"
     UPSTREAM_VERSION "0.2.9"
     SUPPORT_STATUS "declaration-only"
@@ -1751,11 +1771,10 @@ croft_register_artifact(croft_wit_wasi_filesystem_preopens wit
     DEPENDS croft_thatch_core
 )
 
-add_library(croft_wit_wasi_filesystem_world STATIC ${WASI_FILESYSTEM_WORLD_WIT_GENERATED_C})
-add_dependencies(croft_wit_wasi_filesystem_world wasi_filesystem_world_wit_schema_gen)
-croft_apply_public_includes(croft_wit_wasi_filesystem_world)
-target_link_libraries(croft_wit_wasi_filesystem_world PUBLIC croft_thatch_core)
-croft_register_artifact(croft_wit_wasi_filesystem_world wit
+croft_add_generated_wit_library(croft_wit_wasi_filesystem_world
+    SCHEMA_TARGET wasi_filesystem_world_wit_schema_gen
+    GENERATED_SOURCE ${WASI_FILESYSTEM_WORLD_WIT_GENERATED_C}
+    PUBLIC_LINKS croft_thatch_core
     UPSTREAM_PACKAGE "wasi:filesystem"
     UPSTREAM_VERSION "0.2.9"
     SUPPORT_STATUS "declaration-only"
