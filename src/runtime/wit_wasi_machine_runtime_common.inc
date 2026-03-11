@@ -295,6 +295,37 @@ static int croft_wit_wasi_error_insert(croft_wit_wasi_machine_runtime* runtime,
     return ERR_OK;
 }
 
+static int croft_wit_wasi_error_insert_io_message(croft_wit_wasi_machine_runtime* runtime,
+                                                  const char* debug_string,
+                                                  uint32_t* handle_out)
+{
+    return croft_wit_wasi_error_insert(runtime,
+                                       CROFT_WIT_WASI_ERROR_DOMAIN_IO,
+                                       0u,
+                                       debug_string,
+                                       handle_out);
+}
+
+static int croft_wit_wasi_error_insert_io_errno(croft_wit_wasi_machine_runtime* runtime,
+                                                const char* op_name,
+                                                int err,
+                                                uint32_t* handle_out)
+{
+    char debug_string[256];
+    const char* label = op_name ? op_name : "operation";
+    const char* err_text = strerror(err);
+    int wrote;
+
+    if (!err_text) {
+        err_text = "unknown error";
+    }
+    wrote = snprintf(debug_string, sizeof(debug_string), "%s: %s", label, err_text);
+    if (wrote < 0) {
+        return ERR_INVALID;
+    }
+    return croft_wit_wasi_error_insert_io_message(runtime, debug_string, handle_out);
+}
+
 static uint32_t croft_wit_wasi_count_strings(const char* const* values, uint32_t known_count)
 {
     uint32_t count = 0u;

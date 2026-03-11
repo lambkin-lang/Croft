@@ -246,6 +246,30 @@ static int croft_wit_wasi_fs_descriptors_reserve(croft_wit_wasi_machine_runtime*
     return ERR_OK;
 }
 
+static void croft_wit_wasi_fd_detect_traits(int fd,
+                                            uint8_t is_directory,
+                                            uint8_t* is_seekable_out,
+                                            uint8_t* is_terminal_out)
+{
+    uint8_t is_seekable = 0u;
+    uint8_t is_terminal = 0u;
+
+    if (fd >= 0 && !is_directory) {
+        errno = 0;
+        if (lseek(fd, 0, SEEK_CUR) >= 0 || errno != ESPIPE) {
+            is_seekable = 1u;
+        }
+        is_terminal = (uint8_t)(isatty(fd) ? 1u : 0u);
+    }
+
+    if (is_seekable_out) {
+        *is_seekable_out = is_seekable;
+    }
+    if (is_terminal_out) {
+        *is_terminal_out = is_terminal;
+    }
+}
+
 static int croft_wit_wasi_fs_descriptor_insert(croft_wit_wasi_machine_runtime* runtime,
                                                int fd,
                                                uint32_t descriptor_flags,
@@ -253,17 +277,23 @@ static int croft_wit_wasi_fs_descriptor_insert(croft_wit_wasi_machine_runtime* r
                                                uint32_t* handle_out)
 {
     size_t i;
+    uint8_t is_seekable = 0u;
+    uint8_t is_terminal = 0u;
     int rc;
 
     if (!runtime || !handle_out || fd < 0) {
         return ERR_INVALID;
     }
+    croft_wit_wasi_fd_detect_traits(fd, is_directory, &is_seekable, &is_terminal);
     for (i = 0u; i < runtime->descriptor_count; i++) {
         if (!runtime->descriptors[i].live) {
             runtime->descriptors[i].live = 1u;
             runtime->descriptors[i].fd = fd;
             runtime->descriptors[i].descriptor_flags = descriptor_flags;
             runtime->descriptors[i].is_directory = is_directory;
+            runtime->descriptors[i].is_seekable = is_seekable;
+            runtime->descriptors[i].is_terminal = is_terminal;
+            runtime->descriptors[i].error_domain = CROFT_WIT_WASI_ERROR_DOMAIN_FILESYSTEM;
             *handle_out = (uint32_t)(i + 1u);
             return ERR_OK;
         }
@@ -277,6 +307,9 @@ static int croft_wit_wasi_fs_descriptor_insert(croft_wit_wasi_machine_runtime* r
     runtime->descriptors[runtime->descriptor_count].fd = fd;
     runtime->descriptors[runtime->descriptor_count].descriptor_flags = descriptor_flags;
     runtime->descriptors[runtime->descriptor_count].is_directory = is_directory;
+    runtime->descriptors[runtime->descriptor_count].is_seekable = is_seekable;
+    runtime->descriptors[runtime->descriptor_count].is_terminal = is_terminal;
+    runtime->descriptors[runtime->descriptor_count].error_domain = CROFT_WIT_WASI_ERROR_DOMAIN_FILESYSTEM;
     runtime->descriptor_count++;
     *handle_out = (uint32_t)runtime->descriptor_count;
     return ERR_OK;

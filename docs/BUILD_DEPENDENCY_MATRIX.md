@@ -155,6 +155,14 @@ and sync/timestamp calls such as `fsync`, `fdatasync`, `futimens`, and
 `utimensat`. That implementation is intentionally Unix/macOS-specific today;
 Windows-targeted host glue remains future work.
 
+The current-machine CLI stdio/terminal tranche now makes the process-descriptor
+boundary explicit too. `croft_wit_wasi_machine_runtime` can bind inherited or
+caller-provided `stdin`/`stdout`/`stderr` through duplicated file descriptors,
+and the dependency audit now tracks the extra Unix/macOS surface this uses:
+`dup`, `pipe`, and `isatty`. That runtime layer deliberately treats CLI stdio
+as a capability view over the shared stream substrate rather than as a special
+filesystem path.
+
 ## Reproducibility Note On FetchContent Pins
 
 The bootstrap workflow avoids that problem by pinning immutable SHAs in

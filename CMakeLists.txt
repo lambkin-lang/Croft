@@ -498,22 +498,32 @@ find_package(Threads REQUIRED)
 # ── WIT Schema Codegen ──────────────────────────────────────────────────
 croft_select_wasi_wit(WASI_CLI_ENVIRONMENT_WIT_PATH
     "cli/wit/environment.wit"
-    "tests/sapling_tests/fixtures/wasi/cli/environment.wit")
+    "tests/sapling_tests/fixtures/wasi-imports/cli/wit/environment.wit")
 croft_collect_wit_dir_depends(WASI_CLI_ENVIRONMENT_WIT_DEPENDS "${WASI_CLI_ENVIRONMENT_WIT_PATH}")
+
+croft_select_wasi_wit(WASI_CLI_STDIO_WIT_PATH
+    "cli/wit/stdio.wit"
+    "tests/sapling_tests/fixtures/wasi-imports/cli/wit/stdio.wit")
+croft_collect_wit_dir_depends(WASI_CLI_STDIO_WIT_DEPENDS "${WASI_CLI_STDIO_WIT_PATH}")
+
+croft_select_wasi_wit(WASI_CLI_TERMINAL_WIT_PATH
+    "cli/wit/terminal.wit"
+    "tests/sapling_tests/fixtures/wasi-imports/cli/wit/terminal.wit")
+croft_collect_wit_dir_depends(WASI_CLI_TERMINAL_WIT_DEPENDS "${WASI_CLI_TERMINAL_WIT_PATH}")
 
 croft_select_wasi_wit(WASI_CLI_RUN_WIT_PATH
     "cli/wit/run.wit"
-    "tests/sapling_tests/fixtures/wasi/cli/run.wit")
+    "tests/sapling_tests/fixtures/wasi-imports/cli/wit/run.wit")
 croft_collect_wit_dir_depends(WASI_CLI_RUN_WIT_DEPENDS "${WASI_CLI_RUN_WIT_PATH}")
 
 croft_select_wasi_wit(WASI_CLI_IMPORTS_WIT_PATH
     "cli/wit/imports.wit"
-    "tests/sapling_tests/fixtures/wasi/cli/imports.wit")
+    "tests/sapling_tests/fixtures/wasi-imports/cli/wit/imports.wit")
 croft_collect_wit_dir_depends(WASI_CLI_IMPORTS_WIT_DEPENDS "${WASI_CLI_IMPORTS_WIT_PATH}")
 
 croft_select_wasi_wit(WASI_CLI_COMMAND_WIT_PATH
     "cli/wit/command.wit"
-    "tests/sapling_tests/fixtures/wasi/cli/command.wit")
+    "tests/sapling_tests/fixtures/wasi-imports/cli/wit/command.wit")
 croft_collect_wit_dir_depends(WASI_CLI_COMMAND_WIT_DEPENDS "${WASI_CLI_COMMAND_WIT_PATH}")
 
 croft_select_wasi_wit(WASI_RANDOM_RANDOM_WIT_PATH
@@ -637,6 +647,14 @@ set(TEST_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/tests/generated/tes
 set(WASI_CLI_ENVIRONMENT_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_cli_environment.h")
 set(WASI_CLI_ENVIRONMENT_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_cli_environment.c")
 set(WASI_CLI_ENVIRONMENT_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_cli_environment.manifest")
+
+set(WASI_CLI_STDIO_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_cli_stdio.h")
+set(WASI_CLI_STDIO_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_cli_stdio.c")
+set(WASI_CLI_STDIO_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_cli_stdio.manifest")
+
+set(WASI_CLI_TERMINAL_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_cli_terminal.h")
+set(WASI_CLI_TERMINAL_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_cli_terminal.c")
+set(WASI_CLI_TERMINAL_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_cli_terminal.manifest")
 
 set(WASI_CLI_RUN_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_cli_run.h")
 set(WASI_CLI_RUN_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_wasi_cli_run.c")
@@ -877,6 +895,34 @@ add_custom_target(wasi_cli_environment_wit_schema_gen
     DEPENDS ${WASI_CLI_ENVIRONMENT_WIT_GENERATED_H}
             ${WASI_CLI_ENVIRONMENT_WIT_GENERATED_C}
             ${WASI_CLI_ENVIRONMENT_WIT_GENERATED_MANIFEST})
+
+# WASI CLI stdio bindings
+add_custom_command(
+    OUTPUT ${WASI_CLI_STDIO_WIT_GENERATED_H} ${WASI_CLI_STDIO_WIT_GENERATED_C} ${WASI_CLI_STDIO_WIT_GENERATED_MANIFEST}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
+    COMMAND wit_codegen --wit "${WASI_CLI_STDIO_WIT_PATH}"
+                        --header "${WASI_CLI_STDIO_WIT_GENERATED_H}" --source "${WASI_CLI_STDIO_WIT_GENERATED_C}" --manifest "${WASI_CLI_STDIO_WIT_GENERATED_MANIFEST}"
+    DEPENDS wit_codegen ${WASI_CLI_STDIO_WIT_DEPENDS}
+    COMMENT "Generating WASI CLI stdio bindings..."
+)
+add_custom_target(wasi_cli_stdio_wit_schema_gen
+    DEPENDS ${WASI_CLI_STDIO_WIT_GENERATED_H}
+            ${WASI_CLI_STDIO_WIT_GENERATED_C}
+            ${WASI_CLI_STDIO_WIT_GENERATED_MANIFEST})
+
+# WASI CLI terminal bindings
+add_custom_command(
+    OUTPUT ${WASI_CLI_TERMINAL_WIT_GENERATED_H} ${WASI_CLI_TERMINAL_WIT_GENERATED_C} ${WASI_CLI_TERMINAL_WIT_GENERATED_MANIFEST}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
+    COMMAND wit_codegen --wit "${WASI_CLI_TERMINAL_WIT_PATH}"
+                        --header "${WASI_CLI_TERMINAL_WIT_GENERATED_H}" --source "${WASI_CLI_TERMINAL_WIT_GENERATED_C}" --manifest "${WASI_CLI_TERMINAL_WIT_GENERATED_MANIFEST}"
+    DEPENDS wit_codegen ${WASI_CLI_TERMINAL_WIT_DEPENDS}
+    COMMENT "Generating WASI CLI terminal bindings..."
+)
+add_custom_target(wasi_cli_terminal_wit_schema_gen
+    DEPENDS ${WASI_CLI_TERMINAL_WIT_GENERATED_H}
+            ${WASI_CLI_TERMINAL_WIT_GENERATED_C}
+            ${WASI_CLI_TERMINAL_WIT_GENERATED_MANIFEST})
 
 # WASI CLI run bindings
 add_custom_command(
@@ -1536,6 +1582,24 @@ croft_apply_public_includes(croft_wit_wasi_cli_environment)
 target_link_libraries(croft_wit_wasi_cli_environment PUBLIC croft_thatch_core)
 croft_register_artifact(croft_wit_wasi_cli_environment wit
     TAGS wit wasi cli environment service metadata current-machine unix
+    DEPENDS croft_thatch_core
+)
+
+add_library(croft_wit_wasi_cli_stdio STATIC ${WASI_CLI_STDIO_WIT_GENERATED_C})
+add_dependencies(croft_wit_wasi_cli_stdio wasi_cli_stdio_wit_schema_gen)
+croft_apply_public_includes(croft_wit_wasi_cli_stdio)
+target_link_libraries(croft_wit_wasi_cli_stdio PUBLIC croft_thatch_core)
+croft_register_artifact(croft_wit_wasi_cli_stdio wit
+    TAGS wit wasi cli stdio service metadata current-machine unix
+    DEPENDS croft_thatch_core
+)
+
+add_library(croft_wit_wasi_cli_terminal STATIC ${WASI_CLI_TERMINAL_WIT_GENERATED_C})
+add_dependencies(croft_wit_wasi_cli_terminal wasi_cli_terminal_wit_schema_gen)
+croft_apply_public_includes(croft_wit_wasi_cli_terminal)
+target_link_libraries(croft_wit_wasi_cli_terminal PUBLIC croft_thatch_core)
+croft_register_artifact(croft_wit_wasi_cli_terminal wit
+    TAGS wit wasi cli terminal service metadata current-machine unix
     DEPENDS croft_thatch_core
 )
 
@@ -3128,6 +3192,8 @@ if(CROFT_BUILD_TESTS)
         if(test_name STREQUAL "wasi_wit_smoke")
             add_dependencies(${test_name}
                 wasi_cli_environment_wit_schema_gen
+                wasi_cli_stdio_wit_schema_gen
+                wasi_cli_terminal_wit_schema_gen
                 wasi_random_insecure_wit_schema_gen
             )
             target_include_directories(${test_name} PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
@@ -3240,6 +3306,8 @@ set(CROFT_PUBLIC_GENERATED_HEADERS
     ${HOST_EDITOR_INPUT_WIT_GENERATED_H}
     ${HOST_A11Y_WIT_GENERATED_H}
     ${WASI_CLI_ENVIRONMENT_WIT_GENERATED_H}
+    ${WASI_CLI_STDIO_WIT_GENERATED_H}
+    ${WASI_CLI_TERMINAL_WIT_GENERATED_H}
     ${WASI_CLI_RUN_WIT_GENERATED_H}
     ${WASI_CLI_IMPORTS_WIT_GENERATED_H}
     ${WASI_CLI_COMMAND_WIT_GENERATED_H}
@@ -3268,6 +3336,8 @@ set(CROFT_PUBLIC_GENERATED_MANIFESTS
     ${HOST_EDITOR_INPUT_WIT_GENERATED_MANIFEST}
     ${HOST_A11Y_WIT_GENERATED_MANIFEST}
     ${WASI_CLI_ENVIRONMENT_WIT_GENERATED_MANIFEST}
+    ${WASI_CLI_STDIO_WIT_GENERATED_MANIFEST}
+    ${WASI_CLI_TERMINAL_WIT_GENERATED_MANIFEST}
     ${WASI_CLI_RUN_WIT_GENERATED_MANIFEST}
     ${WASI_CLI_IMPORTS_WIT_GENERATED_MANIFEST}
     ${WASI_CLI_COMMAND_WIT_GENERATED_MANIFEST}

@@ -8,6 +8,7 @@
 
 #if !defined(CROFT_OS_WINDOWS)
 #include <fcntl.h>
+#include <signal.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #endif
@@ -248,6 +249,24 @@ static int write_test_file(const char* path, const char* text)
     }
     return close(fd) == 0;
 }
+
+static int read_exact_fd(int fd, uint8_t* out, size_t len)
+{
+    size_t offset = 0u;
+
+    if (fd < 0 || (!out && len > 0u)) {
+        return 0;
+    }
+    while (offset < len) {
+        ssize_t nread = read(fd, out + offset, len - offset);
+
+        if (nread <= 0) {
+            return 0;
+        }
+        offset += (size_t)nread;
+    }
+    return 1;
+}
 #endif
 
 static uint32_t encode_resource_list(uint8_t out[16], uint32_t handle)
@@ -272,6 +291,18 @@ int main(void)
     SapWitIoImportsWorldImports io_imports = {0};
     SapWitCliEnvironmentCommand cli_command = {0};
     SapWitCliEnvironmentReply cli_reply = {0};
+    SapWitCliStdinCommand cli_stdin_command = {0};
+    SapWitCliStdinReply cli_stdin_reply = {0};
+    SapWitCliStdoutCommand cli_stdout_command = {0};
+    SapWitCliStdoutReply cli_stdout_reply = {0};
+    SapWitCliStderrCommand cli_stderr_command = {0};
+    SapWitCliStderrReply cli_stderr_reply = {0};
+    SapWitCliTerminalStdinCommand cli_terminal_stdin_command = {0};
+    SapWitCliTerminalStdinReply cli_terminal_stdin_reply = {0};
+    SapWitCliTerminalStdoutCommand cli_terminal_stdout_command = {0};
+    SapWitCliTerminalStdoutReply cli_terminal_stdout_reply = {0};
+    SapWitCliTerminalStderrCommand cli_terminal_stderr_command = {0};
+    SapWitCliTerminalStderrReply cli_terminal_stderr_reply = {0};
     SapWitRandomCommand random_command = {0};
     SapWitRandomReply random_reply = {0};
     SapWitRandomInsecureSeedCommand seed_command = {0};
@@ -310,19 +341,27 @@ int main(void)
     char fs_dir_template[] = "/tmp/croft-wasi-fs-smoke-XXXXXX";
     char* fs_dir = NULL;
     char fs_file_path[PATH_MAX] = {0};
-    char fs_fifo_path[PATH_MAX] = {0};
     const char fs_file_name[] = "hello.txt";
-    const char fs_fifo_name[] = "seekpipe";
     const char fs_file_contents[] = "hello filesystem";
     const char fs_stream_suffix[] = " + stream";
+    const char cli_stdin_text[] = "pipe stdin";
+    const char cli_stdout_text[] = "stdout over io";
+    const char cli_stderr_text[] = "stderr over io";
+    uint8_t cli_stdout_buffer[32] = {0};
+    uint8_t cli_stderr_buffer[32] = {0};
+    int stdin_pipe[2] = {-1, -1};
+    int stdout_pipe[2] = {-1, -1};
+    int stderr_pipe[2] = {-1, -1};
+    void (*previous_sigpipe)(int) = SIG_DFL;
     SapWitFilesystemDescriptorResource root_descriptor = 0u;
     SapWitFilesystemDescriptorResource file_descriptor = 0u;
-    SapWitFilesystemDescriptorResource fifo_descriptor = 0u;
+    SapWitFilesystemDescriptorResource file_descriptor_read_only = 0u;
+    SapWitFilesystemDescriptorResource file_descriptor_write_only = 0u;
     SapWitFilesystemDirectoryEntryStreamResource directory_stream = 0u;
     SapWitFilesystemInputStreamResource file_input_stream = 0u;
     SapWitFilesystemOutputStreamResource file_output_stream = 0u;
-    SapWitFilesystemInputStreamResource fifo_input_stream = 0u;
-    SapWitFilesystemOutputStreamResource fifo_output_stream = 0u;
+    SapWitFilesystemInputStreamResource readonly_input_stream = 0u;
+    SapWitFilesystemOutputStreamResource writeonly_output_stream = 0u;
     uint32_t stream_pollable_handle = 0u;
     uint32_t stream_error_handle = 0u;
     int found_directory_entry = 0;
@@ -343,26 +382,62 @@ int main(void)
         return 1;
     }
     snprintf(fs_file_path, sizeof(fs_file_path), "%s/%s", fs_dir, fs_file_name);
-    snprintf(fs_fifo_path, sizeof(fs_fifo_path), "%s/%s", fs_dir, fs_fifo_name);
     ok &= expect_true("filesystem temp file", write_test_file(fs_file_path, fs_file_contents));
-    ok &= expect_true("filesystem temp fifo", mkfifo(fs_fifo_path, 0600) == 0);
+    ok &= expect_true("stdin pipe", pipe(stdin_pipe) == 0);
+    ok &= expect_true("stdout pipe", pipe(stdout_pipe) == 0);
+    ok &= expect_true("stderr pipe", pipe(stderr_pipe) == 0);
+    if (!ok) {
+        return 1;
+    }
+    ok &= expect_true("seed stdin pipe",
+                      write(stdin_pipe[1], cli_stdin_text, strlen(cli_stdin_text))
+                              == (ssize_t)strlen(cli_stdin_text));
+    ok &= expect_true("close stdin writer", close(stdin_pipe[1]) == 0);
+    stdin_pipe[1] = -1;
     preopen.host_path = fs_dir;
     preopen.guest_path = "/workspace";
     options.preopens = &preopen;
     options.preopen_count = 1u;
     options.inherit_preopen_cwd = 0u;
+    options.inherit_stdio = 0u;
+    options.stdin_fd = stdin_pipe[0];
+    options.stdout_fd = stdout_pipe[1];
+    options.stderr_fd = stderr_pipe[1];
 #endif
 
     runtime = croft_wit_wasi_machine_runtime_create(&options);
     ok &= expect_true("runtime", runtime != NULL);
     if (!runtime) {
 #if !defined(CROFT_OS_WINDOWS)
+        if (stdin_pipe[0] >= 0) {
+            close(stdin_pipe[0]);
+        }
+        if (stdout_pipe[0] >= 0) {
+            close(stdout_pipe[0]);
+        }
+        if (stdout_pipe[1] >= 0) {
+            close(stdout_pipe[1]);
+        }
+        if (stderr_pipe[0] >= 0) {
+            close(stderr_pipe[0]);
+        }
+        if (stderr_pipe[1] >= 0) {
+            close(stderr_pipe[1]);
+        }
         unlink(fs_file_path);
-        unlink(fs_fifo_path);
         rmdir(fs_dir);
 #endif
         return 1;
     }
+
+#if !defined(CROFT_OS_WINDOWS)
+    ok &= expect_true("close inherited stdin read end", close(stdin_pipe[0]) == 0);
+    ok &= expect_true("close inherited stdout write end", close(stdout_pipe[1]) == 0);
+    ok &= expect_true("close inherited stderr write end", close(stderr_pipe[1]) == 0);
+    stdin_pipe[0] = -1;
+    stdout_pipe[1] = -1;
+    stderr_pipe[1] = -1;
+#endif
 
     ok &= expect_u32("bind cli",
                      (uint32_t)croft_wit_wasi_machine_runtime_bind_cli_command_imports(runtime,
@@ -474,6 +549,166 @@ int main(void)
                      cli_reply.val.initial_cwd.v_data,
                      cli_reply.val.initial_cwd.v_len,
                      "/virtual/cwd");
+
+    cli_stdin_command.case_tag = SAP_WIT_CLI_STDIN_COMMAND_GET_STDIN;
+    ok &= expect_u32("cli get stdin",
+                     (uint32_t)sap_wit_world_cli_command_import_stdin(&cli_imports,
+                                                                      &cli_stdin_command,
+                                                                      &cli_stdin_reply),
+                     0u);
+    ok &= expect_u32("cli get stdin case",
+                     cli_stdin_reply.case_tag,
+                     SAP_WIT_CLI_STDIN_REPLY_INPUT_STREAM);
+    ok &= expect_true("cli stdin handle", cli_stdin_reply.val.input_stream != 0u);
+
+    memset(&io_streams_command, 0, sizeof(io_streams_command));
+    io_streams_command.case_tag = SAP_WIT_IO_STREAMS_COMMAND_READ;
+    io_streams_command.val.read.input_stream =
+        (SapWitIoInputStreamResource)cli_stdin_reply.val.input_stream;
+    io_streams_command.val.read.len = (uint64_t)strlen(cli_stdin_text);
+    ok &= expect_u32("cli stdin read via io",
+                     (uint32_t)sap_wit_world_io_imports_import_streams(&io_imports,
+                                                                       &io_streams_command,
+                                                                       &io_streams_reply),
+                     0u);
+    ok &= expect_u32("cli stdin read case",
+                     io_streams_reply.case_tag,
+                     SAP_WIT_IO_STREAMS_REPLY_READ);
+    ok &= expect_true("cli stdin read ok", io_streams_reply.val.read.is_v_ok == 1u);
+    ok &= expect_str("cli stdin read text",
+                     io_streams_reply.val.read.v_val.ok.v_data,
+                     io_streams_reply.val.read.v_val.ok.v_len,
+                     cli_stdin_text);
+
+    cli_stdout_command.case_tag = SAP_WIT_CLI_STDOUT_COMMAND_GET_STDOUT;
+    ok &= expect_u32("cli get stdout",
+                     (uint32_t)sap_wit_world_cli_command_import_stdout(&cli_imports,
+                                                                       &cli_stdout_command,
+                                                                       &cli_stdout_reply),
+                     0u);
+    ok &= expect_u32("cli get stdout case",
+                     cli_stdout_reply.case_tag,
+                     SAP_WIT_CLI_STDOUT_REPLY_OUTPUT_STREAM);
+    ok &= expect_true("cli stdout handle", cli_stdout_reply.val.output_stream != 0u);
+
+    memset(&io_streams_command, 0, sizeof(io_streams_command));
+    io_streams_command.case_tag = SAP_WIT_IO_STREAMS_COMMAND_WRITE;
+    io_streams_command.val.write.output_stream =
+        (SapWitIoOutputStreamResource)cli_stdout_reply.val.output_stream;
+    io_streams_command.val.write.contents_data = (const uint8_t*)cli_stdout_text;
+    io_streams_command.val.write.contents_len = (uint32_t)strlen(cli_stdout_text);
+    ok &= expect_u32("cli stdout write via io",
+                     (uint32_t)sap_wit_world_io_imports_import_streams(&io_imports,
+                                                                       &io_streams_command,
+                                                                       &io_streams_reply),
+                     0u);
+    ok &= expect_u32("cli stdout write case",
+                     io_streams_reply.case_tag,
+                     SAP_WIT_IO_STREAMS_REPLY_STATUS);
+    ok &= expect_true("cli stdout write ok", io_streams_reply.val.status.is_v_ok == 1u);
+
+    memset(&io_streams_command, 0, sizeof(io_streams_command));
+    io_streams_command.case_tag = SAP_WIT_IO_STREAMS_COMMAND_FLUSH;
+    io_streams_command.val.flush.output_stream =
+        (SapWitIoOutputStreamResource)cli_stdout_reply.val.output_stream;
+    ok &= expect_u32("cli stdout flush",
+                     (uint32_t)sap_wit_world_io_imports_import_streams(&io_imports,
+                                                                       &io_streams_command,
+                                                                       &io_streams_reply),
+                     0u);
+    ok &= expect_u32("cli stdout flush case",
+                     io_streams_reply.case_tag,
+                     SAP_WIT_IO_STREAMS_REPLY_STATUS);
+    ok &= expect_true("cli stdout flush ok", io_streams_reply.val.status.is_v_ok == 1u);
+#if !defined(CROFT_OS_WINDOWS)
+    ok &= expect_true("cli stdout pipe read",
+                      read_exact_fd(stdout_pipe[0],
+                                    cli_stdout_buffer,
+                                    strlen(cli_stdout_text)));
+    ok &= expect_str("cli stdout text",
+                     cli_stdout_buffer,
+                     (uint32_t)strlen(cli_stdout_text),
+                     cli_stdout_text);
+#endif
+
+    cli_stderr_command.case_tag = SAP_WIT_CLI_STDERR_COMMAND_GET_STDERR;
+    ok &= expect_u32("cli get stderr",
+                     (uint32_t)sap_wit_world_cli_command_import_stderr(&cli_imports,
+                                                                       &cli_stderr_command,
+                                                                       &cli_stderr_reply),
+                     0u);
+    ok &= expect_u32("cli get stderr case",
+                     cli_stderr_reply.case_tag,
+                     SAP_WIT_CLI_STDERR_REPLY_OUTPUT_STREAM);
+    ok &= expect_true("cli stderr handle", cli_stderr_reply.val.output_stream != 0u);
+
+    memset(&io_streams_command, 0, sizeof(io_streams_command));
+    io_streams_command.case_tag = SAP_WIT_IO_STREAMS_COMMAND_BLOCKING_WRITE_AND_FLUSH;
+    io_streams_command.val.blocking_write_and_flush.output_stream =
+        (SapWitIoOutputStreamResource)cli_stderr_reply.val.output_stream;
+    io_streams_command.val.blocking_write_and_flush.contents_data = (const uint8_t*)cli_stderr_text;
+    io_streams_command.val.blocking_write_and_flush.contents_len =
+        (uint32_t)strlen(cli_stderr_text);
+    ok &= expect_u32("cli stderr write and flush",
+                     (uint32_t)sap_wit_world_io_imports_import_streams(&io_imports,
+                                                                       &io_streams_command,
+                                                                       &io_streams_reply),
+                     0u);
+    ok &= expect_u32("cli stderr write case",
+                     io_streams_reply.case_tag,
+                     SAP_WIT_IO_STREAMS_REPLY_STATUS);
+    ok &= expect_true("cli stderr write ok", io_streams_reply.val.status.is_v_ok == 1u);
+#if !defined(CROFT_OS_WINDOWS)
+    ok &= expect_true("cli stderr pipe read",
+                      read_exact_fd(stderr_pipe[0],
+                                    cli_stderr_buffer,
+                                    strlen(cli_stderr_text)));
+    ok &= expect_str("cli stderr text",
+                     cli_stderr_buffer,
+                     (uint32_t)strlen(cli_stderr_text),
+                     cli_stderr_text);
+#endif
+
+    cli_terminal_stdin_command.case_tag = SAP_WIT_CLI_TERMINAL_STDIN_COMMAND_GET_TERMINAL_STDIN;
+    ok &= expect_u32("cli terminal stdin",
+                     (uint32_t)sap_wit_world_cli_command_import_terminal_stdin(
+                         &cli_imports,
+                         &cli_terminal_stdin_command,
+                         &cli_terminal_stdin_reply),
+                     0u);
+    ok &= expect_u32("cli terminal stdin case",
+                     cli_terminal_stdin_reply.case_tag,
+                     SAP_WIT_CLI_TERMINAL_STDIN_REPLY_GET_TERMINAL_STDIN);
+    ok &= expect_true("cli terminal stdin none",
+                      cli_terminal_stdin_reply.val.get_terminal_stdin.has_v == 0u);
+
+    cli_terminal_stdout_command.case_tag =
+        SAP_WIT_CLI_TERMINAL_STDOUT_COMMAND_GET_TERMINAL_STDOUT;
+    ok &= expect_u32("cli terminal stdout",
+                     (uint32_t)sap_wit_world_cli_command_import_terminal_stdout(
+                         &cli_imports,
+                         &cli_terminal_stdout_command,
+                         &cli_terminal_stdout_reply),
+                     0u);
+    ok &= expect_u32("cli terminal stdout case",
+                     cli_terminal_stdout_reply.case_tag,
+                     SAP_WIT_CLI_TERMINAL_STDOUT_REPLY_GET_TERMINAL_STDOUT);
+    ok &= expect_true("cli terminal stdout none",
+                      cli_terminal_stdout_reply.val.get_terminal_stdout.has_v == 0u);
+
+    cli_terminal_stderr_command.case_tag =
+        SAP_WIT_CLI_TERMINAL_STDERR_COMMAND_GET_TERMINAL_STDERR;
+    ok &= expect_u32("cli terminal stderr",
+                     (uint32_t)sap_wit_world_cli_command_import_terminal_stderr(
+                         &cli_imports,
+                         &cli_terminal_stderr_command,
+                         &cli_terminal_stderr_reply),
+                     0u);
+    ok &= expect_u32("cli terminal stderr case",
+                     cli_terminal_stderr_reply.case_tag,
+                     SAP_WIT_CLI_TERMINAL_STDERR_REPLY_GET_TERMINAL_STDERR);
+    ok &= expect_true("cli terminal stderr none",
+                      cli_terminal_stderr_reply.val.get_terminal_stderr.has_v == 0u);
 
     random_command.case_tag = SAP_WIT_RANDOM_COMMAND_GET_RANDOM_BYTES;
     random_command.val.get_random_bytes.len = 32u;
@@ -896,71 +1131,107 @@ int main(void)
     memset(&filesystem_types_command, 0, sizeof(filesystem_types_command));
     filesystem_types_command.case_tag = SAP_WIT_FILESYSTEM_TYPES_COMMAND_OPEN_AT;
     filesystem_types_command.val.open_at.descriptor = root_descriptor;
-    filesystem_types_command.val.open_at.path_data = (const uint8_t*)fs_fifo_name;
-    filesystem_types_command.val.open_at.path_len = (uint32_t)strlen(fs_fifo_name);
-    filesystem_types_command.val.open_at.flags = SAP_WIT_FILESYSTEM_DESCRIPTOR_FLAGS_READ
-                                                 | SAP_WIT_FILESYSTEM_DESCRIPTOR_FLAGS_WRITE;
-    ok &= expect_u32("filesystem open fifo",
+    filesystem_types_command.val.open_at.path_data = (const uint8_t*)fs_file_name;
+    filesystem_types_command.val.open_at.path_len = (uint32_t)strlen(fs_file_name);
+    filesystem_types_command.val.open_at.flags = SAP_WIT_FILESYSTEM_DESCRIPTOR_FLAGS_WRITE;
+    ok &= expect_u32("filesystem open file write-only",
                      (uint32_t)sap_wit_world_filesystem_imports_import_types(
                          &filesystem_imports,
                          &filesystem_types_command,
                          &filesystem_types_reply),
                      0u);
-    ok &= expect_u32("filesystem open fifo case",
-                     filesystem_types_reply.case_tag,
-                     SAP_WIT_FILESYSTEM_TYPES_REPLY_DESCRIPTOR);
-    ok &= expect_true("filesystem open fifo ok",
+    ok &= expect_true("filesystem open file write-only ok",
                       filesystem_types_reply.val.descriptor.is_v_ok == 1u);
-    fifo_descriptor = filesystem_types_reply.val.descriptor.v_val.ok.v;
-    ok &= expect_true("filesystem fifo descriptor", fifo_descriptor != 0u);
+    file_descriptor_write_only = filesystem_types_reply.val.descriptor.v_val.ok.v;
+    ok &= expect_true("filesystem write-only descriptor", file_descriptor_write_only != 0u);
 
     memset(&filesystem_types_command, 0, sizeof(filesystem_types_command));
     filesystem_types_command.case_tag = SAP_WIT_FILESYSTEM_TYPES_COMMAND_READ_VIA_STREAM;
-    filesystem_types_command.val.read_via_stream.descriptor = fifo_descriptor;
+    filesystem_types_command.val.read_via_stream.descriptor = file_descriptor_write_only;
     filesystem_types_command.val.read_via_stream.offset = 0u;
-    ok &= expect_u32("filesystem fifo read stream",
+    ok &= expect_u32("filesystem write-only read stream",
                      (uint32_t)sap_wit_world_filesystem_imports_import_types(
                          &filesystem_imports,
                          &filesystem_types_command,
                          &filesystem_types_reply),
                      0u);
-    ok &= expect_true("filesystem fifo read stream ok",
-                      filesystem_types_reply.val.input_stream.is_v_ok == 1u);
-    fifo_input_stream = filesystem_types_reply.val.input_stream.v_val.ok.v;
-    ok &= expect_true("filesystem fifo input stream", fifo_input_stream != 0u);
+    ok &= expect_true("filesystem write-only read stream err",
+                      filesystem_types_reply.val.input_stream.is_v_ok == 0u);
+    ok &= expect_u32("filesystem write-only read stream code",
+                     filesystem_types_reply.val.input_stream.v_val.err.v,
+                     SAP_WIT_FILESYSTEM_ERROR_CODE_BAD_DESCRIPTOR);
+
+    memset(&filesystem_types_command, 0, sizeof(filesystem_types_command));
+    filesystem_types_command.case_tag = SAP_WIT_FILESYSTEM_TYPES_COMMAND_OPEN_AT;
+    filesystem_types_command.val.open_at.descriptor = root_descriptor;
+    filesystem_types_command.val.open_at.path_data = (const uint8_t*)fs_file_name;
+    filesystem_types_command.val.open_at.path_len = (uint32_t)strlen(fs_file_name);
+    filesystem_types_command.val.open_at.flags = SAP_WIT_FILESYSTEM_DESCRIPTOR_FLAGS_READ;
+    ok &= expect_u32("filesystem open file read-only",
+                     (uint32_t)sap_wit_world_filesystem_imports_import_types(
+                         &filesystem_imports,
+                         &filesystem_types_command,
+                         &filesystem_types_reply),
+                     0u);
+    ok &= expect_true("filesystem open file read-only ok",
+                      filesystem_types_reply.val.descriptor.is_v_ok == 1u);
+    file_descriptor_read_only = filesystem_types_reply.val.descriptor.v_val.ok.v;
+    ok &= expect_true("filesystem read-only descriptor", file_descriptor_read_only != 0u);
+
+    memset(&filesystem_types_command, 0, sizeof(filesystem_types_command));
+    filesystem_types_command.case_tag = SAP_WIT_FILESYSTEM_TYPES_COMMAND_WRITE_VIA_STREAM;
+    filesystem_types_command.val.write_via_stream.descriptor = file_descriptor_read_only;
+    filesystem_types_command.val.write_via_stream.offset = 0u;
+    ok &= expect_u32("filesystem read-only write stream",
+                     (uint32_t)sap_wit_world_filesystem_imports_import_types(
+                         &filesystem_imports,
+                         &filesystem_types_command,
+                         &filesystem_types_reply),
+                     0u);
+    ok &= expect_true("filesystem read-only write stream err",
+                      filesystem_types_reply.val.output_stream.is_v_ok == 0u);
+    ok &= expect_u32("filesystem read-only write stream code",
+                     filesystem_types_reply.val.output_stream.v_val.err.v,
+                     SAP_WIT_FILESYSTEM_ERROR_CODE_BAD_DESCRIPTOR);
+
+    ok &= expect_true("close stderr pipe reader", close(stderr_pipe[0]) == 0);
+    stderr_pipe[0] = -1;
+    previous_sigpipe = signal(SIGPIPE, SIG_IGN);
+    ok &= expect_true("ignore sigpipe", previous_sigpipe != SIG_ERR);
 
     memset(&io_streams_command, 0, sizeof(io_streams_command));
-    io_streams_command.case_tag = SAP_WIT_IO_STREAMS_COMMAND_READ;
-    io_streams_command.val.read.input_stream = (SapWitIoInputStreamResource)fifo_input_stream;
-    io_streams_command.val.read.len = 1u;
-    ok &= expect_u32("io fifo read error",
+    io_streams_command.case_tag = SAP_WIT_IO_STREAMS_COMMAND_WRITE;
+    io_streams_command.val.write.output_stream =
+        (SapWitIoOutputStreamResource)cli_stderr_reply.val.output_stream;
+    io_streams_command.val.write.contents_data = (const uint8_t*)"!";
+    io_streams_command.val.write.contents_len = 1u;
+    ok &= expect_u32("io stderr broken pipe write",
                      (uint32_t)sap_wit_world_io_imports_import_streams(&io_imports,
                                                                        &io_streams_command,
                                                                        &io_streams_reply),
                      0u);
-    ok &= expect_u32("io fifo read case", io_streams_reply.case_tag, SAP_WIT_IO_STREAMS_REPLY_READ);
-    ok &= expect_true("io fifo read err", io_streams_reply.val.read.is_v_ok == 0u);
-    ok &= expect_u32("io fifo read err case",
-                     io_streams_reply.val.read.v_val.err.v.case_tag,
+    ok &= expect_u32("io stderr broken pipe case",
+                     io_streams_reply.case_tag,
+                     SAP_WIT_IO_STREAMS_REPLY_STATUS);
+    ok &= expect_true("io stderr broken pipe err", io_streams_reply.val.status.is_v_ok == 0u);
+    ok &= expect_u32("io stderr broken pipe err case",
+                     io_streams_reply.val.status.v_val.err.v.case_tag,
                      SAP_WIT_IO_STREAM_ERROR_LAST_OPERATION_FAILED);
-    stream_error_handle = io_streams_reply.val.read.v_val.err.v.val.last_operation_failed;
-    ok &= expect_true("io fifo read error handle", stream_error_handle != 0u);
+    stream_error_handle = io_streams_reply.val.status.v_val.err.v.val.last_operation_failed;
+    ok &= expect_true("io stderr broken pipe error handle", stream_error_handle != 0u);
 
     memset(&filesystem_types_command, 0, sizeof(filesystem_types_command));
     filesystem_types_command.case_tag = SAP_WIT_FILESYSTEM_TYPES_COMMAND_FILESYSTEM_ERROR_CODE;
     filesystem_types_command.val.filesystem_error_code.err =
         (SapWitFilesystemErrorResource)stream_error_handle;
-    ok &= expect_u32("filesystem downcast fifo read error",
+    ok &= expect_u32("filesystem downcast stderr broken pipe",
                      (uint32_t)sap_wit_world_filesystem_imports_import_types(
                          &filesystem_imports,
                          &filesystem_types_command,
                          &filesystem_types_reply),
                      0u);
-    ok &= expect_true("filesystem downcast fifo read has value",
-                      filesystem_types_reply.val.filesystem_error_code.has_v == 1u);
-    ok &= expect_u32("filesystem downcast fifo read code",
-                     filesystem_types_reply.val.filesystem_error_code.v,
-                     SAP_WIT_FILESYSTEM_ERROR_CODE_INVALID_SEEK);
+    ok &= expect_true("filesystem downcast stderr broken pipe none",
+                      filesystem_types_reply.val.filesystem_error_code.has_v == 0u);
 
     memset(&io_error_command, 0, sizeof(io_error_command));
     io_error_command.case_tag = SAP_WIT_IO_ERROR_COMMAND_TO_DEBUG_STRING;
@@ -995,76 +1266,18 @@ int main(void)
                       filesystem_error_reply.val.to_debug_string.data != NULL
                           && filesystem_error_reply.val.to_debug_string.len > 0u);
 
-    ok &= expect_u32("io fifo read closed",
+    ok &= expect_u32("io stderr broken pipe closed",
                      (uint32_t)sap_wit_world_io_imports_import_streams(&io_imports,
                                                                        &io_streams_command,
                                                                        &io_streams_reply),
                      0u);
-    ok &= expect_true("io fifo read closed err", io_streams_reply.val.read.is_v_ok == 0u);
-    ok &= expect_u32("io fifo read closed case",
-                     io_streams_reply.val.read.v_val.err.v.case_tag,
-                     SAP_WIT_IO_STREAM_ERROR_CLOSED);
-
-    memset(&filesystem_types_command, 0, sizeof(filesystem_types_command));
-    filesystem_types_command.case_tag = SAP_WIT_FILESYSTEM_TYPES_COMMAND_WRITE_VIA_STREAM;
-    filesystem_types_command.val.write_via_stream.descriptor = fifo_descriptor;
-    filesystem_types_command.val.write_via_stream.offset = 0u;
-    ok &= expect_u32("filesystem fifo write stream",
-                     (uint32_t)sap_wit_world_filesystem_imports_import_types(
-                         &filesystem_imports,
-                         &filesystem_types_command,
-                         &filesystem_types_reply),
-                     0u);
-    ok &= expect_true("filesystem fifo write stream ok",
-                      filesystem_types_reply.val.output_stream.is_v_ok == 1u);
-    fifo_output_stream = filesystem_types_reply.val.output_stream.v_val.ok.v;
-    ok &= expect_true("filesystem fifo output stream", fifo_output_stream != 0u);
-
-    memset(&io_streams_command, 0, sizeof(io_streams_command));
-    io_streams_command.case_tag = SAP_WIT_IO_STREAMS_COMMAND_WRITE;
-    io_streams_command.val.write.output_stream = (SapWitIoOutputStreamResource)fifo_output_stream;
-    io_streams_command.val.write.contents_data = (const uint8_t*)"!";
-    io_streams_command.val.write.contents_len = 1u;
-    ok &= expect_u32("io fifo write error",
-                     (uint32_t)sap_wit_world_io_imports_import_streams(&io_imports,
-                                                                       &io_streams_command,
-                                                                       &io_streams_reply),
-                     0u);
-    ok &= expect_u32("io fifo write case",
-                     io_streams_reply.case_tag,
-                     SAP_WIT_IO_STREAMS_REPLY_STATUS);
-    ok &= expect_true("io fifo write err", io_streams_reply.val.status.is_v_ok == 0u);
-    ok &= expect_u32("io fifo write err case",
-                     io_streams_reply.val.status.v_val.err.v.case_tag,
-                     SAP_WIT_IO_STREAM_ERROR_LAST_OPERATION_FAILED);
-    stream_error_handle = io_streams_reply.val.status.v_val.err.v.val.last_operation_failed;
-    ok &= expect_true("io fifo write error handle", stream_error_handle != 0u);
-
-    memset(&filesystem_types_command, 0, sizeof(filesystem_types_command));
-    filesystem_types_command.case_tag = SAP_WIT_FILESYSTEM_TYPES_COMMAND_FILESYSTEM_ERROR_CODE;
-    filesystem_types_command.val.filesystem_error_code.err =
-        (SapWitFilesystemErrorResource)stream_error_handle;
-    ok &= expect_u32("filesystem downcast fifo write error",
-                     (uint32_t)sap_wit_world_filesystem_imports_import_types(
-                         &filesystem_imports,
-                         &filesystem_types_command,
-                         &filesystem_types_reply),
-                     0u);
-    ok &= expect_true("filesystem downcast fifo write has value",
-                      filesystem_types_reply.val.filesystem_error_code.has_v == 1u);
-    ok &= expect_u32("filesystem downcast fifo write code",
-                     filesystem_types_reply.val.filesystem_error_code.v,
-                     SAP_WIT_FILESYSTEM_ERROR_CODE_INVALID_SEEK);
-
-    ok &= expect_u32("io fifo write closed",
-                     (uint32_t)sap_wit_world_io_imports_import_streams(&io_imports,
-                                                                       &io_streams_command,
-                                                                       &io_streams_reply),
-                     0u);
-    ok &= expect_true("io fifo write closed err", io_streams_reply.val.status.is_v_ok == 0u);
-    ok &= expect_u32("io fifo write closed case",
+    ok &= expect_true("io stderr broken pipe closed err",
+                      io_streams_reply.val.status.is_v_ok == 0u);
+    ok &= expect_u32("io stderr broken pipe closed case",
                      io_streams_reply.val.status.v_val.err.v.case_tag,
                      SAP_WIT_IO_STREAM_ERROR_CLOSED);
+
+    ok &= expect_true("restore sigpipe", signal(SIGPIPE, previous_sigpipe) != SIG_ERR);
 
     memset(&filesystem_types_command, 0, sizeof(filesystem_types_command));
     filesystem_types_command.case_tag = SAP_WIT_FILESYSTEM_TYPES_COMMAND_READ;
@@ -1137,8 +1350,13 @@ int main(void)
 
     croft_wit_wasi_machine_runtime_destroy(runtime);
 #if !defined(CROFT_OS_WINDOWS)
+    if (stdout_pipe[0] >= 0) {
+        close(stdout_pipe[0]);
+    }
+    if (stderr_pipe[0] >= 0) {
+        close(stderr_pipe[0]);
+    }
     unlink(fs_file_path);
-    unlink(fs_fifo_path);
     rmdir(fs_dir);
 #endif
     return ok ? 0 : 1;

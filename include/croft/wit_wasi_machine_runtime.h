@@ -26,10 +26,14 @@ typedef struct croft_wit_wasi_machine_runtime_options {
     uint32_t argc;
     const char* const* envp;
     uint32_t envc;
+    int stdin_fd;
+    int stdout_fd;
+    int stderr_fd;
     const char* initial_cwd;
     const croft_wit_wasi_machine_preopen* preopens;
     uint32_t preopen_count;
     uint8_t inherit_environment;
+    uint8_t inherit_stdio;
     uint8_t inherit_preopen_cwd;
 } croft_wit_wasi_machine_runtime_options;
 

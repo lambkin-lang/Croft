@@ -173,6 +173,34 @@ static int croft_wit_wasi_make_ready_pollable(croft_wit_wasi_machine_runtime* ru
     return croft_wit_wasi_pollable_insert(runtime, now_ns, handle_out);
 }
 
+static int croft_wit_wasi_stream_error_insert_errno(croft_wit_wasi_machine_runtime* runtime,
+                                                    const croft_wit_wasi_descriptor_slot* descriptor,
+                                                    const char* op_name,
+                                                    int err,
+                                                    uint32_t* handle_out)
+{
+    if (descriptor && descriptor->error_domain == CROFT_WIT_WASI_ERROR_DOMAIN_IO) {
+        return croft_wit_wasi_error_insert_io_errno(runtime, op_name, err, handle_out);
+    }
+    return croft_wit_wasi_error_insert_filesystem_errno(runtime, op_name, err, handle_out);
+}
+
+static int croft_wit_wasi_stream_error_insert_message(
+    croft_wit_wasi_machine_runtime* runtime,
+    const croft_wit_wasi_descriptor_slot* descriptor,
+    uint8_t filesystem_error_code,
+    const char* debug_string,
+    uint32_t* handle_out)
+{
+    if (descriptor && descriptor->error_domain == CROFT_WIT_WASI_ERROR_DOMAIN_IO) {
+        return croft_wit_wasi_error_insert_io_message(runtime, debug_string, handle_out);
+    }
+    return croft_wit_wasi_error_insert_filesystem_code(runtime,
+                                                       filesystem_error_code,
+                                                       debug_string,
+                                                       handle_out);
+}
+
 static void croft_wit_wasi_set_stream_error_closed(SapWitIoStreamError* out)
 {
     if (!out) {
@@ -489,22 +517,6 @@ static int croft_wit_wasi_input_stream_read_into_blob(croft_wit_wasi_machine_run
     if (!descriptor || !descriptor->live || descriptor->is_directory) {
         return ERR_INVALID;
     }
-    rc = croft_wit_wasi_u64_to_off_t(stream->offset, &offset);
-    if (rc != ERR_OK) {
-        if (error_handle_out && rc == ERR_RANGE) {
-            rc = croft_wit_wasi_error_insert_filesystem_code(runtime,
-                                                             SAP_WIT_FILESYSTEM_ERROR_CODE_INVALID_SEEK,
-                                                             "pread: invalid seek",
-                                                             error_handle_out);
-            if (rc == ERR_OK) {
-                stream->closed = 1u;
-                stream->error_handle = *error_handle_out;
-                return ERR_INVALID;
-            }
-        }
-        return rc;
-    }
-
     request_len = len > (uint64_t)UINT32_MAX ? UINT32_MAX : (size_t)len;
     runtime->filesystem_blob.len = 0u;
     rc = croft_wit_wasi_buffer_reserve(&runtime->filesystem_blob,
@@ -516,13 +528,36 @@ static int croft_wit_wasi_input_stream_read_into_blob(croft_wit_wasi_machine_run
         return ERR_OK;
     }
 
-    nread = pread(descriptor->fd, runtime->filesystem_blob.data, request_len, offset);
+    if (descriptor->is_seekable) {
+        rc = croft_wit_wasi_u64_to_off_t(stream->offset, &offset);
+        if (rc != ERR_OK) {
+            if (error_handle_out && rc == ERR_RANGE) {
+                rc = croft_wit_wasi_stream_error_insert_message(
+                    runtime,
+                    descriptor,
+                    SAP_WIT_FILESYSTEM_ERROR_CODE_INVALID_SEEK,
+                    "pread: invalid seek",
+                    error_handle_out);
+                if (rc == ERR_OK) {
+                    stream->closed = 1u;
+                    stream->error_handle = *error_handle_out;
+                    return ERR_INVALID;
+                }
+            }
+            return rc;
+        }
+        nread = pread(descriptor->fd, runtime->filesystem_blob.data, request_len, offset);
+    } else {
+        nread = read(descriptor->fd, runtime->filesystem_blob.data, request_len);
+    }
     if (nread < 0) {
         if (error_handle_out) {
-            rc = croft_wit_wasi_error_insert_filesystem_errno(runtime,
-                                                              "pread",
-                                                              errno,
-                                                              error_handle_out);
+            rc = croft_wit_wasi_stream_error_insert_errno(runtime,
+                                                          descriptor,
+                                                          descriptor->is_seekable ? "pread"
+                                                                                  : "read",
+                                                          errno,
+                                                          error_handle_out);
             if (rc == ERR_OK) {
                 stream->closed = 1u;
                 stream->error_handle = *error_handle_out;
@@ -544,6 +579,7 @@ static int croft_wit_wasi_input_stream_skip_bytes(croft_wit_wasi_machine_runtime
                                                   uint32_t* error_handle_out)
 {
     croft_wit_wasi_descriptor_slot* descriptor;
+    uint8_t discard[4096];
     uint64_t size = 0u;
     uint64_t available = 0u;
     uint64_t skipped = 0u;
@@ -560,19 +596,51 @@ static int croft_wit_wasi_input_stream_skip_bytes(croft_wit_wasi_machine_runtime
     if (!descriptor || !descriptor->live || descriptor->is_directory) {
         return ERR_INVALID;
     }
+    if (!descriptor->is_seekable) {
+        while (skipped < len) {
+            size_t chunk_len = (size_t)((len - skipped) > sizeof(discard) ? sizeof(discard)
+                                                                          : (len - skipped));
+            ssize_t nread = read(descriptor->fd, discard, chunk_len);
+
+            if (nread < 0) {
+                if (error_handle_out) {
+                    rc = croft_wit_wasi_stream_error_insert_errno(runtime,
+                                                                  descriptor,
+                                                                  "read",
+                                                                  errno,
+                                                                  error_handle_out);
+                    if (rc == ERR_OK) {
+                        stream->closed = 1u;
+                        stream->error_handle = *error_handle_out;
+                        return ERR_INVALID;
+                    }
+                }
+                return ERR_INVALID;
+            }
+            if (nread == 0) {
+                break;
+            }
+            skipped += (uint64_t)nread;
+        }
+        stream->offset += skipped;
+        *skipped_out = skipped;
+        return ERR_OK;
+    }
     rc = croft_wit_wasi_fd_size(descriptor->fd, &size, &sys_err);
     if (rc != ERR_OK) {
         if (error_handle_out) {
             if (sys_err != 0) {
-                rc = croft_wit_wasi_error_insert_filesystem_errno(runtime,
-                                                                  "fstat",
-                                                                  sys_err,
-                                                                  error_handle_out);
+                rc = croft_wit_wasi_stream_error_insert_errno(runtime,
+                                                              descriptor,
+                                                              "fstat",
+                                                              sys_err,
+                                                              error_handle_out);
             } else if (rc == ERR_RANGE) {
-                rc = croft_wit_wasi_error_insert_filesystem_code(runtime,
-                                                                 SAP_WIT_FILESYSTEM_ERROR_CODE_OVERFLOW,
-                                                                 "fstat: overflow",
-                                                                 error_handle_out);
+                rc = croft_wit_wasi_stream_error_insert_message(runtime,
+                                                                descriptor,
+                                                                SAP_WIT_FILESYSTEM_ERROR_CODE_OVERFLOW,
+                                                                "fstat: overflow",
+                                                                error_handle_out);
             }
             if (rc == ERR_OK) {
                 stream->closed = 1u;
@@ -615,21 +683,22 @@ static int croft_wit_wasi_output_stream_write_bytes(croft_wit_wasi_machine_runti
     }
 
     base_offset = stream->offset;
-    if (stream->append) {
+    if (stream->append && descriptor->is_seekable) {
         rc = croft_wit_wasi_fd_size(descriptor->fd, &base_offset, &sys_err);
         if (rc != ERR_OK) {
             if (error_handle_out) {
                 if (sys_err != 0) {
-                    rc = croft_wit_wasi_error_insert_filesystem_errno(runtime,
-                                                                      "fstat",
-                                                                      sys_err,
-                                                                      error_handle_out);
+                    rc = croft_wit_wasi_stream_error_insert_errno(runtime,
+                                                                  descriptor,
+                                                                  "fstat",
+                                                                  sys_err,
+                                                                  error_handle_out);
                 } else if (rc == ERR_RANGE) {
-                    rc = croft_wit_wasi_error_insert_filesystem_code(
-                        runtime,
-                        SAP_WIT_FILESYSTEM_ERROR_CODE_OVERFLOW,
-                        "fstat: overflow",
-                        error_handle_out);
+                    rc = croft_wit_wasi_stream_error_insert_message(runtime,
+                                                                    descriptor,
+                                                                    SAP_WIT_FILESYSTEM_ERROR_CODE_OVERFLOW,
+                                                                    "fstat: overflow",
+                                                                    error_handle_out);
                 }
                 if (rc == ERR_OK) {
                     stream->closed = 1u;
@@ -642,35 +711,41 @@ static int croft_wit_wasi_output_stream_write_bytes(croft_wit_wasi_machine_runti
     }
 
     while (written < len) {
-        off_t write_offset;
         size_t chunk_len = (size_t)(len - written);
         ssize_t nwritten;
 
-        rc = croft_wit_wasi_u64_to_off_t(base_offset + written, &write_offset);
-        if (rc != ERR_OK) {
-            if (error_handle_out && rc == ERR_RANGE) {
-                rc = croft_wit_wasi_error_insert_filesystem_code(runtime,
-                                                                 SAP_WIT_FILESYSTEM_ERROR_CODE_INVALID_SEEK,
-                                                                 "pwrite: invalid seek",
-                                                                 error_handle_out);
-                if (rc == ERR_OK) {
-                    stream->closed = 1u;
-                    stream->error_handle = *error_handle_out;
-                    return ERR_INVALID;
+        if (descriptor->is_seekable) {
+            off_t write_offset;
+
+            rc = croft_wit_wasi_u64_to_off_t(base_offset + written, &write_offset);
+            if (rc != ERR_OK) {
+                if (error_handle_out && rc == ERR_RANGE) {
+                    rc = croft_wit_wasi_stream_error_insert_message(
+                        runtime,
+                        descriptor,
+                        SAP_WIT_FILESYSTEM_ERROR_CODE_INVALID_SEEK,
+                        "pwrite: invalid seek",
+                        error_handle_out);
+                    if (rc == ERR_OK) {
+                        stream->closed = 1u;
+                        stream->error_handle = *error_handle_out;
+                        return ERR_INVALID;
+                    }
                 }
+                return rc;
             }
-            return rc;
+            nwritten = pwrite(descriptor->fd, data + written, chunk_len, write_offset);
+        } else {
+            nwritten = write(descriptor->fd, data + written, chunk_len);
         }
-        nwritten = pwrite(descriptor->fd,
-                          data + written,
-                          chunk_len,
-                          write_offset);
         if (nwritten <= 0) {
             if (error_handle_out) {
-                rc = croft_wit_wasi_error_insert_filesystem_errno(runtime,
-                                                                  "pwrite",
-                                                                  nwritten < 0 ? errno : EIO,
-                                                                  error_handle_out);
+                rc = croft_wit_wasi_stream_error_insert_errno(runtime,
+                                                              descriptor,
+                                                              descriptor->is_seekable ? "pwrite"
+                                                                                      : "write",
+                                                              nwritten < 0 ? errno : EIO,
+                                                              error_handle_out);
                 if (rc == ERR_OK) {
                     stream->closed = 1u;
                     stream->error_handle = *error_handle_out;
@@ -733,13 +808,20 @@ static int croft_wit_wasi_output_stream_flush(croft_wit_wasi_machine_runtime* ru
     if (!descriptor || !descriptor->live || descriptor->is_directory) {
         return ERR_INVALID;
     }
+    if (!descriptor->is_seekable) {
+        return ERR_OK;
+    }
     if (fsync(descriptor->fd) == 0) {
         return ERR_OK;
     }
     if (!error_handle_out) {
         return ERR_INVALID;
     }
-    rc = croft_wit_wasi_error_insert_filesystem_errno(runtime, "fsync", errno, error_handle_out);
+    rc = croft_wit_wasi_stream_error_insert_errno(runtime,
+                                                  descriptor,
+                                                  "fsync",
+                                                  errno,
+                                                  error_handle_out);
     if (rc != ERR_OK) {
         return rc;
     }
@@ -769,7 +851,6 @@ static int croft_wit_wasi_output_stream_splice_bytes(croft_wit_wasi_machine_runt
     while (remaining > 0u) {
         uint64_t chunk_limit = remaining > sizeof(buffer) ? sizeof(buffer) : remaining;
         croft_wit_wasi_descriptor_slot* input_descriptor;
-        off_t read_offset;
         ssize_t nread;
         int rc;
 
@@ -777,28 +858,39 @@ static int croft_wit_wasi_output_stream_splice_bytes(croft_wit_wasi_machine_runt
         if (!input_descriptor || !input_descriptor->live || input_descriptor->is_directory) {
             return ERR_INVALID;
         }
-        rc = croft_wit_wasi_u64_to_off_t(input->offset, &read_offset);
-        if (rc != ERR_OK) {
-            if (error_handle_out && rc == ERR_RANGE) {
-                rc = croft_wit_wasi_error_insert_filesystem_code(runtime,
-                                                                 SAP_WIT_FILESYSTEM_ERROR_CODE_INVALID_SEEK,
-                                                                 "pread: invalid seek",
-                                                                 error_handle_out);
-                if (rc == ERR_OK) {
-                    input->closed = 1u;
-                    input->error_handle = *error_handle_out;
-                    return ERR_INVALID;
+        if (input_descriptor->is_seekable) {
+            off_t read_offset;
+
+            rc = croft_wit_wasi_u64_to_off_t(input->offset, &read_offset);
+            if (rc != ERR_OK) {
+                if (error_handle_out && rc == ERR_RANGE) {
+                    rc = croft_wit_wasi_stream_error_insert_message(
+                        runtime,
+                        input_descriptor,
+                        SAP_WIT_FILESYSTEM_ERROR_CODE_INVALID_SEEK,
+                        "pread: invalid seek",
+                        error_handle_out);
+                    if (rc == ERR_OK) {
+                        input->closed = 1u;
+                        input->error_handle = *error_handle_out;
+                        return ERR_INVALID;
+                    }
                 }
+                return rc;
             }
-            return rc;
+            nread = pread(input_descriptor->fd, buffer, (size_t)chunk_limit, read_offset);
+        } else {
+            nread = read(input_descriptor->fd, buffer, (size_t)chunk_limit);
         }
-        nread = pread(input_descriptor->fd, buffer, (size_t)chunk_limit, read_offset);
         if (nread < 0) {
             if (error_handle_out) {
-                rc = croft_wit_wasi_error_insert_filesystem_errno(runtime,
-                                                                  "pread",
-                                                                  errno,
-                                                                  error_handle_out);
+                rc = croft_wit_wasi_stream_error_insert_errno(runtime,
+                                                              input_descriptor,
+                                                              input_descriptor->is_seekable
+                                                                  ? "pread"
+                                                                  : "read",
+                                                              errno,
+                                                              error_handle_out);
                 if (rc == ERR_OK) {
                     input->closed = 1u;
                     input->error_handle = *error_handle_out;

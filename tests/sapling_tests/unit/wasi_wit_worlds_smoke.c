@@ -134,6 +134,12 @@ int main(void)
     const SapWitWorldBindingDescriptor *cli_import_binding = NULL;
     const SapWitWorldBindingDescriptor *cli_export_binding = NULL;
     const SapWitWorldEndpointDescriptor *cli_environment_endpoint = NULL;
+    const SapWitWorldEndpointDescriptor *cli_stdin_endpoint = NULL;
+    const SapWitWorldEndpointDescriptor *cli_stdout_endpoint = NULL;
+    const SapWitWorldEndpointDescriptor *cli_stderr_endpoint = NULL;
+    const SapWitWorldEndpointDescriptor *cli_terminal_stdin_endpoint = NULL;
+    const SapWitWorldEndpointDescriptor *cli_terminal_stdout_endpoint = NULL;
+    const SapWitWorldEndpointDescriptor *cli_terminal_stderr_endpoint = NULL;
     const SapWitWorldEndpointDescriptor *cli_run_endpoint = NULL;
     SapWitRandomImportsWorldImports random_imports = {0};
     SapWitClocksImportsWorldImports clocks_imports = {0};
@@ -209,8 +215,8 @@ int main(void)
                      2u);
 
     ok &= expect_u32("cli worlds", sap_wit_cli_worlds_count, 2u);
-    ok &= expect_u32("cli world bindings", sap_wit_cli_world_bindings_count, 3u);
-    ok &= expect_u32("cli import endpoints", sap_wit_cli_command_import_endpoints_count, 1u);
+    ok &= expect_u32("cli world bindings", sap_wit_cli_world_bindings_count, 9u);
+    ok &= expect_u32("cli import endpoints", sap_wit_cli_command_import_endpoints_count, 7u);
     ok &= expect_u32("cli export endpoints", sap_wit_cli_command_export_endpoints_count, 1u);
 
     random_world = sap_wit_find_world_descriptor(sap_wit_random_worlds,
@@ -298,6 +304,30 @@ int main(void)
         sap_wit_find_world_endpoint_descriptor(sap_wit_cli_command_import_endpoints,
                                               sap_wit_cli_command_import_endpoints_count,
                                               "environment");
+    cli_stdin_endpoint =
+        sap_wit_find_world_endpoint_descriptor(sap_wit_cli_command_import_endpoints,
+                                              sap_wit_cli_command_import_endpoints_count,
+                                              "stdin");
+    cli_stdout_endpoint =
+        sap_wit_find_world_endpoint_descriptor(sap_wit_cli_command_import_endpoints,
+                                              sap_wit_cli_command_import_endpoints_count,
+                                              "stdout");
+    cli_stderr_endpoint =
+        sap_wit_find_world_endpoint_descriptor(sap_wit_cli_command_import_endpoints,
+                                              sap_wit_cli_command_import_endpoints_count,
+                                              "stderr");
+    cli_terminal_stdin_endpoint =
+        sap_wit_find_world_endpoint_descriptor(sap_wit_cli_command_import_endpoints,
+                                              sap_wit_cli_command_import_endpoints_count,
+                                              "terminal-stdin");
+    cli_terminal_stdout_endpoint =
+        sap_wit_find_world_endpoint_descriptor(sap_wit_cli_command_import_endpoints,
+                                              sap_wit_cli_command_import_endpoints_count,
+                                              "terminal-stdout");
+    cli_terminal_stderr_endpoint =
+        sap_wit_find_world_endpoint_descriptor(sap_wit_cli_command_import_endpoints,
+                                              sap_wit_cli_command_import_endpoints_count,
+                                              "terminal-stderr");
     cli_run_endpoint =
         sap_wit_find_world_endpoint_descriptor(sap_wit_cli_command_export_endpoints,
                                               sap_wit_cli_command_export_endpoints_count,
@@ -324,6 +354,12 @@ int main(void)
     ok &= expect_true("cli import binding descriptor", cli_import_binding != NULL);
     ok &= expect_true("cli export binding descriptor", cli_export_binding != NULL);
     ok &= expect_true("cli environment endpoint", cli_environment_endpoint != NULL);
+    ok &= expect_true("cli stdin endpoint", cli_stdin_endpoint != NULL);
+    ok &= expect_true("cli stdout endpoint", cli_stdout_endpoint != NULL);
+    ok &= expect_true("cli stderr endpoint", cli_stderr_endpoint != NULL);
+    ok &= expect_true("cli terminal stdin endpoint", cli_terminal_stdin_endpoint != NULL);
+    ok &= expect_true("cli terminal stdout endpoint", cli_terminal_stdout_endpoint != NULL);
+    ok &= expect_true("cli terminal stderr endpoint", cli_terminal_stderr_endpoint != NULL);
     ok &= expect_true("cli run endpoint", cli_run_endpoint != NULL);
 
     if (!random_world || !random_binding || !random_endpoint || !clocks_world || !clocks_binding
@@ -332,7 +368,10 @@ int main(void)
             || !filesystem_world || !filesystem_types_binding || !filesystem_preopens_binding
             || !filesystem_types_endpoint || !filesystem_preopens_endpoint
             || !cli_command_world || !cli_imports_world || !cli_import_binding
-            || !cli_export_binding || !cli_environment_endpoint || !cli_run_endpoint) {
+            || !cli_export_binding || !cli_environment_endpoint || !cli_stdin_endpoint
+            || !cli_stdout_endpoint || !cli_stderr_endpoint
+            || !cli_terminal_stdin_endpoint || !cli_terminal_stdout_endpoint
+            || !cli_terminal_stderr_endpoint || !cli_run_endpoint) {
         return 1;
     }
 

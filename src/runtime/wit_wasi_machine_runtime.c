@@ -43,6 +43,9 @@ typedef struct {
     int fd;
     uint32_t descriptor_flags;
     uint8_t is_directory;
+    uint8_t is_seekable;
+    uint8_t is_terminal;
+    uint8_t error_domain;
 } croft_wit_wasi_descriptor_slot;
 
 typedef struct {
@@ -118,6 +121,12 @@ struct croft_wit_wasi_machine_runtime {
     croft_wit_wasi_preopen_slot* preopens;
     size_t preopen_count;
     size_t preopen_cap;
+    uint32_t stdin_descriptor_handle;
+    uint32_t stdout_descriptor_handle;
+    uint32_t stderr_descriptor_handle;
+    uint32_t stdin_stream_handle;
+    uint32_t stdout_stream_handle;
+    uint32_t stderr_stream_handle;
     uint32_t next_pollable_handle;
 };
 

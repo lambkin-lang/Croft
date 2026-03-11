@@ -161,11 +161,154 @@ static int32_t croft_wit_wasi_dispatch_cli_initial_cwd(void* ctx,
     return ERR_OK;
 }
 
+static int32_t croft_wit_wasi_dispatch_cli_get_stdin(void* ctx,
+                                                     SapWitCliStdinReply* reply_out)
+{
+    croft_wit_wasi_machine_runtime* runtime = (croft_wit_wasi_machine_runtime*)ctx;
+
+    if (!runtime || !reply_out) {
+        return ERR_INVALID;
+    }
+    sap_wit_zero_cli_stdin_reply(reply_out);
+    reply_out->case_tag = SAP_WIT_CLI_STDIN_REPLY_INPUT_STREAM;
+    reply_out->val.input_stream =
+        (SapWitCliInputStreamResource)runtime->stdin_stream_handle;
+    return ERR_OK;
+}
+
+static int32_t croft_wit_wasi_dispatch_cli_get_stdout(void* ctx,
+                                                      SapWitCliStdoutReply* reply_out)
+{
+    croft_wit_wasi_machine_runtime* runtime = (croft_wit_wasi_machine_runtime*)ctx;
+
+    if (!runtime || !reply_out) {
+        return ERR_INVALID;
+    }
+    sap_wit_zero_cli_stdout_reply(reply_out);
+    reply_out->case_tag = SAP_WIT_CLI_STDOUT_REPLY_OUTPUT_STREAM;
+    reply_out->val.output_stream =
+        (SapWitCliOutputStreamResource)runtime->stdout_stream_handle;
+    return ERR_OK;
+}
+
+static int32_t croft_wit_wasi_dispatch_cli_get_stderr(void* ctx,
+                                                      SapWitCliStderrReply* reply_out)
+{
+    croft_wit_wasi_machine_runtime* runtime = (croft_wit_wasi_machine_runtime*)ctx;
+
+    if (!runtime || !reply_out) {
+        return ERR_INVALID;
+    }
+    sap_wit_zero_cli_stderr_reply(reply_out);
+    reply_out->case_tag = SAP_WIT_CLI_STDERR_REPLY_OUTPUT_STREAM;
+    reply_out->val.output_stream =
+        (SapWitCliOutputStreamResource)runtime->stderr_stream_handle;
+    return ERR_OK;
+}
+
+static int32_t croft_wit_wasi_dispatch_cli_get_terminal_stdin(
+    void* ctx,
+    SapWitCliTerminalStdinReply* reply_out)
+{
+    croft_wit_wasi_machine_runtime* runtime = (croft_wit_wasi_machine_runtime*)ctx;
+    croft_wit_wasi_descriptor_slot* descriptor = NULL;
+
+    if (!runtime || !reply_out) {
+        return ERR_INVALID;
+    }
+    if (runtime->stdin_descriptor_handle != 0u) {
+        descriptor = croft_wit_wasi_fs_descriptor_lookup(runtime, runtime->stdin_descriptor_handle);
+    }
+
+    sap_wit_zero_cli_terminal_stdin_reply(reply_out);
+    reply_out->case_tag = SAP_WIT_CLI_TERMINAL_STDIN_REPLY_GET_TERMINAL_STDIN;
+    if (descriptor && descriptor->is_terminal) {
+        reply_out->val.get_terminal_stdin.has_v = 1u;
+        reply_out->val.get_terminal_stdin.v =
+            (SapWitCliTerminalInputResource)runtime->stdin_descriptor_handle;
+    }
+    return ERR_OK;
+}
+
+static int32_t croft_wit_wasi_dispatch_cli_get_terminal_stdout(
+    void* ctx,
+    SapWitCliTerminalStdoutReply* reply_out)
+{
+    croft_wit_wasi_machine_runtime* runtime = (croft_wit_wasi_machine_runtime*)ctx;
+    croft_wit_wasi_descriptor_slot* descriptor = NULL;
+
+    if (!runtime || !reply_out) {
+        return ERR_INVALID;
+    }
+    if (runtime->stdout_descriptor_handle != 0u) {
+        descriptor =
+            croft_wit_wasi_fs_descriptor_lookup(runtime, runtime->stdout_descriptor_handle);
+    }
+
+    sap_wit_zero_cli_terminal_stdout_reply(reply_out);
+    reply_out->case_tag = SAP_WIT_CLI_TERMINAL_STDOUT_REPLY_GET_TERMINAL_STDOUT;
+    if (descriptor && descriptor->is_terminal) {
+        reply_out->val.get_terminal_stdout.has_v = 1u;
+        reply_out->val.get_terminal_stdout.v =
+            (SapWitCliTerminalOutputResource)runtime->stdout_descriptor_handle;
+    }
+    return ERR_OK;
+}
+
+static int32_t croft_wit_wasi_dispatch_cli_get_terminal_stderr(
+    void* ctx,
+    SapWitCliTerminalStderrReply* reply_out)
+{
+    croft_wit_wasi_machine_runtime* runtime = (croft_wit_wasi_machine_runtime*)ctx;
+    croft_wit_wasi_descriptor_slot* descriptor = NULL;
+
+    if (!runtime || !reply_out) {
+        return ERR_INVALID;
+    }
+    if (runtime->stderr_descriptor_handle != 0u) {
+        descriptor =
+            croft_wit_wasi_fs_descriptor_lookup(runtime, runtime->stderr_descriptor_handle);
+    }
+
+    sap_wit_zero_cli_terminal_stderr_reply(reply_out);
+    reply_out->case_tag = SAP_WIT_CLI_TERMINAL_STDERR_REPLY_GET_TERMINAL_STDERR;
+    if (descriptor && descriptor->is_terminal) {
+        reply_out->val.get_terminal_stderr.has_v = 1u;
+        reply_out->val.get_terminal_stderr.v =
+            (SapWitCliTerminalOutputResource)runtime->stderr_descriptor_handle;
+    }
+    return ERR_OK;
+}
+
 
 static const SapWitCliEnvironmentDispatchOps g_croft_wit_wasi_cli_environment_ops = {
     .get_environment = croft_wit_wasi_dispatch_cli_get_environment,
     .get_arguments = croft_wit_wasi_dispatch_cli_get_arguments,
     .initial_cwd = croft_wit_wasi_dispatch_cli_initial_cwd,
+};
+
+static const SapWitCliStdinDispatchOps g_croft_wit_wasi_cli_stdin_ops = {
+    .get_stdin = croft_wit_wasi_dispatch_cli_get_stdin,
+};
+
+static const SapWitCliStdoutDispatchOps g_croft_wit_wasi_cli_stdout_ops = {
+    .get_stdout = croft_wit_wasi_dispatch_cli_get_stdout,
+};
+
+static const SapWitCliStderrDispatchOps g_croft_wit_wasi_cli_stderr_ops = {
+    .get_stderr = croft_wit_wasi_dispatch_cli_get_stderr,
+};
+
+static const SapWitCliTerminalStdinDispatchOps g_croft_wit_wasi_cli_terminal_stdin_ops = {
+    .get_terminal_stdin = croft_wit_wasi_dispatch_cli_get_terminal_stdin,
+};
+
+static const SapWitCliTerminalStdoutDispatchOps g_croft_wit_wasi_cli_terminal_stdout_ops = {
+    .get_terminal_stdout = croft_wit_wasi_dispatch_cli_get_terminal_stdout,
+};
+
+static const SapWitCliTerminalStderrDispatchOps g_croft_wit_wasi_cli_terminal_stderr_ops = {
+    .get_terminal_stderr = croft_wit_wasi_dispatch_cli_get_terminal_stderr,
 };
 
 static const SapWitRandomDispatchOps g_croft_wit_wasi_random_ops = {
@@ -199,7 +342,60 @@ int croft_wit_wasi_machine_runtime_bind_cli_command_imports(
                                       "environment",
                                       runtime,
                                       &g_croft_wit_wasi_cli_environment_ops);
-    return rc;
+    if (rc != ERR_OK) {
+        return rc;
+    }
+    rc = croft_wit_wasi_bind_endpoint(bindings,
+                                      sap_wit_cli_command_import_endpoints,
+                                      sap_wit_cli_command_import_endpoints_count,
+                                      "stdin",
+                                      runtime,
+                                      &g_croft_wit_wasi_cli_stdin_ops);
+    if (rc != ERR_OK) {
+        return rc;
+    }
+    rc = croft_wit_wasi_bind_endpoint(bindings,
+                                      sap_wit_cli_command_import_endpoints,
+                                      sap_wit_cli_command_import_endpoints_count,
+                                      "stdout",
+                                      runtime,
+                                      &g_croft_wit_wasi_cli_stdout_ops);
+    if (rc != ERR_OK) {
+        return rc;
+    }
+    rc = croft_wit_wasi_bind_endpoint(bindings,
+                                      sap_wit_cli_command_import_endpoints,
+                                      sap_wit_cli_command_import_endpoints_count,
+                                      "stderr",
+                                      runtime,
+                                      &g_croft_wit_wasi_cli_stderr_ops);
+    if (rc != ERR_OK) {
+        return rc;
+    }
+    rc = croft_wit_wasi_bind_endpoint(bindings,
+                                      sap_wit_cli_command_import_endpoints,
+                                      sap_wit_cli_command_import_endpoints_count,
+                                      "terminal-stdin",
+                                      runtime,
+                                      &g_croft_wit_wasi_cli_terminal_stdin_ops);
+    if (rc != ERR_OK) {
+        return rc;
+    }
+    rc = croft_wit_wasi_bind_endpoint(bindings,
+                                      sap_wit_cli_command_import_endpoints,
+                                      sap_wit_cli_command_import_endpoints_count,
+                                      "terminal-stdout",
+                                      runtime,
+                                      &g_croft_wit_wasi_cli_terminal_stdout_ops);
+    if (rc != ERR_OK) {
+        return rc;
+    }
+    return croft_wit_wasi_bind_endpoint(bindings,
+                                        sap_wit_cli_command_import_endpoints,
+                                        sap_wit_cli_command_import_endpoints_count,
+                                        "terminal-stderr",
+                                        runtime,
+                                        &g_croft_wit_wasi_cli_terminal_stderr_ops);
 }
 
 int croft_wit_wasi_machine_runtime_bind_cli_imports(
@@ -218,7 +414,60 @@ int croft_wit_wasi_machine_runtime_bind_cli_imports(
                                       "environment",
                                       runtime,
                                       &g_croft_wit_wasi_cli_environment_ops);
-    return rc;
+    if (rc != ERR_OK) {
+        return rc;
+    }
+    rc = croft_wit_wasi_bind_endpoint(bindings,
+                                      sap_wit_cli_imports_import_endpoints,
+                                      sap_wit_cli_imports_import_endpoints_count,
+                                      "stdin",
+                                      runtime,
+                                      &g_croft_wit_wasi_cli_stdin_ops);
+    if (rc != ERR_OK) {
+        return rc;
+    }
+    rc = croft_wit_wasi_bind_endpoint(bindings,
+                                      sap_wit_cli_imports_import_endpoints,
+                                      sap_wit_cli_imports_import_endpoints_count,
+                                      "stdout",
+                                      runtime,
+                                      &g_croft_wit_wasi_cli_stdout_ops);
+    if (rc != ERR_OK) {
+        return rc;
+    }
+    rc = croft_wit_wasi_bind_endpoint(bindings,
+                                      sap_wit_cli_imports_import_endpoints,
+                                      sap_wit_cli_imports_import_endpoints_count,
+                                      "stderr",
+                                      runtime,
+                                      &g_croft_wit_wasi_cli_stderr_ops);
+    if (rc != ERR_OK) {
+        return rc;
+    }
+    rc = croft_wit_wasi_bind_endpoint(bindings,
+                                      sap_wit_cli_imports_import_endpoints,
+                                      sap_wit_cli_imports_import_endpoints_count,
+                                      "terminal-stdin",
+                                      runtime,
+                                      &g_croft_wit_wasi_cli_terminal_stdin_ops);
+    if (rc != ERR_OK) {
+        return rc;
+    }
+    rc = croft_wit_wasi_bind_endpoint(bindings,
+                                      sap_wit_cli_imports_import_endpoints,
+                                      sap_wit_cli_imports_import_endpoints_count,
+                                      "terminal-stdout",
+                                      runtime,
+                                      &g_croft_wit_wasi_cli_terminal_stdout_ops);
+    if (rc != ERR_OK) {
+        return rc;
+    }
+    return croft_wit_wasi_bind_endpoint(bindings,
+                                        sap_wit_cli_imports_import_endpoints,
+                                        sap_wit_cli_imports_import_endpoints_count,
+                                        "terminal-stderr",
+                                        runtime,
+                                        &g_croft_wit_wasi_cli_terminal_stderr_ops);
 }
 
 int croft_wit_wasi_machine_runtime_bind_random_imports(
@@ -257,4 +506,3 @@ int croft_wit_wasi_machine_runtime_bind_random_imports(
                                         runtime,
                                         &g_croft_wit_wasi_random_insecure_seed_ops);
 }
-

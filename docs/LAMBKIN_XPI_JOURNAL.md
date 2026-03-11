@@ -5,6 +5,62 @@ its aspect libraries are still co-evolving. These notes are not intended to
 freeze the design; they are meant to preserve the useful pressure points,
 surprises, and open questions that surfaced while forcing the ideas into code.
 
+## March 11, 2026: Capability Bundles Sit Above Shared Substrates
+
+The current-machine WASI work crossed an important threshold once `stdin`,
+`stdout`, `stderr`, terminal authority, filesystem streams, and `io/streams`
+all had to coexist honestly.
+
+The useful conclusion is not just "add more host bindings." It is more
+architectural:
+
+- the primary reusable unit is not always the individual WIT interface,
+- it is often a capability bundle built on top of a shared substrate,
+- and the solver will need metadata about that substrate/provenance layer, not
+  just import/export edges.
+
+### What The Code Now Makes Clear
+
+- `stdin` / `stdout` / `stderr` are not their own storage or transport system.
+  They are authority views over the same stream substrate that also backs
+  filesystem and `wasi:io`.
+- terminal authority is another view again: it rides on the same duplicated
+  process descriptors, but exposes "is this a terminal?" rather than "read or
+  write bytes."
+- helper interfaces such as `io/error` and `filesystem/error` matter even when
+  they are not explicit world items. They are part of the capability surface
+  the runtime actually has to preserve.
+
+### XPI Consequence
+
+Lambkin should not treat every world item as equally primary. A better model is:
+
+- capability bundles such as "CLI stdio", "filesystem descriptors", "pollable
+  time/IO wait", or "windowed editor input"
+- shared substrates such as byte streams, descriptor tables, event queues, and
+  resource lifetimes
+- views/advice over those substrates such as terminal detection, error
+  downcasts, callback normalization, or transaction policy
+
+That suggests the next generation of XPI metadata should record at least:
+
+- which imports/exports belong to the same underlying substrate,
+- which helper interfaces are semantically coupled even if not world items,
+- which resource handles are just alternate authority views over the same host
+  object,
+- and which bindings are current-machine-specific capability selections rather
+  than full upstream-world coverage.
+
+Another useful distinction surfaced while wiring CLI worlds: world metadata must
+separate declared bindings from expanded callable surfaces. A world may include
+another world or expose helper interfaces whose endpoints matter at runtime, but
+that does not mean the authored world has more primary bindings. The solver will
+need both views:
+
+- the authored world graph, because that is the unit people reason about,
+- and the expanded endpoint/capability surface, because that is what the host
+  actually has to bind and validate.
+
 ## March 9, 2026: Broad Sweeps Beat Local Fixes At The WIT Boundary
 
 Two recent cleanup passes reinforced the same process lesson:
