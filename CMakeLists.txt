@@ -259,6 +259,12 @@ function(croft_register_example target)
     set_property(GLOBAL APPEND PROPERTY CROFT_EXAMPLE_TARGETS "${target}")
 endfunction()
 
+function(croft_register_wasm_guest target kind output_path)
+    set(entry "    {\n      \"name\": \"${target}\",\n      \"kind\": \"${kind}\",\n      \"path\": \"${output_path}\"\n    }")
+    set_property(GLOBAL APPEND PROPERTY CROFT_WASM_GUEST_ENTRIES "${entry}")
+    set_property(GLOBAL APPEND PROPERTY CROFT_WASM_GUEST_TARGETS "${target}")
+endfunction()
+
 function(croft_add_example target)
     cmake_parse_arguments(EXAMPLE "" "FOCUS" "SOURCES;LINKS;REQUIRES;TAGS;COMPILE_DEFINITIONS" ${ARGN})
     add_executable(${target} EXCLUDE_FROM_ALL ${EXAMPLE_SOURCES})
@@ -328,6 +334,152 @@ function(croft_link_libraries_checked target)
             target_link_libraries(${target} ${scope} ${CROFT_LINK_${scope}})
         endif()
     endforeach()
+endfunction()
+
+function(croft_add_wat_wasm_guest target)
+    cmake_parse_arguments(WASM_GUEST "" "SOURCE;OUTPUT_NAME;OUTPUT_SUBDIR;OUT_VAR" "DEPENDS" ${ARGN})
+    if(NOT TARGET croft_wasm_wasm3 OR NOT CROFT_WAT2WASM_TOOL)
+        return()
+    endif()
+    if(NOT WASM_GUEST_SOURCE)
+        message(FATAL_ERROR "croft_add_wat_wasm_guest(${target}) requires SOURCE")
+    endif()
+
+    if(WASM_GUEST_OUTPUT_NAME)
+        set(output_name "${WASM_GUEST_OUTPUT_NAME}")
+    else()
+        set(output_name "${target}")
+    endif()
+    if(WASM_GUEST_OUTPUT_SUBDIR)
+        set(output_subdir "${WASM_GUEST_OUTPUT_SUBDIR}")
+    else()
+        set(output_subdir "examples")
+    endif()
+
+    set(output_path "${CMAKE_CURRENT_BINARY_DIR}/${output_subdir}/${output_name}.wasm")
+    add_custom_command(
+        OUTPUT ${output_path}
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/${output_subdir}"
+        COMMAND ${CROFT_WAT2WASM_TOOL} "${WASM_GUEST_SOURCE}" -o ${output_path}
+        DEPENDS ${CROFT_WAT2WASM_DEP} "${WASM_GUEST_SOURCE}" ${WASM_GUEST_DEPENDS}
+        COMMENT "Compiling ${WASM_GUEST_SOURCE} to Wasm..."
+    )
+    add_custom_target(${target} DEPENDS ${output_path})
+    set_property(TARGET ${target} PROPERTY CROFT_WASM_GUEST_PATH "${output_path}")
+    croft_register_wasm_guest(${target} wat "${output_path}")
+    if(WASM_GUEST_OUT_VAR)
+        set(${WASM_GUEST_OUT_VAR} "${output_path}" PARENT_SCOPE)
+    endif()
+endfunction()
+
+function(croft_add_freestanding_c_wasm_guest target)
+    cmake_parse_arguments(WASM_GUEST
+        ""
+        "OUTPUT_NAME;OUTPUT_SUBDIR;OUT_VAR"
+        "SOURCES;DEPENDS;INCLUDE_DIRS;COMPILE_DEFINITIONS;COMPILE_OPTIONS;LINK_OPTIONS"
+        ${ARGN})
+    if(NOT TARGET croft_wasm_wasm3 OR NOT CROFT_LLVM_CLANG_TOOL OR NOT CROFT_WASM_LD_TOOL)
+        return()
+    endif()
+    if(NOT WASM_GUEST_SOURCES)
+        message(FATAL_ERROR "croft_add_freestanding_c_wasm_guest(${target}) requires SOURCES")
+    endif()
+
+    if(WASM_GUEST_OUTPUT_NAME)
+        set(output_name "${WASM_GUEST_OUTPUT_NAME}")
+    else()
+        set(output_name "${target}")
+    endif()
+    if(WASM_GUEST_OUTPUT_SUBDIR)
+        set(output_subdir "${WASM_GUEST_OUTPUT_SUBDIR}")
+    else()
+        set(output_subdir "examples")
+    endif()
+
+    set(output_path "${CMAKE_CURRENT_BINARY_DIR}/${output_subdir}/${output_name}.wasm")
+    set(compile_cmd
+        ${CROFT_LLVM_CLANG_TOOL}
+        --target=wasm32-unknown-unknown
+        -std=c11
+        -Oz
+        -ffreestanding
+        -fno-builtin
+        -fno-stack-protector)
+
+    foreach(definition IN LISTS WASM_GUEST_COMPILE_DEFINITIONS)
+        list(APPEND compile_cmd "-D${definition}")
+    endforeach()
+    foreach(option IN LISTS WASM_GUEST_COMPILE_OPTIONS)
+        list(APPEND compile_cmd "${option}")
+    endforeach()
+    foreach(include_dir IN LISTS WASM_GUEST_INCLUDE_DIRS)
+        list(APPEND compile_cmd "-I${include_dir}")
+    endforeach()
+
+    list(APPEND compile_cmd
+        ${WASM_GUEST_SOURCES}
+        -nostdlib
+        -Wl,--no-entry
+        -Wl,--allow-undefined
+        -Wl,--export-memory
+        -Wl,--initial-memory=131072
+        -Wl,-z,stack-size=32768)
+
+    foreach(link_option IN LISTS WASM_GUEST_LINK_OPTIONS)
+        list(APPEND compile_cmd "${link_option}")
+    endforeach()
+
+    list(APPEND compile_cmd "-fuse-ld=${CROFT_WASM_LD_TOOL}" -o ${output_path})
+
+    add_custom_command(
+        OUTPUT ${output_path}
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/${output_subdir}"
+        COMMAND ${compile_cmd}
+        DEPENDS ${WASM_GUEST_SOURCES} ${WASM_GUEST_DEPENDS}
+        COMMENT "Compiling ${output_name}.c to Wasm..."
+    )
+    add_custom_target(${target} DEPENDS ${output_path})
+    set_property(TARGET ${target} PROPERTY CROFT_WASM_GUEST_PATH "${output_path}")
+    croft_register_wasm_guest(${target} freestanding-c "${output_path}")
+    if(WASM_GUEST_OUT_VAR)
+        set(${WASM_GUEST_OUT_VAR} "${output_path}" PARENT_SCOPE)
+    endif()
+endfunction()
+
+function(croft_add_wit_wasm_guest target)
+    cmake_parse_arguments(WIT_GUEST
+        ""
+        "OUTPUT_NAME;OUTPUT_SUBDIR;OUT_VAR"
+        "SOURCES;DEPENDS;COMPILE_DEFINITIONS;COMPILE_OPTIONS;LINK_OPTIONS"
+        ${ARGN})
+    set(all_sources
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/wit_runtime_support_freestanding.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/thatch_core.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/wit_skip.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/wit_world_runtime.c"
+        ${WIT_GUEST_SOURCES})
+    set(all_depends
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/croft/wit_runtime_support.h"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/croft/wit_guest_runtime.h"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/croft/wit_croft_wasm_guest.h"
+        ${WIT_GUEST_DEPENDS})
+    set(all_defs
+        CROFT_WIT_FREESTANDING=1
+        ${WIT_GUEST_COMPILE_DEFINITIONS})
+
+    croft_add_freestanding_c_wasm_guest(${target}
+        OUTPUT_NAME "${WIT_GUEST_OUTPUT_NAME}"
+        OUTPUT_SUBDIR "${WIT_GUEST_OUTPUT_SUBDIR}"
+        OUT_VAR ${WIT_GUEST_OUT_VAR}
+        SOURCES ${all_sources}
+        DEPENDS ${all_depends}
+        INCLUDE_DIRS
+            "${CMAKE_CURRENT_SOURCE_DIR}/include"
+            "${CMAKE_CURRENT_BINARY_DIR}/generated"
+        COMPILE_DEFINITIONS ${all_defs}
+        COMPILE_OPTIONS ${WIT_GUEST_COMPILE_OPTIONS}
+        LINK_OPTIONS ${WIT_GUEST_LINK_OPTIONS}
+    )
 endfunction()
 
 # pthreads
@@ -2333,75 +2485,30 @@ if(TARGET croft_wasm_wasm3)
 endif()
 
 if(TARGET croft_wasm_wasm3 AND CROFT_WAT2WASM_TOOL)
-    set(WASM_GUEST_BIN "${CMAKE_CURRENT_BINARY_DIR}/examples/dummy_guest.wasm")
-    set(WASM_TEXT_BRIDGE_BIN "${CMAKE_CURRENT_BINARY_DIR}/examples/text_bridge_guest.wasm")
-    add_custom_command(
-        OUTPUT ${WASM_GUEST_BIN}
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/examples"
-        COMMAND ${CROFT_WAT2WASM_TOOL} "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/dummy_guest.wat"
-                                     -o ${WASM_GUEST_BIN}
-        DEPENDS ${CROFT_WAT2WASM_DEP} "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/dummy_guest.wat"
-        COMMENT "Compiling dummy_guest.wat to Wasm..."
+    croft_add_wat_wasm_guest(wasm_guest_gen
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/dummy_guest.wat"
+        OUTPUT_NAME "dummy_guest"
+        OUT_VAR WASM_GUEST_BIN
     )
-    add_custom_target(wasm_guest_gen DEPENDS ${WASM_GUEST_BIN})
-
-    add_custom_command(
-        OUTPUT ${WASM_TEXT_BRIDGE_BIN}
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/examples"
-        COMMAND ${CROFT_WAT2WASM_TOOL} "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/text_bridge_guest.wat"
-                                     -o ${WASM_TEXT_BRIDGE_BIN}
-        DEPENDS ${CROFT_WAT2WASM_DEP} "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/text_bridge_guest.wat"
-        COMMENT "Compiling text_bridge_guest.wat to Wasm..."
+    croft_add_wat_wasm_guest(wasm_text_bridge_guest_gen
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/text_bridge_guest.wat"
+        OUTPUT_NAME "text_bridge_guest"
+        OUT_VAR WASM_TEXT_BRIDGE_BIN
     )
-    add_custom_target(wasm_text_bridge_guest_gen DEPENDS ${WASM_TEXT_BRIDGE_BIN})
 endif()
 
 if(TARGET croft_wasm_wasm3 AND CROFT_LLVM_CLANG_TOOL AND CROFT_WASM_LD_TOOL)
-    set(WASM_WIT_WORLD_BRIDGE_BIN "${CMAKE_CURRENT_BINARY_DIR}/examples/wit_world_bridge_guest.wasm")
-    add_custom_command(
-        OUTPUT ${WASM_WIT_WORLD_BRIDGE_BIN}
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/examples"
-        COMMAND ${CROFT_LLVM_CLANG_TOOL}
-                --target=wasm32-unknown-unknown
-                -std=c11
-                -Oz
-                -ffreestanding
-                -fno-builtin
-                -fno-stack-protector
-                -DCROFT_WIT_FREESTANDING=1
-                -I"${CMAKE_CURRENT_SOURCE_DIR}/include"
-                -I"${CMAKE_CURRENT_BINARY_DIR}/generated"
-                "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/wit_world_bridge_guest.c"
-                "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/wit_runtime_support_freestanding.c"
-                "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/thatch_core.c"
-                "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/wit_skip.c"
-                "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/wit_world_runtime.c"
-                "${WASI_CLI_COMMAND_WIT_GENERATED_C}"
-                "${WASI_RANDOM_WORLD_WIT_GENERATED_C}"
-                -nostdlib
-                -Wl,--no-entry
-                -Wl,--allow-undefined
-                -Wl,--export-memory
-                -Wl,--initial-memory=131072
-                -Wl,-z,stack-size=32768
-                -fuse-ld=${CROFT_WASM_LD_TOOL}
-                -o ${WASM_WIT_WORLD_BRIDGE_BIN}
+    croft_add_wit_wasm_guest(wasm_wit_world_bridge_guest_gen
+        OUTPUT_NAME "wit_world_bridge_guest"
+        OUT_VAR WASM_WIT_WORLD_BRIDGE_BIN
+        SOURCES
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/wit_world_bridge_guest.c"
+            "${WASI_CLI_COMMAND_WIT_GENERATED_C}"
+            "${WASI_RANDOM_WORLD_WIT_GENERATED_C}"
         DEPENDS
-                "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/wit_world_bridge_guest.c"
-                "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/wit_runtime_support_freestanding.c"
-                "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/thatch_core.c"
-                "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/wit_skip.c"
-                "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/wit_world_runtime.c"
-                "${CMAKE_CURRENT_SOURCE_DIR}/include/croft/wit_runtime_support.h"
-                "${CMAKE_CURRENT_SOURCE_DIR}/include/croft/wit_guest_runtime.h"
-                "${CMAKE_CURRENT_SOURCE_DIR}/include/croft/wit_croft_wasm_guest.h"
-                "${WASI_CLI_COMMAND_WIT_GENERATED_C}"
-                "${WASI_CLI_COMMAND_WIT_GENERATED_H}"
-                "${WASI_RANDOM_WORLD_WIT_GENERATED_C}"
-                "${WASI_RANDOM_WORLD_WIT_GENERATED_H}"
-        COMMENT "Compiling wit_world_bridge_guest.c to Wasm..."
+            "${WASI_CLI_COMMAND_WIT_GENERATED_H}"
+            "${WASI_RANDOM_WORLD_WIT_GENERATED_H}"
     )
-    add_custom_target(wasm_wit_world_bridge_guest_gen DEPENDS ${WASM_WIT_WORLD_BRIDGE_BIN})
 elseif(TARGET croft_wasm_wasm3)
     croft_optional_missing("wasm-c-guest"
         "set CROFT_LLVM_CLANG_TOOL and CROFT_WASM_LD_TOOL to build the generated WIT C guest bridge")
@@ -3068,6 +3175,25 @@ get_property(CROFT_INSTALL_TARGETS GLOBAL PROPERTY CROFT_INSTALL_TARGETS)
 if(NOT CROFT_INSTALL_TARGETS)
     set(CROFT_INSTALL_TARGETS "")
 endif()
+get_property(CROFT_WASM_GUEST_TARGETS GLOBAL PROPERTY CROFT_WASM_GUEST_TARGETS)
+if(NOT CROFT_WASM_GUEST_TARGETS)
+    set(CROFT_WASM_GUEST_TARGETS "")
+endif()
+get_property(CROFT_WASM_GUEST_ENTRIES GLOBAL PROPERTY CROFT_WASM_GUEST_ENTRIES)
+if(NOT CROFT_WASM_GUEST_ENTRIES)
+    set(CROFT_WASM_GUEST_ENTRIES "")
+endif()
+string(JOIN ",\n" CROFT_WASM_GUEST_ENTRIES_JSON ${CROFT_WASM_GUEST_ENTRIES})
+file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/croft-wasm-guests.json"
+    CONTENT "{\n  \"guests\": [\n${CROFT_WASM_GUEST_ENTRIES_JSON}\n  ]\n}\n")
+if(CROFT_WASM_GUEST_TARGETS)
+    add_custom_target(croft_wasm_guests DEPENDS ${CROFT_WASM_GUEST_TARGETS})
+    string(JOIN "\n" CROFT_WASM_GUEST_TARGETS_TEXT ${CROFT_WASM_GUEST_TARGETS})
+    file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/croft-wasm-guest-targets.txt"
+        CONTENT "${CROFT_WASM_GUEST_TARGETS_TEXT}\n")
+else()
+    file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/croft-wasm-guest-targets.txt" CONTENT "")
+endif()
 
 set(CROFT_PUBLIC_GENERATED_HEADERS
     ${WIT_GENERATED_H}
@@ -3210,8 +3336,12 @@ add_custom_target(croft_dependency_report
         "${CMAKE_CURRENT_BINARY_DIR}/reports/croft-system-links.tsv"
 )
 if(CROFT_INSTALL_TARGETS)
+    set(CROFT_FULL_MACHINE_DEPS ${CROFT_INSTALL_TARGETS} croft_dependency_report)
+    if(TARGET croft_wasm_guests)
+        list(APPEND CROFT_FULL_MACHINE_DEPS croft_wasm_guests)
+    endif()
     add_custom_target(croft_full_machine ALL
-        DEPENDS ${CROFT_INSTALL_TARGETS} croft_dependency_report
+        DEPENDS ${CROFT_FULL_MACHINE_DEPS}
     )
 endif()
 
@@ -3262,6 +3392,7 @@ install(DIRECTORY include/wasi/
 install(FILES ${CROFT_PUBLIC_GENERATED_HEADERS} DESTINATION include/generated)
 install(FILES ${CROFT_PUBLIC_GENERATED_MANIFESTS} DESTINATION share/croft/wit-manifests)
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/croft-artifacts.json" DESTINATION share/croft)
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/croft-wasm-guests.json" DESTINATION share/croft)
 install(FILES
     "${CMAKE_CURRENT_BINARY_DIR}/reports/croft-current-machine-targets.txt"
     "${CMAKE_CURRENT_BINARY_DIR}/reports/croft-current-machine-targets.tsv"
