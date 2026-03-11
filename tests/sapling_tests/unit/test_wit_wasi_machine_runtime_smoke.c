@@ -308,9 +308,13 @@ int main(void)
     char fs_file_path[PATH_MAX] = {0};
     const char fs_file_name[] = "hello.txt";
     const char fs_file_contents[] = "hello filesystem";
+    const char fs_stream_suffix[] = " + stream";
     SapWitFilesystemDescriptorResource root_descriptor = 0u;
     SapWitFilesystemDescriptorResource file_descriptor = 0u;
     SapWitFilesystemDirectoryEntryStreamResource directory_stream = 0u;
+    SapWitFilesystemInputStreamResource file_input_stream = 0u;
+    SapWitFilesystemOutputStreamResource file_output_stream = 0u;
+    uint32_t stream_pollable_handle = 0u;
     int found_directory_entry = 0;
 #endif
     int ok = 1;
@@ -561,7 +565,7 @@ int main(void)
                           && timezone_reply.val.timezone_display.utc_offset < 86400);
 
     io_streams_command.case_tag = SAP_WIT_IO_STREAMS_COMMAND_READ;
-    io_streams_command.val.read.input_stream = 1u;
+    io_streams_command.val.read.input_stream = 999u;
     io_streams_command.val.read.len = 16u;
     ok &= expect_u32("io streams read",
                      (uint32_t)sap_wit_world_io_imports_import_streams(&io_imports,
@@ -660,7 +664,8 @@ int main(void)
     filesystem_types_command.val.open_at.descriptor = root_descriptor;
     filesystem_types_command.val.open_at.path_data = (const uint8_t*)fs_file_name;
     filesystem_types_command.val.open_at.path_len = (uint32_t)strlen(fs_file_name);
-    filesystem_types_command.val.open_at.flags = SAP_WIT_FILESYSTEM_DESCRIPTOR_FLAGS_READ;
+    filesystem_types_command.val.open_at.flags = SAP_WIT_FILESYSTEM_DESCRIPTOR_FLAGS_READ
+                                                 | SAP_WIT_FILESYSTEM_DESCRIPTOR_FLAGS_WRITE;
     ok &= expect_u32("filesystem open file",
                      (uint32_t)sap_wit_world_filesystem_imports_import_types(
                          &filesystem_imports,
@@ -715,6 +720,187 @@ int main(void)
                      filesystem_types_reply.val.read.v_val.ok.v_0_len,
                      fs_file_contents);
     ok &= expect_true("filesystem read eof", filesystem_types_reply.val.read.v_val.ok.v_1 == 1u);
+
+    memset(&filesystem_types_command, 0, sizeof(filesystem_types_command));
+    filesystem_types_command.case_tag = SAP_WIT_FILESYSTEM_TYPES_COMMAND_READ_VIA_STREAM;
+    filesystem_types_command.val.read_via_stream.descriptor = file_descriptor;
+    filesystem_types_command.val.read_via_stream.offset = 0u;
+    ok &= expect_u32("filesystem read via stream",
+                     (uint32_t)sap_wit_world_filesystem_imports_import_types(
+                         &filesystem_imports,
+                         &filesystem_types_command,
+                         &filesystem_types_reply),
+                     0u);
+    ok &= expect_u32("filesystem read via stream case",
+                     filesystem_types_reply.case_tag,
+                     SAP_WIT_FILESYSTEM_TYPES_REPLY_INPUT_STREAM);
+    ok &= expect_true("filesystem read via stream ok",
+                      filesystem_types_reply.val.input_stream.is_v_ok == 1u);
+    file_input_stream = filesystem_types_reply.val.input_stream.v_val.ok.v;
+    ok &= expect_true("filesystem input stream", file_input_stream != 0u);
+
+    memset(&io_streams_command, 0, sizeof(io_streams_command));
+    io_streams_command.case_tag = SAP_WIT_IO_STREAMS_COMMAND_READ;
+    io_streams_command.val.read.input_stream = (SapWitIoInputStreamResource)file_input_stream;
+    io_streams_command.val.read.len = 5u;
+    ok &= expect_u32("io streams file read",
+                     (uint32_t)sap_wit_world_io_imports_import_streams(&io_imports,
+                                                                       &io_streams_command,
+                                                                       &io_streams_reply),
+                     0u);
+    ok &= expect_u32("io streams file read case",
+                     io_streams_reply.case_tag,
+                     SAP_WIT_IO_STREAMS_REPLY_READ);
+    ok &= expect_true("io streams file read ok", io_streams_reply.val.read.is_v_ok == 1u);
+    ok &= expect_str("io streams file read data",
+                     io_streams_reply.val.read.v_val.ok.v_data,
+                     io_streams_reply.val.read.v_val.ok.v_len,
+                     "hello");
+
+    memset(&io_streams_command, 0, sizeof(io_streams_command));
+    io_streams_command.case_tag = SAP_WIT_IO_STREAMS_COMMAND_SKIP;
+    io_streams_command.val.skip.input_stream = (SapWitIoInputStreamResource)file_input_stream;
+    io_streams_command.val.skip.len = 1u;
+    ok &= expect_u32("io streams file skip",
+                     (uint32_t)sap_wit_world_io_imports_import_streams(&io_imports,
+                                                                       &io_streams_command,
+                                                                       &io_streams_reply),
+                     0u);
+    ok &= expect_u32("io streams file skip case",
+                     io_streams_reply.case_tag,
+                     SAP_WIT_IO_STREAMS_REPLY_SKIP);
+    ok &= expect_true("io streams file skip ok", io_streams_reply.val.skip.is_v_ok == 1u);
+    ok &= expect_u64("io streams file skipped", io_streams_reply.val.skip.v_val.ok.v, 1u);
+
+    memset(&io_streams_command, 0, sizeof(io_streams_command));
+    io_streams_command.case_tag = SAP_WIT_IO_STREAMS_COMMAND_BLOCKING_READ;
+    io_streams_command.val.blocking_read.input_stream =
+        (SapWitIoInputStreamResource)file_input_stream;
+    io_streams_command.val.blocking_read.len = 32u;
+    ok &= expect_u32("io streams blocking read",
+                     (uint32_t)sap_wit_world_io_imports_import_streams(&io_imports,
+                                                                       &io_streams_command,
+                                                                       &io_streams_reply),
+                     0u);
+    ok &= expect_u32("io streams blocking read case",
+                     io_streams_reply.case_tag,
+                     SAP_WIT_IO_STREAMS_REPLY_BLOCKING_READ);
+    ok &= expect_true("io streams blocking read ok",
+                      io_streams_reply.val.blocking_read.is_v_ok == 1u);
+    ok &= expect_str("io streams blocking read data",
+                     io_streams_reply.val.blocking_read.v_val.ok.v_data,
+                     io_streams_reply.val.blocking_read.v_val.ok.v_len,
+                     "filesystem");
+
+    memset(&io_streams_command, 0, sizeof(io_streams_command));
+    io_streams_command.case_tag = SAP_WIT_IO_STREAMS_COMMAND_INPUT_STREAM_SUBSCRIBE;
+    io_streams_command.val.input_stream_subscribe.input_stream =
+        (SapWitIoInputStreamResource)file_input_stream;
+    ok &= expect_u32("io streams subscribe",
+                     (uint32_t)sap_wit_world_io_imports_import_streams(&io_imports,
+                                                                       &io_streams_command,
+                                                                       &io_streams_reply),
+                     0u);
+    ok &= expect_u32("io streams subscribe case",
+                     io_streams_reply.case_tag,
+                     SAP_WIT_IO_STREAMS_REPLY_POLLABLE);
+    stream_pollable_handle = io_streams_reply.val.pollable;
+    ok &= expect_true("io streams pollable", stream_pollable_handle != 0u);
+
+    memset(&io_command, 0, sizeof(io_command));
+    io_command.case_tag = SAP_WIT_IO_POLL_COMMAND_READY;
+    io_command.val.ready.pollable = (SapWitIoPollableResource)stream_pollable_handle;
+    ok &= expect_u32("io stream ready",
+                     (uint32_t)sap_wit_world_io_imports_import_poll(&io_imports,
+                                                                    &io_command,
+                                                                    &io_reply),
+                     0u);
+    ok &= expect_u32("io stream ready case", io_reply.case_tag, SAP_WIT_IO_POLL_REPLY_READY);
+    ok &= expect_true("io stream ready value", io_reply.val.ready == 1u);
+
+    memset(&filesystem_types_command, 0, sizeof(filesystem_types_command));
+    filesystem_types_command.case_tag = SAP_WIT_FILESYSTEM_TYPES_COMMAND_APPEND_VIA_STREAM;
+    filesystem_types_command.val.append_via_stream.descriptor = file_descriptor;
+    ok &= expect_u32("filesystem append via stream",
+                     (uint32_t)sap_wit_world_filesystem_imports_import_types(
+                         &filesystem_imports,
+                         &filesystem_types_command,
+                         &filesystem_types_reply),
+                     0u);
+    ok &= expect_u32("filesystem append via stream case",
+                     filesystem_types_reply.case_tag,
+                     SAP_WIT_FILESYSTEM_TYPES_REPLY_OUTPUT_STREAM);
+    ok &= expect_true("filesystem append via stream ok",
+                      filesystem_types_reply.val.output_stream.is_v_ok == 1u);
+    file_output_stream = filesystem_types_reply.val.output_stream.v_val.ok.v;
+    ok &= expect_true("filesystem output stream", file_output_stream != 0u);
+
+    memset(&io_streams_command, 0, sizeof(io_streams_command));
+    io_streams_command.case_tag = SAP_WIT_IO_STREAMS_COMMAND_CHECK_WRITE;
+    io_streams_command.val.check_write.output_stream =
+        (SapWitIoOutputStreamResource)file_output_stream;
+    ok &= expect_u32("io streams check write",
+                     (uint32_t)sap_wit_world_io_imports_import_streams(&io_imports,
+                                                                       &io_streams_command,
+                                                                       &io_streams_reply),
+                     0u);
+    ok &= expect_u32("io streams check write case",
+                     io_streams_reply.case_tag,
+                     SAP_WIT_IO_STREAMS_REPLY_CHECK_WRITE);
+    ok &= expect_true("io streams check write ok",
+                      io_streams_reply.val.check_write.is_v_ok == 1u);
+    ok &= expect_true("io streams check write permitted",
+                      io_streams_reply.val.check_write.v_val.ok.v > 0u);
+
+    memset(&io_streams_command, 0, sizeof(io_streams_command));
+    io_streams_command.case_tag = SAP_WIT_IO_STREAMS_COMMAND_WRITE;
+    io_streams_command.val.write.output_stream = (SapWitIoOutputStreamResource)file_output_stream;
+    io_streams_command.val.write.contents_data = (const uint8_t*)fs_stream_suffix;
+    io_streams_command.val.write.contents_len = (uint32_t)strlen(fs_stream_suffix);
+    ok &= expect_u32("io streams write",
+                     (uint32_t)sap_wit_world_io_imports_import_streams(&io_imports,
+                                                                       &io_streams_command,
+                                                                       &io_streams_reply),
+                     0u);
+    ok &= expect_u32("io streams write case",
+                     io_streams_reply.case_tag,
+                     SAP_WIT_IO_STREAMS_REPLY_STATUS);
+    ok &= expect_true("io streams write ok", io_streams_reply.val.status.is_v_ok == 1u);
+
+    memset(&io_streams_command, 0, sizeof(io_streams_command));
+    io_streams_command.case_tag = SAP_WIT_IO_STREAMS_COMMAND_FLUSH;
+    io_streams_command.val.flush.output_stream = (SapWitIoOutputStreamResource)file_output_stream;
+    ok &= expect_u32("io streams flush",
+                     (uint32_t)sap_wit_world_io_imports_import_streams(&io_imports,
+                                                                       &io_streams_command,
+                                                                       &io_streams_reply),
+                     0u);
+    ok &= expect_u32("io streams flush case",
+                     io_streams_reply.case_tag,
+                     SAP_WIT_IO_STREAMS_REPLY_STATUS);
+    ok &= expect_true("io streams flush ok", io_streams_reply.val.status.is_v_ok == 1u);
+
+    memset(&filesystem_types_command, 0, sizeof(filesystem_types_command));
+    filesystem_types_command.case_tag = SAP_WIT_FILESYSTEM_TYPES_COMMAND_READ;
+    filesystem_types_command.val.read.descriptor = file_descriptor;
+    filesystem_types_command.val.read.length =
+        (uint64_t)(strlen(fs_file_contents) + strlen(fs_stream_suffix));
+    filesystem_types_command.val.read.offset = 0u;
+    ok &= expect_u32("filesystem read appended",
+                     (uint32_t)sap_wit_world_filesystem_imports_import_types(
+                         &filesystem_imports,
+                         &filesystem_types_command,
+                         &filesystem_types_reply),
+                     0u);
+    ok &= expect_u32("filesystem read appended case",
+                     filesystem_types_reply.case_tag,
+                     SAP_WIT_FILESYSTEM_TYPES_REPLY_READ);
+    ok &= expect_true("filesystem read appended ok",
+                      filesystem_types_reply.val.read.is_v_ok == 1u);
+    ok &= expect_str("filesystem appended data",
+                     filesystem_types_reply.val.read.v_val.ok.v_0_data,
+                     filesystem_types_reply.val.read.v_val.ok.v_0_len,
+                     "hello filesystem + stream");
 
     memset(&filesystem_types_command, 0, sizeof(filesystem_types_command));
     filesystem_types_command.case_tag = SAP_WIT_FILESYSTEM_TYPES_COMMAND_READ_DIRECTORY;

@@ -47,6 +47,19 @@ typedef struct {
 
 typedef struct {
     uint8_t live;
+    uint32_t descriptor_handle;
+    uint64_t offset;
+} croft_wit_wasi_input_stream_slot;
+
+typedef struct {
+    uint8_t live;
+    uint8_t append;
+    uint32_t descriptor_handle;
+    uint64_t offset;
+} croft_wit_wasi_output_stream_slot;
+
+typedef struct {
+    uint8_t live;
     DIR* dir;
 } croft_wit_wasi_directory_stream_slot;
 
@@ -72,6 +85,12 @@ struct croft_wit_wasi_machine_runtime {
     croft_wit_wasi_descriptor_slot* descriptors;
     size_t descriptor_count;
     size_t descriptor_cap;
+    croft_wit_wasi_input_stream_slot* input_streams;
+    size_t input_stream_count;
+    size_t input_stream_cap;
+    croft_wit_wasi_output_stream_slot* output_streams;
+    size_t output_stream_count;
+    size_t output_stream_cap;
     croft_wit_wasi_directory_stream_slot* directory_streams;
     size_t directory_stream_count;
     size_t directory_stream_cap;
@@ -80,6 +99,16 @@ struct croft_wit_wasi_machine_runtime {
     size_t preopen_cap;
     uint32_t next_pollable_handle;
 };
+
+static croft_wit_wasi_descriptor_slot* croft_wit_wasi_fs_descriptor_lookup(
+    croft_wit_wasi_machine_runtime* runtime,
+    uint32_t handle);
+static croft_wit_wasi_input_stream_slot* croft_wit_wasi_input_stream_lookup(
+    croft_wit_wasi_machine_runtime* runtime,
+    uint32_t handle);
+static croft_wit_wasi_output_stream_slot* croft_wit_wasi_output_stream_lookup(
+    croft_wit_wasi_machine_runtime* runtime,
+    uint32_t handle);
 
 #if !defined(CROFT_OS_WINDOWS)
 extern char** environ;
@@ -941,6 +970,51 @@ static int32_t croft_wit_wasi_dispatch_timezone_display(
     return ERR_OK;
 }
 
+static int croft_wit_wasi_u64_to_off_t(uint64_t offset, off_t* out)
+{
+    if (!out) {
+        return ERR_INVALID;
+    }
+    if (offset > (uint64_t)LLONG_MAX) {
+        return ERR_RANGE;
+    }
+    *out = (off_t)offset;
+    return ERR_OK;
+}
+
+static int croft_wit_wasi_fd_size(int fd, uint64_t* out)
+{
+    struct stat st;
+
+    if (fd < 0 || !out) {
+        return ERR_INVALID;
+    }
+    if (fstat(fd, &st) != 0) {
+        return ERR_INVALID;
+    }
+    if (st.st_size < 0) {
+        return ERR_RANGE;
+    }
+    *out = (uint64_t)st.st_size;
+    return ERR_OK;
+}
+
+static int croft_wit_wasi_make_ready_pollable(croft_wit_wasi_machine_runtime* runtime,
+                                              uint32_t* handle_out)
+{
+    uint64_t now_ns = 0u;
+    int rc;
+
+    if (!runtime || !handle_out) {
+        return ERR_INVALID;
+    }
+    rc = croft_wit_wasi_clock_get_ns(CLOCK_MONOTONIC, &now_ns);
+    if (rc != ERR_OK) {
+        return rc;
+    }
+    return croft_wit_wasi_pollable_insert(runtime, now_ns, handle_out);
+}
+
 static void croft_wit_wasi_set_stream_error_closed(SapWitIoStreamError* out)
 {
     if (!out) {
@@ -948,6 +1022,29 @@ static void croft_wit_wasi_set_stream_error_closed(SapWitIoStreamError* out)
     }
     memset(out, 0, sizeof(*out));
     out->case_tag = SAP_WIT_IO_STREAM_ERROR_CLOSED;
+}
+
+static int32_t croft_wit_wasi_io_streams_reply_read_ok(SapWitIoStreamsReply* reply_out,
+                                                        uint8_t blocking,
+                                                        const uint8_t* data,
+                                                        uint32_t len)
+{
+    if (!reply_out) {
+        return ERR_INVALID;
+    }
+    sap_wit_zero_io_streams_reply(reply_out);
+    reply_out->case_tag = blocking ? SAP_WIT_IO_STREAMS_REPLY_BLOCKING_READ
+                                   : SAP_WIT_IO_STREAMS_REPLY_READ;
+    if (blocking) {
+        reply_out->val.blocking_read.is_v_ok = 1u;
+        reply_out->val.blocking_read.v_val.ok.v_data = data;
+        reply_out->val.blocking_read.v_val.ok.v_len = len;
+    } else {
+        reply_out->val.read.is_v_ok = 1u;
+        reply_out->val.read.v_val.ok.v_data = data;
+        reply_out->val.read.v_val.ok.v_len = len;
+    }
+    return ERR_OK;
 }
 
 static int32_t croft_wit_wasi_io_streams_reply_read_closed(SapWitIoStreamsReply* reply_out,
@@ -965,6 +1062,26 @@ static int32_t croft_wit_wasi_io_streams_reply_read_closed(SapWitIoStreamsReply*
     } else {
         reply_out->val.read.is_v_ok = 0u;
         croft_wit_wasi_set_stream_error_closed(&reply_out->val.read.v_val.err.v);
+    }
+    return ERR_OK;
+}
+
+static int32_t croft_wit_wasi_io_streams_reply_skip_ok(SapWitIoStreamsReply* reply_out,
+                                                        uint8_t blocking,
+                                                        uint64_t skipped)
+{
+    if (!reply_out) {
+        return ERR_INVALID;
+    }
+    sap_wit_zero_io_streams_reply(reply_out);
+    reply_out->case_tag = blocking ? SAP_WIT_IO_STREAMS_REPLY_BLOCKING_SKIP
+                                   : SAP_WIT_IO_STREAMS_REPLY_SKIP;
+    if (blocking) {
+        reply_out->val.blocking_skip.is_v_ok = 1u;
+        reply_out->val.blocking_skip.v_val.ok.v = skipped;
+    } else {
+        reply_out->val.skip.is_v_ok = 1u;
+        reply_out->val.skip.v_val.ok.v = skipped;
     }
     return ERR_OK;
 }
@@ -988,14 +1105,34 @@ static int32_t croft_wit_wasi_io_streams_reply_skip_closed(SapWitIoStreamsReply*
     return ERR_OK;
 }
 
-static int32_t croft_wit_wasi_io_streams_reply_pollable_invalid(SapWitIoStreamsReply* reply_out)
+static int32_t croft_wit_wasi_io_streams_reply_pollable(SapWitIoStreamsReply* reply_out,
+                                                         uint32_t handle)
 {
     if (!reply_out) {
         return ERR_INVALID;
     }
     sap_wit_zero_io_streams_reply(reply_out);
     reply_out->case_tag = SAP_WIT_IO_STREAMS_REPLY_POLLABLE;
-    reply_out->val.pollable = SAP_WIT_IO_POLLABLE_RESOURCE_INVALID;
+    reply_out->val.pollable = (SapWitIoPollableResource)handle;
+    return ERR_OK;
+}
+
+static int32_t croft_wit_wasi_io_streams_reply_pollable_invalid(SapWitIoStreamsReply* reply_out)
+{
+    return croft_wit_wasi_io_streams_reply_pollable(reply_out,
+                                                    SAP_WIT_IO_POLLABLE_RESOURCE_INVALID);
+}
+
+static int32_t croft_wit_wasi_io_streams_reply_check_write_ok(SapWitIoStreamsReply* reply_out,
+                                                              uint64_t permitted)
+{
+    if (!reply_out) {
+        return ERR_INVALID;
+    }
+    sap_wit_zero_io_streams_reply(reply_out);
+    reply_out->case_tag = SAP_WIT_IO_STREAMS_REPLY_CHECK_WRITE;
+    reply_out->val.check_write.is_v_ok = 1u;
+    reply_out->val.check_write.v_val.ok.v = permitted;
     return ERR_OK;
 }
 
@@ -1012,6 +1149,17 @@ static int32_t croft_wit_wasi_io_streams_reply_check_write_closed(
     return ERR_OK;
 }
 
+static int32_t croft_wit_wasi_io_streams_reply_status_ok(SapWitIoStreamsReply* reply_out)
+{
+    if (!reply_out) {
+        return ERR_INVALID;
+    }
+    sap_wit_zero_io_streams_reply(reply_out);
+    reply_out->case_tag = SAP_WIT_IO_STREAMS_REPLY_STATUS;
+    reply_out->val.status.is_v_ok = 1u;
+    return ERR_OK;
+}
+
 static int32_t croft_wit_wasi_io_streams_reply_status_closed(SapWitIoStreamsReply* reply_out)
 {
     if (!reply_out) {
@@ -1021,6 +1169,26 @@ static int32_t croft_wit_wasi_io_streams_reply_status_closed(SapWitIoStreamsRepl
     reply_out->case_tag = SAP_WIT_IO_STREAMS_REPLY_STATUS;
     reply_out->val.status.is_v_ok = 0u;
     croft_wit_wasi_set_stream_error_closed(&reply_out->val.status.v_val.err.v);
+    return ERR_OK;
+}
+
+static int32_t croft_wit_wasi_io_streams_reply_splice_ok(SapWitIoStreamsReply* reply_out,
+                                                          uint8_t blocking,
+                                                          uint64_t amount)
+{
+    if (!reply_out) {
+        return ERR_INVALID;
+    }
+    sap_wit_zero_io_streams_reply(reply_out);
+    reply_out->case_tag = blocking ? SAP_WIT_IO_STREAMS_REPLY_BLOCKING_SPLICE
+                                   : SAP_WIT_IO_STREAMS_REPLY_SPLICE;
+    if (blocking) {
+        reply_out->val.blocking_splice.is_v_ok = 1u;
+        reply_out->val.blocking_splice.v_val.ok.v = amount;
+    } else {
+        reply_out->val.splice.is_v_ok = 1u;
+        reply_out->val.splice.v_val.ok.v = amount;
+    }
     return ERR_OK;
 }
 
@@ -1043,13 +1211,238 @@ static int32_t croft_wit_wasi_io_streams_reply_splice_closed(SapWitIoStreamsRepl
     return ERR_OK;
 }
 
+static int croft_wit_wasi_input_stream_read_into_blob(croft_wit_wasi_machine_runtime* runtime,
+                                                      croft_wit_wasi_input_stream_slot* stream,
+                                                      uint64_t len)
+{
+    croft_wit_wasi_descriptor_slot* descriptor;
+    off_t offset;
+    size_t request_len;
+    ssize_t nread;
+    int rc;
+
+    if (!runtime || !stream) {
+        return ERR_INVALID;
+    }
+    descriptor = croft_wit_wasi_fs_descriptor_lookup(runtime, stream->descriptor_handle);
+    if (!descriptor || !descriptor->live || descriptor->is_directory) {
+        return ERR_INVALID;
+    }
+    rc = croft_wit_wasi_u64_to_off_t(stream->offset, &offset);
+    if (rc != ERR_OK) {
+        return rc;
+    }
+
+    request_len = len > (uint64_t)UINT32_MAX ? UINT32_MAX : (size_t)len;
+    runtime->filesystem_blob.len = 0u;
+    rc = croft_wit_wasi_buffer_reserve(&runtime->filesystem_blob,
+                                       request_len > 0u ? (uint32_t)request_len : 1u);
+    if (rc != ERR_OK) {
+        return rc;
+    }
+    if (request_len == 0u) {
+        return ERR_OK;
+    }
+
+    nread = pread(descriptor->fd, runtime->filesystem_blob.data, request_len, offset);
+    if (nread < 0) {
+        return ERR_INVALID;
+    }
+    runtime->filesystem_blob.len = (uint32_t)nread;
+    stream->offset += (uint64_t)runtime->filesystem_blob.len;
+    return ERR_OK;
+}
+
+static int croft_wit_wasi_input_stream_skip_bytes(croft_wit_wasi_machine_runtime* runtime,
+                                                  croft_wit_wasi_input_stream_slot* stream,
+                                                  uint64_t len,
+                                                  uint64_t* skipped_out)
+{
+    croft_wit_wasi_descriptor_slot* descriptor;
+    uint64_t size = 0u;
+    uint64_t available = 0u;
+    uint64_t skipped = 0u;
+    int rc;
+
+    if (!runtime || !stream || !skipped_out) {
+        return ERR_INVALID;
+    }
+    descriptor = croft_wit_wasi_fs_descriptor_lookup(runtime, stream->descriptor_handle);
+    if (!descriptor || !descriptor->live || descriptor->is_directory) {
+        return ERR_INVALID;
+    }
+    rc = croft_wit_wasi_fd_size(descriptor->fd, &size);
+    if (rc != ERR_OK) {
+        return rc;
+    }
+    if (stream->offset < size) {
+        available = size - stream->offset;
+    }
+    skipped = len < available ? len : available;
+    stream->offset += skipped;
+    *skipped_out = skipped;
+    return ERR_OK;
+}
+
+static int croft_wit_wasi_output_stream_write_bytes(croft_wit_wasi_machine_runtime* runtime,
+                                                    croft_wit_wasi_output_stream_slot* stream,
+                                                    const uint8_t* data,
+                                                    uint32_t len)
+{
+    croft_wit_wasi_descriptor_slot* descriptor;
+    uint64_t base_offset;
+    uint32_t written = 0u;
+    int rc;
+
+    if (!runtime || !stream || (!data && len > 0u)) {
+        return ERR_INVALID;
+    }
+    descriptor = croft_wit_wasi_fs_descriptor_lookup(runtime, stream->descriptor_handle);
+    if (!descriptor || !descriptor->live || descriptor->is_directory) {
+        return ERR_INVALID;
+    }
+
+    base_offset = stream->offset;
+    if (stream->append) {
+        rc = croft_wit_wasi_fd_size(descriptor->fd, &base_offset);
+        if (rc != ERR_OK) {
+            return rc;
+        }
+    }
+
+    while (written < len) {
+        off_t write_offset;
+        size_t chunk_len = (size_t)(len - written);
+        ssize_t nwritten;
+
+        rc = croft_wit_wasi_u64_to_off_t(base_offset + written, &write_offset);
+        if (rc != ERR_OK) {
+            return rc;
+        }
+        nwritten = pwrite(descriptor->fd,
+                          data + written,
+                          chunk_len,
+                          write_offset);
+        if (nwritten <= 0) {
+            return ERR_INVALID;
+        }
+        written += (uint32_t)nwritten;
+    }
+
+    stream->offset = base_offset + written;
+    return ERR_OK;
+}
+
+static int croft_wit_wasi_output_stream_write_zeroes_bytes(
+    croft_wit_wasi_machine_runtime* runtime,
+    croft_wit_wasi_output_stream_slot* stream,
+    uint64_t len)
+{
+    static const uint8_t zeros[4096] = {0};
+    uint64_t remaining = len;
+    int rc;
+
+    while (remaining > 0u) {
+        uint32_t chunk_len = remaining > sizeof(zeros) ? (uint32_t)sizeof(zeros)
+                                                       : (uint32_t)remaining;
+        rc = croft_wit_wasi_output_stream_write_bytes(runtime, stream, zeros, chunk_len);
+        if (rc != ERR_OK) {
+            return rc;
+        }
+        remaining -= chunk_len;
+    }
+    return ERR_OK;
+}
+
+static int croft_wit_wasi_output_stream_flush(croft_wit_wasi_machine_runtime* runtime,
+                                              croft_wit_wasi_output_stream_slot* stream)
+{
+    croft_wit_wasi_descriptor_slot* descriptor;
+
+    if (!runtime || !stream) {
+        return ERR_INVALID;
+    }
+    descriptor = croft_wit_wasi_fs_descriptor_lookup(runtime, stream->descriptor_handle);
+    if (!descriptor || !descriptor->live || descriptor->is_directory) {
+        return ERR_INVALID;
+    }
+    return fsync(descriptor->fd) == 0 ? ERR_OK : ERR_INVALID;
+}
+
+static int croft_wit_wasi_output_stream_splice_bytes(croft_wit_wasi_machine_runtime* runtime,
+                                                     croft_wit_wasi_output_stream_slot* output,
+                                                     croft_wit_wasi_input_stream_slot* input,
+                                                     uint64_t len,
+                                                     uint64_t* amount_out)
+{
+    uint8_t buffer[4096];
+    uint64_t remaining = len;
+    uint64_t total = 0u;
+
+    if (!runtime || !output || !input || !amount_out) {
+        return ERR_INVALID;
+    }
+
+    while (remaining > 0u) {
+        uint64_t chunk_limit = remaining > sizeof(buffer) ? sizeof(buffer) : remaining;
+        croft_wit_wasi_descriptor_slot* input_descriptor;
+        off_t read_offset;
+        ssize_t nread;
+        int rc;
+
+        input_descriptor = croft_wit_wasi_fs_descriptor_lookup(runtime, input->descriptor_handle);
+        if (!input_descriptor || !input_descriptor->live || input_descriptor->is_directory) {
+            return ERR_INVALID;
+        }
+        rc = croft_wit_wasi_u64_to_off_t(input->offset, &read_offset);
+        if (rc != ERR_OK) {
+            return rc;
+        }
+        nread = pread(input_descriptor->fd, buffer, (size_t)chunk_limit, read_offset);
+        if (nread < 0) {
+            return ERR_INVALID;
+        }
+        if (nread == 0) {
+            break;
+        }
+
+        input->offset += (uint64_t)nread;
+        rc = croft_wit_wasi_output_stream_write_bytes(runtime, output, buffer, (uint32_t)nread);
+        if (rc != ERR_OK) {
+            return rc;
+        }
+
+        total += (uint64_t)nread;
+        remaining -= (uint64_t)nread;
+    }
+
+    *amount_out = total;
+    return ERR_OK;
+}
+
 static int32_t croft_wit_wasi_dispatch_io_streams_read(void* ctx,
                                                        const SapWitIoInputStreamRead* payload,
                                                        SapWitIoStreamsReply* reply_out)
 {
-    (void)ctx;
-    (void)payload;
-    return croft_wit_wasi_io_streams_reply_read_closed(reply_out, 0u);
+    croft_wit_wasi_machine_runtime* runtime = (croft_wit_wasi_machine_runtime*)ctx;
+    croft_wit_wasi_input_stream_slot* stream;
+    int rc;
+
+    if (!runtime || !payload) {
+        return ERR_INVALID;
+    }
+    stream = croft_wit_wasi_input_stream_lookup(runtime, payload->input_stream);
+    if (!stream) {
+        return croft_wit_wasi_io_streams_reply_read_closed(reply_out, 0u);
+    }
+    rc = croft_wit_wasi_input_stream_read_into_blob(runtime, stream, payload->len);
+    if (rc != ERR_OK) {
+        return croft_wit_wasi_io_streams_reply_read_closed(reply_out, 0u);
+    }
+    return croft_wit_wasi_io_streams_reply_read_ok(reply_out,
+                                                   0u,
+                                                   runtime->filesystem_blob.data,
+                                                   runtime->filesystem_blob.len);
 }
 
 static int32_t croft_wit_wasi_dispatch_io_streams_blocking_read(
@@ -1057,18 +1450,48 @@ static int32_t croft_wit_wasi_dispatch_io_streams_blocking_read(
     const SapWitIoInputStreamBlockingRead* payload,
     SapWitIoStreamsReply* reply_out)
 {
-    (void)ctx;
-    (void)payload;
-    return croft_wit_wasi_io_streams_reply_read_closed(reply_out, 1u);
+    croft_wit_wasi_machine_runtime* runtime = (croft_wit_wasi_machine_runtime*)ctx;
+    croft_wit_wasi_input_stream_slot* stream;
+    int rc;
+
+    if (!runtime || !payload) {
+        return ERR_INVALID;
+    }
+    stream = croft_wit_wasi_input_stream_lookup(runtime, payload->input_stream);
+    if (!stream) {
+        return croft_wit_wasi_io_streams_reply_read_closed(reply_out, 1u);
+    }
+    rc = croft_wit_wasi_input_stream_read_into_blob(runtime, stream, payload->len);
+    if (rc != ERR_OK) {
+        return croft_wit_wasi_io_streams_reply_read_closed(reply_out, 1u);
+    }
+    return croft_wit_wasi_io_streams_reply_read_ok(reply_out,
+                                                   1u,
+                                                   runtime->filesystem_blob.data,
+                                                   runtime->filesystem_blob.len);
 }
 
 static int32_t croft_wit_wasi_dispatch_io_streams_skip(void* ctx,
                                                        const SapWitIoInputStreamSkip* payload,
                                                        SapWitIoStreamsReply* reply_out)
 {
-    (void)ctx;
-    (void)payload;
-    return croft_wit_wasi_io_streams_reply_skip_closed(reply_out, 0u);
+    croft_wit_wasi_machine_runtime* runtime = (croft_wit_wasi_machine_runtime*)ctx;
+    croft_wit_wasi_input_stream_slot* stream;
+    uint64_t skipped = 0u;
+    int rc;
+
+    if (!runtime || !payload) {
+        return ERR_INVALID;
+    }
+    stream = croft_wit_wasi_input_stream_lookup(runtime, payload->input_stream);
+    if (!stream) {
+        return croft_wit_wasi_io_streams_reply_skip_closed(reply_out, 0u);
+    }
+    rc = croft_wit_wasi_input_stream_skip_bytes(runtime, stream, payload->len, &skipped);
+    if (rc != ERR_OK) {
+        return croft_wit_wasi_io_streams_reply_skip_closed(reply_out, 0u);
+    }
+    return croft_wit_wasi_io_streams_reply_skip_ok(reply_out, 0u, skipped);
 }
 
 static int32_t croft_wit_wasi_dispatch_io_streams_blocking_skip(
@@ -1076,9 +1499,23 @@ static int32_t croft_wit_wasi_dispatch_io_streams_blocking_skip(
     const SapWitIoInputStreamBlockingSkip* payload,
     SapWitIoStreamsReply* reply_out)
 {
-    (void)ctx;
-    (void)payload;
-    return croft_wit_wasi_io_streams_reply_skip_closed(reply_out, 1u);
+    croft_wit_wasi_machine_runtime* runtime = (croft_wit_wasi_machine_runtime*)ctx;
+    croft_wit_wasi_input_stream_slot* stream;
+    uint64_t skipped = 0u;
+    int rc;
+
+    if (!runtime || !payload) {
+        return ERR_INVALID;
+    }
+    stream = croft_wit_wasi_input_stream_lookup(runtime, payload->input_stream);
+    if (!stream) {
+        return croft_wit_wasi_io_streams_reply_skip_closed(reply_out, 1u);
+    }
+    rc = croft_wit_wasi_input_stream_skip_bytes(runtime, stream, payload->len, &skipped);
+    if (rc != ERR_OK) {
+        return croft_wit_wasi_io_streams_reply_skip_closed(reply_out, 1u);
+    }
+    return croft_wit_wasi_io_streams_reply_skip_ok(reply_out, 1u, skipped);
 }
 
 static int32_t croft_wit_wasi_dispatch_io_streams_input_stream_subscribe(
@@ -1086,9 +1523,21 @@ static int32_t croft_wit_wasi_dispatch_io_streams_input_stream_subscribe(
     const SapWitIoInputStreamSubscribe* payload,
     SapWitIoStreamsReply* reply_out)
 {
-    (void)ctx;
-    (void)payload;
-    return croft_wit_wasi_io_streams_reply_pollable_invalid(reply_out);
+    croft_wit_wasi_machine_runtime* runtime = (croft_wit_wasi_machine_runtime*)ctx;
+    uint32_t pollable_handle = 0u;
+    int rc;
+
+    if (!runtime || !payload) {
+        return ERR_INVALID;
+    }
+    if (!croft_wit_wasi_input_stream_lookup(runtime, payload->input_stream)) {
+        return croft_wit_wasi_io_streams_reply_pollable_invalid(reply_out);
+    }
+    rc = croft_wit_wasi_make_ready_pollable(runtime, &pollable_handle);
+    if (rc != ERR_OK) {
+        return rc;
+    }
+    return croft_wit_wasi_io_streams_reply_pollable(reply_out, pollable_handle);
 }
 
 static int32_t croft_wit_wasi_dispatch_io_streams_check_write(
@@ -1096,18 +1545,40 @@ static int32_t croft_wit_wasi_dispatch_io_streams_check_write(
     const SapWitIoOutputStreamCheckWrite* payload,
     SapWitIoStreamsReply* reply_out)
 {
-    (void)ctx;
-    (void)payload;
-    return croft_wit_wasi_io_streams_reply_check_write_closed(reply_out);
+    croft_wit_wasi_machine_runtime* runtime = (croft_wit_wasi_machine_runtime*)ctx;
+
+    if (!runtime || !payload) {
+        return ERR_INVALID;
+    }
+    if (!croft_wit_wasi_output_stream_lookup(runtime, payload->output_stream)) {
+        return croft_wit_wasi_io_streams_reply_check_write_closed(reply_out);
+    }
+    return croft_wit_wasi_io_streams_reply_check_write_ok(reply_out, UINT32_MAX);
 }
 
 static int32_t croft_wit_wasi_dispatch_io_streams_write(void* ctx,
                                                         const SapWitIoOutputStreamWrite* payload,
                                                         SapWitIoStreamsReply* reply_out)
 {
-    (void)ctx;
-    (void)payload;
-    return croft_wit_wasi_io_streams_reply_status_closed(reply_out);
+    croft_wit_wasi_machine_runtime* runtime = (croft_wit_wasi_machine_runtime*)ctx;
+    croft_wit_wasi_output_stream_slot* stream;
+    int rc;
+
+    if (!runtime || !payload) {
+        return ERR_INVALID;
+    }
+    stream = croft_wit_wasi_output_stream_lookup(runtime, payload->output_stream);
+    if (!stream) {
+        return croft_wit_wasi_io_streams_reply_status_closed(reply_out);
+    }
+    rc = croft_wit_wasi_output_stream_write_bytes(runtime,
+                                                  stream,
+                                                  payload->contents_data,
+                                                  payload->contents_len);
+    if (rc != ERR_OK) {
+        return croft_wit_wasi_io_streams_reply_status_closed(reply_out);
+    }
+    return croft_wit_wasi_io_streams_reply_status_ok(reply_out);
 }
 
 static int32_t croft_wit_wasi_dispatch_io_streams_blocking_write_and_flush(
@@ -1115,18 +1586,51 @@ static int32_t croft_wit_wasi_dispatch_io_streams_blocking_write_and_flush(
     const SapWitIoOutputStreamBlockingWriteAndFlush* payload,
     SapWitIoStreamsReply* reply_out)
 {
-    (void)ctx;
-    (void)payload;
-    return croft_wit_wasi_io_streams_reply_status_closed(reply_out);
+    croft_wit_wasi_machine_runtime* runtime = (croft_wit_wasi_machine_runtime*)ctx;
+    croft_wit_wasi_output_stream_slot* stream;
+    int rc;
+
+    if (!runtime || !payload) {
+        return ERR_INVALID;
+    }
+    stream = croft_wit_wasi_output_stream_lookup(runtime, payload->output_stream);
+    if (!stream) {
+        return croft_wit_wasi_io_streams_reply_status_closed(reply_out);
+    }
+    rc = croft_wit_wasi_output_stream_write_bytes(runtime,
+                                                  stream,
+                                                  payload->contents_data,
+                                                  payload->contents_len);
+    if (rc != ERR_OK) {
+        return croft_wit_wasi_io_streams_reply_status_closed(reply_out);
+    }
+    rc = croft_wit_wasi_output_stream_flush(runtime, stream);
+    if (rc != ERR_OK) {
+        return croft_wit_wasi_io_streams_reply_status_closed(reply_out);
+    }
+    return croft_wit_wasi_io_streams_reply_status_ok(reply_out);
 }
 
 static int32_t croft_wit_wasi_dispatch_io_streams_flush(void* ctx,
                                                         const SapWitIoOutputStreamFlush* payload,
                                                         SapWitIoStreamsReply* reply_out)
 {
-    (void)ctx;
-    (void)payload;
-    return croft_wit_wasi_io_streams_reply_status_closed(reply_out);
+    croft_wit_wasi_machine_runtime* runtime = (croft_wit_wasi_machine_runtime*)ctx;
+    croft_wit_wasi_output_stream_slot* stream;
+    int rc;
+
+    if (!runtime || !payload) {
+        return ERR_INVALID;
+    }
+    stream = croft_wit_wasi_output_stream_lookup(runtime, payload->output_stream);
+    if (!stream) {
+        return croft_wit_wasi_io_streams_reply_status_closed(reply_out);
+    }
+    rc = croft_wit_wasi_output_stream_flush(runtime, stream);
+    if (rc != ERR_OK) {
+        return croft_wit_wasi_io_streams_reply_status_closed(reply_out);
+    }
+    return croft_wit_wasi_io_streams_reply_status_ok(reply_out);
 }
 
 static int32_t croft_wit_wasi_dispatch_io_streams_blocking_flush(
@@ -1134,9 +1638,9 @@ static int32_t croft_wit_wasi_dispatch_io_streams_blocking_flush(
     const SapWitIoOutputStreamBlockingFlush* payload,
     SapWitIoStreamsReply* reply_out)
 {
-    (void)ctx;
-    (void)payload;
-    return croft_wit_wasi_io_streams_reply_status_closed(reply_out);
+    return croft_wit_wasi_dispatch_io_streams_flush(ctx,
+                                                    (const SapWitIoOutputStreamFlush*)payload,
+                                                    reply_out);
 }
 
 static int32_t croft_wit_wasi_dispatch_io_streams_output_stream_subscribe(
@@ -1144,9 +1648,21 @@ static int32_t croft_wit_wasi_dispatch_io_streams_output_stream_subscribe(
     const SapWitIoOutputStreamSubscribe* payload,
     SapWitIoStreamsReply* reply_out)
 {
-    (void)ctx;
-    (void)payload;
-    return croft_wit_wasi_io_streams_reply_pollable_invalid(reply_out);
+    croft_wit_wasi_machine_runtime* runtime = (croft_wit_wasi_machine_runtime*)ctx;
+    uint32_t pollable_handle = 0u;
+    int rc;
+
+    if (!runtime || !payload) {
+        return ERR_INVALID;
+    }
+    if (!croft_wit_wasi_output_stream_lookup(runtime, payload->output_stream)) {
+        return croft_wit_wasi_io_streams_reply_pollable_invalid(reply_out);
+    }
+    rc = croft_wit_wasi_make_ready_pollable(runtime, &pollable_handle);
+    if (rc != ERR_OK) {
+        return rc;
+    }
+    return croft_wit_wasi_io_streams_reply_pollable(reply_out, pollable_handle);
 }
 
 static int32_t croft_wit_wasi_dispatch_io_streams_write_zeroes(
@@ -1154,9 +1670,22 @@ static int32_t croft_wit_wasi_dispatch_io_streams_write_zeroes(
     const SapWitIoOutputStreamWriteZeroes* payload,
     SapWitIoStreamsReply* reply_out)
 {
-    (void)ctx;
-    (void)payload;
-    return croft_wit_wasi_io_streams_reply_status_closed(reply_out);
+    croft_wit_wasi_machine_runtime* runtime = (croft_wit_wasi_machine_runtime*)ctx;
+    croft_wit_wasi_output_stream_slot* stream;
+    int rc;
+
+    if (!runtime || !payload) {
+        return ERR_INVALID;
+    }
+    stream = croft_wit_wasi_output_stream_lookup(runtime, payload->output_stream);
+    if (!stream) {
+        return croft_wit_wasi_io_streams_reply_status_closed(reply_out);
+    }
+    rc = croft_wit_wasi_output_stream_write_zeroes_bytes(runtime, stream, payload->len);
+    if (rc != ERR_OK) {
+        return croft_wit_wasi_io_streams_reply_status_closed(reply_out);
+    }
+    return croft_wit_wasi_io_streams_reply_status_ok(reply_out);
 }
 
 static int32_t croft_wit_wasi_dispatch_io_streams_blocking_write_zeroes_and_flush(
@@ -1164,9 +1693,26 @@ static int32_t croft_wit_wasi_dispatch_io_streams_blocking_write_zeroes_and_flus
     const SapWitIoOutputStreamBlockingWriteZeroesAndFlush* payload,
     SapWitIoStreamsReply* reply_out)
 {
-    (void)ctx;
-    (void)payload;
-    return croft_wit_wasi_io_streams_reply_status_closed(reply_out);
+    croft_wit_wasi_machine_runtime* runtime = (croft_wit_wasi_machine_runtime*)ctx;
+    croft_wit_wasi_output_stream_slot* stream;
+    int rc;
+
+    if (!runtime || !payload) {
+        return ERR_INVALID;
+    }
+    stream = croft_wit_wasi_output_stream_lookup(runtime, payload->output_stream);
+    if (!stream) {
+        return croft_wit_wasi_io_streams_reply_status_closed(reply_out);
+    }
+    rc = croft_wit_wasi_output_stream_write_zeroes_bytes(runtime, stream, payload->len);
+    if (rc != ERR_OK) {
+        return croft_wit_wasi_io_streams_reply_status_closed(reply_out);
+    }
+    rc = croft_wit_wasi_output_stream_flush(runtime, stream);
+    if (rc != ERR_OK) {
+        return croft_wit_wasi_io_streams_reply_status_closed(reply_out);
+    }
+    return croft_wit_wasi_io_streams_reply_status_ok(reply_out);
 }
 
 static int32_t croft_wit_wasi_dispatch_io_streams_splice(
@@ -1174,9 +1720,25 @@ static int32_t croft_wit_wasi_dispatch_io_streams_splice(
     const SapWitIoOutputStreamSplice* payload,
     SapWitIoStreamsReply* reply_out)
 {
-    (void)ctx;
-    (void)payload;
-    return croft_wit_wasi_io_streams_reply_splice_closed(reply_out, 0u);
+    croft_wit_wasi_machine_runtime* runtime = (croft_wit_wasi_machine_runtime*)ctx;
+    croft_wit_wasi_output_stream_slot* output;
+    croft_wit_wasi_input_stream_slot* input;
+    uint64_t amount = 0u;
+    int rc;
+
+    if (!runtime || !payload) {
+        return ERR_INVALID;
+    }
+    output = croft_wit_wasi_output_stream_lookup(runtime, payload->output_stream);
+    input = croft_wit_wasi_input_stream_lookup(runtime, payload->src);
+    if (!output || !input) {
+        return croft_wit_wasi_io_streams_reply_splice_closed(reply_out, 0u);
+    }
+    rc = croft_wit_wasi_output_stream_splice_bytes(runtime, output, input, payload->len, &amount);
+    if (rc != ERR_OK) {
+        return croft_wit_wasi_io_streams_reply_splice_closed(reply_out, 0u);
+    }
+    return croft_wit_wasi_io_streams_reply_splice_ok(reply_out, 0u, amount);
 }
 
 static int32_t croft_wit_wasi_dispatch_io_streams_blocking_splice(
@@ -1184,9 +1746,25 @@ static int32_t croft_wit_wasi_dispatch_io_streams_blocking_splice(
     const SapWitIoOutputStreamBlockingSplice* payload,
     SapWitIoStreamsReply* reply_out)
 {
-    (void)ctx;
-    (void)payload;
-    return croft_wit_wasi_io_streams_reply_splice_closed(reply_out, 1u);
+    croft_wit_wasi_machine_runtime* runtime = (croft_wit_wasi_machine_runtime*)ctx;
+    croft_wit_wasi_output_stream_slot* output;
+    croft_wit_wasi_input_stream_slot* input;
+    uint64_t amount = 0u;
+    int rc;
+
+    if (!runtime || !payload) {
+        return ERR_INVALID;
+    }
+    output = croft_wit_wasi_output_stream_lookup(runtime, payload->output_stream);
+    input = croft_wit_wasi_input_stream_lookup(runtime, payload->src);
+    if (!output || !input) {
+        return croft_wit_wasi_io_streams_reply_splice_closed(reply_out, 1u);
+    }
+    rc = croft_wit_wasi_output_stream_splice_bytes(runtime, output, input, payload->len, &amount);
+    if (rc != ERR_OK) {
+        return croft_wit_wasi_io_streams_reply_splice_closed(reply_out, 1u);
+    }
+    return croft_wit_wasi_io_streams_reply_splice_ok(reply_out, 1u, amount);
 }
 
 static int32_t croft_wit_wasi_dispatch_io_ready(void* ctx,
@@ -1599,6 +2177,169 @@ static croft_wit_wasi_descriptor_slot* croft_wit_wasi_fs_descriptor_lookup(
     return &runtime->descriptors[index];
 }
 
+static int croft_wit_wasi_input_streams_reserve(croft_wit_wasi_machine_runtime* runtime,
+                                                size_t needed)
+{
+    croft_wit_wasi_input_stream_slot* next_slots;
+    size_t next_cap;
+
+    if (!runtime) {
+        return ERR_INVALID;
+    }
+    if (runtime->input_stream_cap >= needed) {
+        return ERR_OK;
+    }
+
+    next_cap = runtime->input_stream_cap ? runtime->input_stream_cap * 2u : 4u;
+    while (next_cap < needed) {
+        next_cap *= 2u;
+    }
+
+    next_slots = (croft_wit_wasi_input_stream_slot*)realloc(runtime->input_streams,
+                                                            next_cap * sizeof(*next_slots));
+    if (!next_slots) {
+        return ERR_OOM;
+    }
+    memset(next_slots + runtime->input_stream_cap,
+           0,
+           (next_cap - runtime->input_stream_cap) * sizeof(*next_slots));
+    runtime->input_streams = next_slots;
+    runtime->input_stream_cap = next_cap;
+    return ERR_OK;
+}
+
+static int croft_wit_wasi_input_stream_insert(croft_wit_wasi_machine_runtime* runtime,
+                                              uint32_t descriptor_handle,
+                                              uint64_t offset,
+                                              uint32_t* handle_out)
+{
+    size_t i;
+    int rc;
+
+    if (!runtime || !handle_out || descriptor_handle == 0u) {
+        return ERR_INVALID;
+    }
+    for (i = 0u; i < runtime->input_stream_count; i++) {
+        if (!runtime->input_streams[i].live) {
+            runtime->input_streams[i].live = 1u;
+            runtime->input_streams[i].descriptor_handle = descriptor_handle;
+            runtime->input_streams[i].offset = offset;
+            *handle_out = (uint32_t)(i + 1u);
+            return ERR_OK;
+        }
+    }
+
+    rc = croft_wit_wasi_input_streams_reserve(runtime, runtime->input_stream_count + 1u);
+    if (rc != ERR_OK) {
+        return rc;
+    }
+    runtime->input_streams[runtime->input_stream_count].live = 1u;
+    runtime->input_streams[runtime->input_stream_count].descriptor_handle = descriptor_handle;
+    runtime->input_streams[runtime->input_stream_count].offset = offset;
+    runtime->input_stream_count++;
+    *handle_out = (uint32_t)runtime->input_stream_count;
+    return ERR_OK;
+}
+
+static croft_wit_wasi_input_stream_slot* croft_wit_wasi_input_stream_lookup(
+    croft_wit_wasi_machine_runtime* runtime,
+    uint32_t handle)
+{
+    size_t index;
+
+    if (!runtime || handle == 0u) {
+        return NULL;
+    }
+    index = (size_t)handle - 1u;
+    if (index >= runtime->input_stream_count || !runtime->input_streams[index].live) {
+        return NULL;
+    }
+    return &runtime->input_streams[index];
+}
+
+static int croft_wit_wasi_output_streams_reserve(croft_wit_wasi_machine_runtime* runtime,
+                                                 size_t needed)
+{
+    croft_wit_wasi_output_stream_slot* next_slots;
+    size_t next_cap;
+
+    if (!runtime) {
+        return ERR_INVALID;
+    }
+    if (runtime->output_stream_cap >= needed) {
+        return ERR_OK;
+    }
+
+    next_cap = runtime->output_stream_cap ? runtime->output_stream_cap * 2u : 4u;
+    while (next_cap < needed) {
+        next_cap *= 2u;
+    }
+
+    next_slots = (croft_wit_wasi_output_stream_slot*)realloc(runtime->output_streams,
+                                                             next_cap * sizeof(*next_slots));
+    if (!next_slots) {
+        return ERR_OOM;
+    }
+    memset(next_slots + runtime->output_stream_cap,
+           0,
+           (next_cap - runtime->output_stream_cap) * sizeof(*next_slots));
+    runtime->output_streams = next_slots;
+    runtime->output_stream_cap = next_cap;
+    return ERR_OK;
+}
+
+static int croft_wit_wasi_output_stream_insert(croft_wit_wasi_machine_runtime* runtime,
+                                               uint32_t descriptor_handle,
+                                               uint64_t offset,
+                                               uint8_t append,
+                                               uint32_t* handle_out)
+{
+    size_t i;
+    int rc;
+
+    if (!runtime || !handle_out || descriptor_handle == 0u) {
+        return ERR_INVALID;
+    }
+    for (i = 0u; i < runtime->output_stream_count; i++) {
+        if (!runtime->output_streams[i].live) {
+            runtime->output_streams[i].live = 1u;
+            runtime->output_streams[i].descriptor_handle = descriptor_handle;
+            runtime->output_streams[i].offset = offset;
+            runtime->output_streams[i].append = append;
+            *handle_out = (uint32_t)(i + 1u);
+            return ERR_OK;
+        }
+    }
+
+    rc = croft_wit_wasi_output_streams_reserve(runtime, runtime->output_stream_count + 1u);
+    if (rc != ERR_OK) {
+        return rc;
+    }
+    runtime->output_streams[runtime->output_stream_count].live = 1u;
+    runtime->output_streams[runtime->output_stream_count].descriptor_handle = descriptor_handle;
+    runtime->output_streams[runtime->output_stream_count].offset = offset;
+    runtime->output_streams[runtime->output_stream_count].append = append;
+    runtime->output_stream_count++;
+    *handle_out = (uint32_t)runtime->output_stream_count;
+    return ERR_OK;
+}
+
+static croft_wit_wasi_output_stream_slot* croft_wit_wasi_output_stream_lookup(
+    croft_wit_wasi_machine_runtime* runtime,
+    uint32_t handle)
+{
+    size_t index;
+
+    if (!runtime || handle == 0u) {
+        return NULL;
+    }
+    index = (size_t)handle - 1u;
+    if (index >= runtime->output_stream_count || !runtime->output_streams[index].live) {
+        return NULL;
+    }
+    return &runtime->output_streams[index];
+}
+
 static int croft_wit_wasi_fs_directory_streams_reserve(croft_wit_wasi_machine_runtime* runtime,
                                                        size_t needed)
 {
@@ -1903,6 +2644,15 @@ static void croft_wit_wasi_fs_types_reply_input_stream_err(SapWitFilesystemTypes
     reply_out->val.input_stream.v_val.err.v = error_code;
 }
 
+static void croft_wit_wasi_fs_types_reply_input_stream_ok(SapWitFilesystemTypesReply* reply_out,
+                                                          uint32_t handle)
+{
+    sap_wit_zero_filesystem_types_reply(reply_out);
+    reply_out->case_tag = SAP_WIT_FILESYSTEM_TYPES_REPLY_INPUT_STREAM;
+    reply_out->val.input_stream.is_v_ok = 1u;
+    reply_out->val.input_stream.v_val.ok.v = (SapWitFilesystemInputStreamResource)handle;
+}
+
 static void croft_wit_wasi_fs_types_reply_output_stream_err(SapWitFilesystemTypesReply* reply_out,
                                                             uint8_t error_code)
 {
@@ -1910,6 +2660,15 @@ static void croft_wit_wasi_fs_types_reply_output_stream_err(SapWitFilesystemType
     reply_out->case_tag = SAP_WIT_FILESYSTEM_TYPES_REPLY_OUTPUT_STREAM;
     reply_out->val.output_stream.is_v_ok = 0u;
     reply_out->val.output_stream.v_val.err.v = error_code;
+}
+
+static void croft_wit_wasi_fs_types_reply_output_stream_ok(SapWitFilesystemTypesReply* reply_out,
+                                                           uint32_t handle)
+{
+    sap_wit_zero_filesystem_types_reply(reply_out);
+    reply_out->case_tag = SAP_WIT_FILESYSTEM_TYPES_REPLY_OUTPUT_STREAM;
+    reply_out->val.output_stream.is_v_ok = 1u;
+    reply_out->val.output_stream.v_val.ok.v = (SapWitFilesystemOutputStreamResource)handle;
 }
 
 static void croft_wit_wasi_fs_types_reply_get_flags_ok(SapWitFilesystemTypesReply* reply_out,
@@ -2202,10 +2961,31 @@ static int32_t croft_wit_wasi_dispatch_fs_read_via_stream(
     const SapWitFilesystemDescriptorReadViaStream* payload,
     SapWitFilesystemTypesReply* reply_out)
 {
-    (void)ctx;
-    (void)payload;
-    croft_wit_wasi_fs_types_reply_input_stream_err(reply_out,
-                                                   SAP_WIT_FILESYSTEM_ERROR_CODE_UNSUPPORTED);
+    croft_wit_wasi_machine_runtime* runtime = (croft_wit_wasi_machine_runtime*)ctx;
+    croft_wit_wasi_descriptor_slot* descriptor;
+    uint32_t handle = 0u;
+    int rc;
+
+    if (!runtime || !payload || !reply_out) {
+        return ERR_INVALID;
+    }
+    descriptor = croft_wit_wasi_fs_descriptor_lookup(runtime, payload->descriptor);
+    if (!descriptor) {
+        croft_wit_wasi_fs_types_reply_input_stream_err(reply_out,
+                                                       SAP_WIT_FILESYSTEM_ERROR_CODE_BAD_DESCRIPTOR);
+        return ERR_OK;
+    }
+    if (descriptor->is_directory
+        || (descriptor->descriptor_flags & SAP_WIT_FILESYSTEM_DESCRIPTOR_FLAGS_READ) == 0u) {
+        croft_wit_wasi_fs_types_reply_input_stream_err(reply_out,
+                                                       SAP_WIT_FILESYSTEM_ERROR_CODE_BAD_DESCRIPTOR);
+        return ERR_OK;
+    }
+    rc = croft_wit_wasi_input_stream_insert(runtime, payload->descriptor, payload->offset, &handle);
+    if (rc != ERR_OK) {
+        return rc;
+    }
+    croft_wit_wasi_fs_types_reply_input_stream_ok(reply_out, handle);
     return ERR_OK;
 }
 
@@ -2214,10 +2994,37 @@ static int32_t croft_wit_wasi_dispatch_fs_write_via_stream(
     const SapWitFilesystemDescriptorWriteViaStream* payload,
     SapWitFilesystemTypesReply* reply_out)
 {
-    (void)ctx;
-    (void)payload;
-    croft_wit_wasi_fs_types_reply_output_stream_err(reply_out,
-                                                    SAP_WIT_FILESYSTEM_ERROR_CODE_UNSUPPORTED);
+    croft_wit_wasi_machine_runtime* runtime = (croft_wit_wasi_machine_runtime*)ctx;
+    croft_wit_wasi_descriptor_slot* descriptor;
+    uint32_t handle = 0u;
+    int rc;
+
+    if (!runtime || !payload || !reply_out) {
+        return ERR_INVALID;
+    }
+    descriptor = croft_wit_wasi_fs_descriptor_lookup(runtime, payload->descriptor);
+    if (!descriptor) {
+        croft_wit_wasi_fs_types_reply_output_stream_err(
+            reply_out,
+            SAP_WIT_FILESYSTEM_ERROR_CODE_BAD_DESCRIPTOR);
+        return ERR_OK;
+    }
+    if (descriptor->is_directory
+        || (descriptor->descriptor_flags & SAP_WIT_FILESYSTEM_DESCRIPTOR_FLAGS_WRITE) == 0u) {
+        croft_wit_wasi_fs_types_reply_output_stream_err(
+            reply_out,
+            SAP_WIT_FILESYSTEM_ERROR_CODE_BAD_DESCRIPTOR);
+        return ERR_OK;
+    }
+    rc = croft_wit_wasi_output_stream_insert(runtime,
+                                             payload->descriptor,
+                                             payload->offset,
+                                             0u,
+                                             &handle);
+    if (rc != ERR_OK) {
+        return rc;
+    }
+    croft_wit_wasi_fs_types_reply_output_stream_ok(reply_out, handle);
     return ERR_OK;
 }
 
@@ -2226,10 +3033,33 @@ static int32_t croft_wit_wasi_dispatch_fs_append_via_stream(
     const SapWitFilesystemDescriptorAppendViaStream* payload,
     SapWitFilesystemTypesReply* reply_out)
 {
-    (void)ctx;
-    (void)payload;
-    croft_wit_wasi_fs_types_reply_output_stream_err(reply_out,
-                                                    SAP_WIT_FILESYSTEM_ERROR_CODE_UNSUPPORTED);
+    croft_wit_wasi_machine_runtime* runtime = (croft_wit_wasi_machine_runtime*)ctx;
+    croft_wit_wasi_descriptor_slot* descriptor;
+    uint32_t handle = 0u;
+    int rc;
+
+    if (!runtime || !payload || !reply_out) {
+        return ERR_INVALID;
+    }
+    descriptor = croft_wit_wasi_fs_descriptor_lookup(runtime, payload->descriptor);
+    if (!descriptor) {
+        croft_wit_wasi_fs_types_reply_output_stream_err(
+            reply_out,
+            SAP_WIT_FILESYSTEM_ERROR_CODE_BAD_DESCRIPTOR);
+        return ERR_OK;
+    }
+    if (descriptor->is_directory
+        || (descriptor->descriptor_flags & SAP_WIT_FILESYSTEM_DESCRIPTOR_FLAGS_WRITE) == 0u) {
+        croft_wit_wasi_fs_types_reply_output_stream_err(
+            reply_out,
+            SAP_WIT_FILESYSTEM_ERROR_CODE_BAD_DESCRIPTOR);
+        return ERR_OK;
+    }
+    rc = croft_wit_wasi_output_stream_insert(runtime, payload->descriptor, 0u, 1u, &handle);
+    if (rc != ERR_OK) {
+        return rc;
+    }
+    croft_wit_wasi_fs_types_reply_output_stream_ok(reply_out, handle);
     return ERR_OK;
 }
 
@@ -3539,6 +4369,8 @@ void croft_wit_wasi_machine_runtime_destroy(croft_wit_wasi_machine_runtime* runt
     free(runtime->initial_cwd);
     free(runtime->pollables);
     free(runtime->descriptors);
+    free(runtime->input_streams);
+    free(runtime->output_streams);
     free(runtime->directory_streams);
     free(runtime->preopens);
     free(runtime);
