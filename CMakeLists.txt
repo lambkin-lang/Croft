@@ -2834,6 +2834,13 @@ if(CROFT_BUILD_TESTS)
         if(test_name STREQUAL "test_wit_wasi_machine_runtime_smoke")
             target_link_libraries(${test_name} PRIVATE croft_wit_wasi_machine_runtime)
         endif()
+        if(test_name STREQUAL "test_wit_croft_wasm_guest_smoke")
+            target_link_libraries(${test_name} PRIVATE
+                croft_wit_world_runtime
+                croft_wit_wasi_cli_command
+                croft_wit_wasi_random_world
+            )
+        endif()
         target_compile_definitions(${test_name} PRIVATE SAPLING_HAMT_TESTING)
         if(test_name STREQUAL "test_wit_thatch_codegen")
             add_dependencies(${test_name} test_wit_schema_gen)
@@ -2871,6 +2878,13 @@ if(CROFT_BUILD_TESTS)
                 wasi_io_world_wit_schema_gen
                 wasi_clocks_world_wit_schema_gen
                 wasi_filesystem_world_wit_schema_gen
+            )
+            target_include_directories(${test_name} PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
+        endif()
+        if(test_name STREQUAL "test_wit_croft_wasm_guest_smoke")
+            add_dependencies(${test_name}
+                wasi_cli_command_wit_schema_gen
+                wasi_random_world_wit_schema_gen
             )
             target_include_directories(${test_name} PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
         endif()
