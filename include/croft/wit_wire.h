@@ -115,6 +115,8 @@ typedef struct {
     size_t                     ctx_offset;
     size_t                     ops_offset;
     SapWitWorldEndpointReadFn  read_command;
+    SapWitWorldEndpointWriteFn write_command;
+    SapWitWorldEndpointReadFn  read_reply;
     SapWitWorldEndpointWriteFn write_reply;
     SapWitWorldEndpointDisposeFn dispose_reply;
     SapWitWorldEndpointInvokeFn invoke;

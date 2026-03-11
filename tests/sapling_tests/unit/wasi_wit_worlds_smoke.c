@@ -164,9 +164,14 @@ int main(void)
     SapWitCliEnvironmentCommand cli_environment_command = {0};
     SapWitCliEnvironmentReply cli_environment_reply = {0};
     SapWitCliEnvironmentReply cli_environment_reply_bytes = {0};
+    SapWitCliEnvironmentReply cli_environment_reply_guest = {0};
     SapWitCliRunCommand cli_run_command = {0};
     SapWitCliRunReply cli_run_reply = {0};
     SapWitRandomReply random_reply_bytes = {0};
+    SapWitRandomReply random_reply_guest = {0};
+    SapWitGuestEndpointSet guest_sets[2] = {0};
+    SapWitGuestLoopbackContext guest_loopback = {0};
+    SapWitGuestTransport guest_transport = {0};
     ThatchRegion region = {0};
     ThatchRegion view = {0};
     ThatchCursor cursor = 0u;
@@ -429,6 +434,16 @@ int main(void)
                      sap_wit_world_endpoint_ctx(&cli_exports, cli_run_endpoint),
                      &cli_run_calls);
 
+    guest_sets[0].endpoints = sap_wit_random_imports_import_endpoints;
+    guest_sets[0].endpoint_count = sap_wit_random_imports_import_endpoints_count;
+    guest_sets[0].bindings = &random_imports;
+    guest_sets[1].endpoints = sap_wit_cli_command_import_endpoints;
+    guest_sets[1].endpoint_count = sap_wit_cli_command_import_endpoints_count;
+    guest_sets[1].bindings = &cli_imports;
+    guest_loopback.sets = guest_sets;
+    guest_loopback.set_count = 2u;
+    sap_wit_guest_transport_init(&guest_transport, &guest_loopback, sap_wit_guest_loopback_invoke);
+
     ok &= expect_u32("invoke random endpoint",
                      (uint32_t)sap_wit_world_endpoint_invoke(random_endpoint,
                                                              &random_imports,
@@ -452,6 +467,16 @@ int main(void)
                                                              &cli_exports,
                                                              &cli_run_command,
                                                              &cli_run_reply),
+                     0u);
+    ok &= expect_u32("invoke random guest stub",
+                     (uint32_t)sap_wit_guest_random_imports_import_random(&guest_transport,
+                                                                         &random_command,
+                                                                         &random_reply_guest),
+                     0u);
+    ok &= expect_u32("invoke cli guest stub",
+                     (uint32_t)sap_wit_guest_cli_command_import_environment(&guest_transport,
+                                                                           &cli_environment_command,
+                                                                           &cli_environment_reply_guest),
                      0u);
 
     init_writable_region(&region, random_command_bytes, (uint32_t)sizeof(random_command_bytes));
@@ -507,10 +532,6 @@ int main(void)
                      0u);
     ok &= expect_u32("cli reply bytes cursor", cursor, cli_reply_len);
 
-    ok &= expect_u32("random calls", random_calls, 2u);
-    ok &= expect_u32("clocks calls", clocks_calls, 1u);
-    ok &= expect_u32("cli environment calls", cli_environment_calls, 2u);
-    ok &= expect_u32("cli run calls", cli_run_calls, 1u);
     ok &= expect_u32("random reply case",
                      random_reply.case_tag,
                      SAP_WIT_RANDOM_REPLY_GET_RANDOM_U64);
@@ -528,6 +549,9 @@ int main(void)
     ok &= expect_u32("cli environment reply case",
                      cli_environment_reply.case_tag,
                      SAP_WIT_CLI_ENVIRONMENT_REPLY_GET_ARGUMENTS);
+    ok &= expect_u32("cli environment guest reply case",
+                     cli_environment_reply_guest.case_tag,
+                     SAP_WIT_CLI_ENVIRONMENT_REPLY_GET_ARGUMENTS);
     ok &= expect_u32("cli environment reply bytes case",
                      cli_environment_reply_bytes.case_tag,
                      SAP_WIT_CLI_ENVIRONMENT_REPLY_GET_ARGUMENTS);
@@ -535,6 +559,17 @@ int main(void)
                      cli_run_reply.case_tag,
                      SAP_WIT_CLI_RUN_REPLY_STATUS);
     ok &= expect_u32("cli run reply ok", cli_run_reply.val.status.is_v_ok, 1u);
+    ok &= expect_u32("random guest reply case",
+                     random_reply_guest.case_tag,
+                     SAP_WIT_RANDOM_REPLY_GET_RANDOM_U64);
+    ok &= expect_u32("random guest reply value",
+                     (uint32_t)random_reply_guest.val.get_random_u64,
+                     77u);
+    ok &= expect_u32("random calls", random_calls, 3u);
+    ok &= expect_u32("clocks calls", clocks_calls, 1u);
+    ok &= expect_u32("cli environment calls", cli_environment_calls, 3u);
+    ok &= expect_u32("cli run calls", cli_run_calls, 1u);
 
+    sap_wit_guest_transport_dispose(&guest_transport);
     return ok ? 0 : 1;
 }

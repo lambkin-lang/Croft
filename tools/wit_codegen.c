@@ -5949,6 +5949,48 @@ static void wit_world_binding_call_name(const WitRegistry *reg,
     }
 }
 
+static void wit_world_guest_call_name(const WitRegistry *reg,
+                                      const char *package_full,
+                                      const char *world_name,
+                                      const char *direction,
+                                      const char *item_name,
+                                      char *out,
+                                      int n)
+{
+    char package_snake[MAX_NAME];
+    char world_display[MAX_SYMBOL];
+    char world_snake[MAX_SYMBOL];
+    char item_snake[MAX_SYMBOL];
+
+    if (!out || n <= 0) return;
+    out[0] = '\0';
+
+    wit_package_ident_from_full(package_full,
+                                wit_name_to_snake_ident,
+                                package_snake,
+                                (int)sizeof(package_snake));
+    wit_world_display_name(reg, package_full, world_name, world_display, (int)sizeof(world_display));
+    wit_name_to_snake_ident(world_display, world_snake, (int)sizeof(world_snake));
+    wit_name_to_snake_ident(item_name ? item_name : "", item_snake, (int)sizeof(item_snake));
+
+    if (package_snake[0] != '\0') {
+        snprintf(out,
+                 n,
+                 "sap_wit_guest_%s_%s_%s_%s",
+                 package_snake,
+                 world_snake[0] != '\0' ? world_snake : "world",
+                 direction ? direction : "bind",
+                 item_snake[0] != '\0' ? item_snake : "item");
+    } else {
+        snprintf(out,
+                 n,
+                 "sap_wit_guest_%s_%s_%s",
+                 world_snake[0] != '\0' ? world_snake : "world",
+                 direction ? direction : "bind",
+                 item_snake[0] != '\0' ? item_snake : "item");
+    }
+}
+
 static void wit_world_endpoint_adapter_name(const WitRegistry *reg,
                                             const char *package_full,
                                             const char *world_name,
@@ -6598,6 +6640,7 @@ static void emit_header(FILE *out, const WitRegistry *reg,
     fprintf(out, "#include <stdint.h>\n");
     fprintf(out, "#include <stddef.h>\n");
     fprintf(out, "#include \"croft/wit_wire.h\"\n");
+    fprintf(out, "#include \"croft/wit_guest_runtime.h\"\n");
     fprintf(out, "#include \"sapling/thatch.h\"\n");
     fprintf(out, "#include \"sapling/err.h\"\n\n");
 
@@ -6908,6 +6951,7 @@ static void emit_header(FILE *out, const WitRegistry *reg,
                 char command_type[MAX_NAME * 2];
                 char reply_type[MAX_NAME * 2];
                 char wrapper_name[MAX_NAME * 2];
+                char guest_name[MAX_NAME * 2];
 
                 wit_type_c_typename(reg,
                                     wit_variant_symbol_name(imports[j].command_variant),
@@ -6924,10 +6968,22 @@ static void emit_header(FILE *out, const WitRegistry *reg,
                                             imports[j].item->name,
                                             wrapper_name,
                                             (int)sizeof(wrapper_name));
+                wit_world_guest_call_name(reg,
+                                          reg->worlds[i].package_full,
+                                          reg->worlds[i].name,
+                                          "import",
+                                          imports[j].item->name,
+                                          guest_name,
+                                          (int)sizeof(guest_name));
                 fprintf(out,
                         "int32_t %s(const %s *bindings, const %s *command, %s *reply_out);\n",
                         wrapper_name,
                         imports_type,
+                        command_type,
+                        reply_type);
+                fprintf(out,
+                        "int32_t %s(SapWitGuestTransport *transport, const %s *command, %s *reply_out);\n",
+                        guest_name,
                         command_type,
                         reply_type);
             }
@@ -8317,9 +8373,13 @@ static void emit_source(FILE *out, const WitRegistry *reg,
                 char wrapper_name[MAX_NAME * 2];
                 char adapter_name[MAX_NAME * 2];
                 char read_adapter_name[MAX_NAME * 3];
+                char write_command_adapter_name[MAX_NAME * 3];
+                char read_reply_adapter_name[MAX_NAME * 3];
                 char write_adapter_name[MAX_NAME * 3];
                 char dispose_adapter_name[MAX_NAME * 3];
                 char command_reader[MAX_NAME * 2];
+                char command_writer[MAX_NAME * 2];
+                char reply_reader[MAX_NAME * 2];
                 char reply_writer[MAX_NAME * 2];
                 char reply_dispose[MAX_NAME * 2];
                 char field_name[MAX_NAME];
@@ -8355,6 +8415,14 @@ static void emit_source(FILE *out, const WitRegistry *reg,
                                 command_reader,
                                 (int)sizeof(command_reader));
                 wit_writer_name(reg,
+                                wit_variant_symbol_name(imports[j].command_variant),
+                                command_writer,
+                                (int)sizeof(command_writer));
+                wit_reader_name(reg,
+                                wit_variant_symbol_name(imports[j].reply_variant),
+                                reply_reader,
+                                (int)sizeof(reply_reader));
+                wit_writer_name(reg,
                                 wit_variant_symbol_name(imports[j].reply_variant),
                                 reply_writer,
                                 (int)sizeof(reply_writer));
@@ -8365,6 +8433,14 @@ static void emit_source(FILE *out, const WitRegistry *reg,
                 snprintf(read_adapter_name,
                          sizeof(read_adapter_name),
                          "%s_read_command",
+                         adapter_name);
+                snprintf(write_command_adapter_name,
+                         sizeof(write_command_adapter_name),
+                         "%s_write_command",
+                         adapter_name);
+                snprintf(read_reply_adapter_name,
+                         sizeof(read_reply_adapter_name),
+                         "%s_read_reply",
                          adapter_name);
                 snprintf(write_adapter_name,
                          sizeof(write_adapter_name),
@@ -8416,6 +8492,24 @@ static void emit_source(FILE *out, const WitRegistry *reg,
 
                 fprintf(out,
                         "static int %s(ThatchRegion *region, const void *value)\n{\n",
+                        write_command_adapter_name);
+                fprintf(out,
+                        "    return %s(region, (const %s *)value);\n",
+                        command_writer,
+                        command_type);
+                fprintf(out, "}\n\n");
+
+                fprintf(out,
+                        "static int %s(const ThatchRegion *region, ThatchCursor *cursor, void *out)\n{\n",
+                        read_reply_adapter_name);
+                fprintf(out,
+                        "    return %s(region, cursor, (%s *)out);\n",
+                        reply_reader,
+                        reply_type);
+                fprintf(out, "}\n\n");
+
+                fprintf(out,
+                        "static int %s(ThatchRegion *region, const void *value)\n{\n",
                         write_adapter_name);
                 fprintf(out,
                         "    return %s(region, (const %s *)value);\n",
@@ -8456,6 +8550,8 @@ static void emit_source(FILE *out, const WitRegistry *reg,
                     char ops_type[MAX_NAME * 2];
                     char adapter_name[MAX_NAME * 2];
                     char read_adapter_name[MAX_NAME * 3];
+                    char write_command_adapter_name[MAX_NAME * 3];
+                    char read_reply_adapter_name[MAX_NAME * 3];
                     char write_adapter_name[MAX_NAME * 3];
                     char dispose_adapter_name[MAX_NAME * 3];
                     char field_name[MAX_NAME];
@@ -8482,6 +8578,14 @@ static void emit_source(FILE *out, const WitRegistry *reg,
                     snprintf(read_adapter_name,
                              sizeof(read_adapter_name),
                              "%s_read_command",
+                             adapter_name);
+                    snprintf(write_command_adapter_name,
+                             sizeof(write_command_adapter_name),
+                             "%s_write_command",
+                             adapter_name);
+                    snprintf(read_reply_adapter_name,
+                             sizeof(read_reply_adapter_name),
+                             "%s_read_reply",
                              adapter_name);
                     snprintf(write_adapter_name,
                              sizeof(write_adapter_name),
@@ -8518,7 +8622,7 @@ static void emit_source(FILE *out, const WitRegistry *reg,
                     fprintf(out, ", ");
                     emit_c_string_literal(out, reply_type);
                     fprintf(out,
-                            ", sizeof(%s), sizeof(%s), offsetof(%s, %s_ctx), offsetof(%s, %s_ops), %s, %s, %s, %s},\n",
+                            ", sizeof(%s), sizeof(%s), offsetof(%s, %s_ctx), offsetof(%s, %s_ops), %s, %s, %s, %s, %s, %s},\n",
                             command_type,
                             reply_type,
                             imports_type,
@@ -8526,6 +8630,8 @@ static void emit_source(FILE *out, const WitRegistry *reg,
                             imports_type,
                             field_name,
                             read_adapter_name,
+                            write_command_adapter_name,
+                            read_reply_adapter_name,
                             write_adapter_name,
                             dispose_adapter_name,
                             adapter_name);
@@ -8535,6 +8641,41 @@ static void emit_source(FILE *out, const WitRegistry *reg,
                 fprintf(out, "    (uint32_t)(sizeof(%s) / sizeof(%s[0]));\n\n",
                         endpoints_symbol,
                         endpoints_symbol);
+
+                for (int j = 0; j < import_count; j++) {
+                    char command_type[MAX_NAME * 2];
+                    char reply_type[MAX_NAME * 2];
+                    char guest_name[MAX_NAME * 2];
+
+                    wit_type_c_typename(reg,
+                                        wit_variant_symbol_name(imports[j].command_variant),
+                                        command_type,
+                                        (int)sizeof(command_type));
+                    wit_type_c_typename(reg,
+                                        wit_variant_symbol_name(imports[j].reply_variant),
+                                        reply_type,
+                                        (int)sizeof(reply_type));
+                    wit_world_guest_call_name(reg,
+                                              reg->worlds[i].package_full,
+                                              reg->worlds[i].name,
+                                              "import",
+                                              imports[j].item->name,
+                                              guest_name,
+                                              (int)sizeof(guest_name));
+                    fprintf(out,
+                            "int32_t %s(SapWitGuestTransport *transport, const %s *command, %s *reply_out)\n{\n",
+                            guest_name,
+                            command_type,
+                            reply_type);
+                    fprintf(out,
+                            "    return sap_wit_guest_transport_call(transport,\n"
+                            "                                       &%s[%d],\n"
+                            "                                       command,\n"
+                            "                                       reply_out);\n",
+                            endpoints_symbol,
+                            j);
+                    fprintf(out, "}\n\n");
+                }
             }
         }
 
@@ -8552,9 +8693,13 @@ static void emit_source(FILE *out, const WitRegistry *reg,
                 char wrapper_name[MAX_NAME * 2];
                 char adapter_name[MAX_NAME * 2];
                 char read_adapter_name[MAX_NAME * 3];
+                char write_command_adapter_name[MAX_NAME * 3];
+                char read_reply_adapter_name[MAX_NAME * 3];
                 char write_adapter_name[MAX_NAME * 3];
                 char dispose_adapter_name[MAX_NAME * 3];
                 char command_reader[MAX_NAME * 2];
+                char command_writer[MAX_NAME * 2];
+                char reply_reader[MAX_NAME * 2];
                 char reply_writer[MAX_NAME * 2];
                 char reply_dispose[MAX_NAME * 2];
                 char field_name[MAX_NAME];
@@ -8590,6 +8735,14 @@ static void emit_source(FILE *out, const WitRegistry *reg,
                                 command_reader,
                                 (int)sizeof(command_reader));
                 wit_writer_name(reg,
+                                wit_variant_symbol_name(exports[j].command_variant),
+                                command_writer,
+                                (int)sizeof(command_writer));
+                wit_reader_name(reg,
+                                wit_variant_symbol_name(exports[j].reply_variant),
+                                reply_reader,
+                                (int)sizeof(reply_reader));
+                wit_writer_name(reg,
                                 wit_variant_symbol_name(exports[j].reply_variant),
                                 reply_writer,
                                 (int)sizeof(reply_writer));
@@ -8600,6 +8753,14 @@ static void emit_source(FILE *out, const WitRegistry *reg,
                 snprintf(read_adapter_name,
                          sizeof(read_adapter_name),
                          "%s_read_command",
+                         adapter_name);
+                snprintf(write_command_adapter_name,
+                         sizeof(write_command_adapter_name),
+                         "%s_write_command",
+                         adapter_name);
+                snprintf(read_reply_adapter_name,
+                         sizeof(read_reply_adapter_name),
+                         "%s_read_reply",
                          adapter_name);
                 snprintf(write_adapter_name,
                          sizeof(write_adapter_name),
@@ -8651,6 +8812,24 @@ static void emit_source(FILE *out, const WitRegistry *reg,
 
                 fprintf(out,
                         "static int %s(ThatchRegion *region, const void *value)\n{\n",
+                        write_command_adapter_name);
+                fprintf(out,
+                        "    return %s(region, (const %s *)value);\n",
+                        command_writer,
+                        command_type);
+                fprintf(out, "}\n\n");
+
+                fprintf(out,
+                        "static int %s(const ThatchRegion *region, ThatchCursor *cursor, void *out)\n{\n",
+                        read_reply_adapter_name);
+                fprintf(out,
+                        "    return %s(region, cursor, (%s *)out);\n",
+                        reply_reader,
+                        reply_type);
+                fprintf(out, "}\n\n");
+
+                fprintf(out,
+                        "static int %s(ThatchRegion *region, const void *value)\n{\n",
                         write_adapter_name);
                 fprintf(out,
                         "    return %s(region, (const %s *)value);\n",
@@ -8691,6 +8870,8 @@ static void emit_source(FILE *out, const WitRegistry *reg,
                     char ops_type[MAX_NAME * 2];
                     char adapter_name[MAX_NAME * 2];
                     char read_adapter_name[MAX_NAME * 3];
+                    char write_command_adapter_name[MAX_NAME * 3];
+                    char read_reply_adapter_name[MAX_NAME * 3];
                     char write_adapter_name[MAX_NAME * 3];
                     char dispose_adapter_name[MAX_NAME * 3];
                     char field_name[MAX_NAME];
@@ -8717,6 +8898,14 @@ static void emit_source(FILE *out, const WitRegistry *reg,
                     snprintf(read_adapter_name,
                              sizeof(read_adapter_name),
                              "%s_read_command",
+                             adapter_name);
+                    snprintf(write_command_adapter_name,
+                             sizeof(write_command_adapter_name),
+                             "%s_write_command",
+                             adapter_name);
+                    snprintf(read_reply_adapter_name,
+                             sizeof(read_reply_adapter_name),
+                             "%s_read_reply",
                              adapter_name);
                     snprintf(write_adapter_name,
                              sizeof(write_adapter_name),
@@ -8753,7 +8942,7 @@ static void emit_source(FILE *out, const WitRegistry *reg,
                     fprintf(out, ", ");
                     emit_c_string_literal(out, reply_type);
                     fprintf(out,
-                            ", sizeof(%s), sizeof(%s), offsetof(%s, %s_ctx), offsetof(%s, %s_ops), %s, %s, %s, %s},\n",
+                            ", sizeof(%s), sizeof(%s), offsetof(%s, %s_ctx), offsetof(%s, %s_ops), %s, %s, %s, %s, %s, %s},\n",
                             command_type,
                             reply_type,
                             exports_type,
@@ -8761,6 +8950,8 @@ static void emit_source(FILE *out, const WitRegistry *reg,
                             exports_type,
                             field_name,
                             read_adapter_name,
+                            write_command_adapter_name,
+                            read_reply_adapter_name,
                             write_adapter_name,
                             dispose_adapter_name,
                             adapter_name);
