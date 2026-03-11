@@ -4,6 +4,7 @@
 #include "croft/host_fs.h"
 #include "sapling/err.h"
 
+#include <inttypes.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,6 +18,11 @@ typedef struct {
     const void *bindings;
 } host_wasm_wit_endpoint_binding_t;
 
+typedef struct {
+    const SapWitWorldEndpointDescriptor *endpoint;
+    int32_t handle;
+} host_wasm_wit_guest_export_handle_t;
+
 struct host_wasm_ctx {
     IM3Environment env;
     IM3Runtime     runtime;
@@ -24,6 +30,11 @@ struct host_wasm_ctx {
     host_wasm_wit_endpoint_binding_t *wit_endpoints;
     uint32_t wit_endpoint_count;
     uint32_t wit_endpoint_cap;
+    host_wasm_wit_guest_export_handle_t *wit_guest_export_handles;
+    uint32_t wit_guest_export_handle_count;
+    uint32_t wit_guest_export_handle_cap;
+    uint8_t *wit_guest_reply_buffer;
+    uint32_t wit_guest_reply_capacity;
 };
 
 static int host_wasm_find_registered_endpoint(const host_wasm_ctx_t *ctx, const char *qualified_name)
@@ -78,6 +89,69 @@ static int host_wasm_reserve_endpoint_capacity(host_wasm_ctx_t *ctx, uint32_t ad
     }
     ctx->wit_endpoints = grown;
     ctx->wit_endpoint_cap = cap;
+    return ERR_OK;
+}
+
+static int host_wasm_reserve_guest_export_handle_capacity(host_wasm_ctx_t *ctx, uint32_t additional)
+{
+    host_wasm_wit_guest_export_handle_t *grown = NULL;
+    uint32_t needed;
+    uint32_t cap;
+
+    if (!ctx) {
+        return ERR_INVALID;
+    }
+    if (additional == 0u) {
+        return ERR_OK;
+    }
+    if (ctx->wit_guest_export_handle_count > UINT32_MAX - additional) {
+        return ERR_RANGE;
+    }
+    needed = ctx->wit_guest_export_handle_count + additional;
+    if (needed <= ctx->wit_guest_export_handle_cap) {
+        return ERR_OK;
+    }
+
+    cap = ctx->wit_guest_export_handle_cap ? ctx->wit_guest_export_handle_cap : 8u;
+    while (cap < needed) {
+        if (cap > UINT32_MAX / 2u) {
+            cap = needed;
+            break;
+        }
+        cap *= 2u;
+    }
+
+    grown = (host_wasm_wit_guest_export_handle_t *)realloc(
+        ctx->wit_guest_export_handles,
+        (size_t)cap * sizeof(*grown));
+    if (!grown) {
+        return ERR_OOM;
+    }
+    ctx->wit_guest_export_handles = grown;
+    ctx->wit_guest_export_handle_cap = cap;
+    return ERR_OK;
+}
+
+static int host_wasm_reserve_guest_reply_buffer(host_wasm_ctx_t *ctx, uint32_t need)
+{
+    uint8_t *grown;
+
+    if (!ctx) {
+        return ERR_INVALID;
+    }
+    if (need == 0u) {
+        need = 1u;
+    }
+    if (ctx->wit_guest_reply_capacity >= need) {
+        return ERR_OK;
+    }
+
+    grown = (uint8_t *)realloc(ctx->wit_guest_reply_buffer, need);
+    if (!grown) {
+        return ERR_OOM;
+    }
+    ctx->wit_guest_reply_buffer = grown;
+    ctx->wit_guest_reply_capacity = need;
     return ERR_OK;
 }
 
@@ -248,6 +322,19 @@ host_wasm_ctx_t *host_wasm_create(const uint8_t *wasm_bytes, uint32_t wasm_len, 
         goto fail;
     }
 
+    {
+        IM3Function ctors = NULL;
+
+        res = m3_FindFunction(&ctors, ctx->runtime, "__wasm_call_ctors");
+        if (!res) {
+            res = m3_CallV(ctors);
+            if (res) {
+                host_log(CROFT_LOG_ERROR, res, (uint32_t)strlen(res));
+                goto fail;
+            }
+        }
+    }
+
     return ctx;
 
 fail:
@@ -258,6 +345,8 @@ fail:
 void host_wasm_destroy(host_wasm_ctx_t *ctx) {
     if (!ctx) return;
     free(ctx->wit_endpoints);
+    free(ctx->wit_guest_export_handles);
+    free(ctx->wit_guest_reply_buffer);
     if (ctx->runtime) m3_FreeRuntime(ctx->runtime);
     if (ctx->env) m3_FreeEnvironment(ctx->env);
     free(ctx);
@@ -271,14 +360,22 @@ uint8_t *host_wasm_get_memory(host_wasm_ctx_t *ctx, uint32_t *out_size) {
     return mem;
 }
 
-int32_t host_wasm_call(host_wasm_ctx_t *ctx, const char *func_name, int argc, const char *argv[]) {
-    if (!ctx || !ctx->runtime || !func_name) return -1;
-    
+static int host_wasm_invoke_argv(host_wasm_ctx_t *ctx,
+                                 const char *func_name,
+                                 int argc,
+                                 const char *argv[],
+                                 int32_t *out_result)
+{
     IM3Function func;
-    M3Result res = m3_FindFunction(&func, ctx->runtime, func_name);
+    M3Result res;
+
+    if (!ctx || !ctx->runtime || !func_name) {
+        return ERR_INVALID;
+    }
+
+    res = m3_FindFunction(&func, ctx->runtime, func_name);
     if (res) {
-        /* Silently fail if exported func missing, or log if desired */
-        return -1;
+        return ERR_NOT_FOUND;
     }
 
     res = m3_CallArgv(func, (uint32_t)argc, argv);
@@ -290,18 +387,54 @@ int32_t host_wasm_call(host_wasm_ctx_t *ctx, const char *func_name, int argc, co
         if (info.message) {
             host_log(CROFT_LOG_ERROR, info.message, (uint32_t)strlen(info.message));
         }
-        return -1;
+        return ERR_INVALID;
     }
 
-    /* Grab return value if it's an int32 */
+    if (out_result) {
+        *out_result = 0;
+    }
     if (m3_GetRetCount(func) == 1 && m3_GetRetType(func, 0) == c_m3Type_i32) {
         int32_t ret = 0;
         const void *ret_ptrs[] = { &ret };
+
         m3_GetResults(func, 1, ret_ptrs);
-        return ret;
+        if (out_result) {
+            *out_result = ret;
+        }
     }
 
-    return 0;
+    return ERR_OK;
+}
+
+static int host_wasm_invoke_i32(host_wasm_ctx_t *ctx,
+                                const char *func_name,
+                                uint32_t argc,
+                                const int32_t *args,
+                                int32_t *out_result)
+{
+    const char *argv[8];
+    char storage[8][16];
+    uint32_t i;
+
+    if (argc > (uint32_t)(sizeof(argv) / sizeof(argv[0]))) {
+        return ERR_RANGE;
+    }
+    for (i = 0u; i < argc; i++) {
+        snprintf(storage[i], sizeof(storage[i]), "%" PRId32, args ? args[i] : 0);
+        argv[i] = storage[i];
+    }
+    return host_wasm_invoke_argv(ctx,
+                                 func_name,
+                                 (int)argc,
+                                 argc > 0u ? argv : NULL,
+                                 out_result);
+}
+
+int32_t host_wasm_call(host_wasm_ctx_t *ctx, const char *func_name, int argc, const char *argv[]) {
+    int32_t result = 0;
+    int rc = host_wasm_invoke_argv(ctx, func_name, argc, argv, &result);
+
+    return rc == ERR_OK ? result : -1;
 }
 
 int host_wasm_register_wit_world_endpoints(host_wasm_ctx_t *ctx,
@@ -361,6 +494,336 @@ int host_wasm_register_wit_world_endpoints(host_wasm_ctx_t *ctx,
     }
 
     return ERR_OK;
+}
+
+static int host_wasm_guest_memory_range(host_wasm_ctx_t *ctx,
+                                        uint32_t ptr,
+                                        uint32_t len,
+                                        uint8_t **out_mem)
+{
+    uint32_t mem_size = 0u;
+    uint8_t *mem = host_wasm_get_memory(ctx, &mem_size);
+
+    if (!ctx || !out_mem) {
+        return ERR_INVALID;
+    }
+    if ((len > 0u && ptr == 0u) || !mem) {
+        return ERR_INVALID;
+    }
+    if (len > 0u && (ptr > mem_size || len > mem_size - ptr)) {
+        return ERR_RANGE;
+    }
+
+    *out_mem = mem;
+    return ERR_OK;
+}
+
+static int host_wasm_guest_alloc_buffer(host_wasm_ctx_t *ctx, uint32_t size, uint32_t *ptr_out)
+{
+    int32_t arg = (int32_t)size;
+    int32_t result = 0;
+    int rc;
+
+    if (!ctx || !ptr_out) {
+        return ERR_INVALID;
+    }
+    if (size == 0u) {
+        *ptr_out = 0u;
+        return ERR_OK;
+    }
+
+    rc = host_wasm_invoke_i32(ctx, "croft_wit_guest_alloc", 1u, &arg, &result);
+    if (rc != ERR_OK) {
+        return rc;
+    }
+    if (result <= 0) {
+        return ERR_OOM;
+    }
+
+    *ptr_out = (uint32_t)result;
+    return ERR_OK;
+}
+
+static void host_wasm_guest_free_buffer(host_wasm_ctx_t *ctx, uint32_t ptr)
+{
+    int32_t arg = (int32_t)ptr;
+    int32_t ignored = 0;
+
+    if (!ctx || ptr == 0u) {
+        return;
+    }
+    (void)host_wasm_invoke_i32(ctx, "croft_wit_guest_free", 1u, &arg, &ignored);
+}
+
+static int host_wasm_guest_copy_in(host_wasm_ctx_t *ctx,
+                                   const uint8_t *data,
+                                   uint32_t len,
+                                   uint32_t *ptr_out)
+{
+    uint8_t *mem = NULL;
+    int rc;
+
+    if (!ctx || !ptr_out || (len > 0u && !data)) {
+        return ERR_INVALID;
+    }
+    if (len == 0u) {
+        *ptr_out = 0u;
+        return ERR_OK;
+    }
+
+    rc = host_wasm_guest_alloc_buffer(ctx, len, ptr_out);
+    if (rc != ERR_OK) {
+        return rc;
+    }
+
+    rc = host_wasm_guest_memory_range(ctx, *ptr_out, len, &mem);
+    if (rc != ERR_OK) {
+        host_wasm_guest_free_buffer(ctx, *ptr_out);
+        *ptr_out = 0u;
+        return rc;
+    }
+
+    memcpy(mem + *ptr_out, data, len);
+    return ERR_OK;
+}
+
+static int32_t host_wasm_guest_find_export_handle(host_wasm_ctx_t *ctx,
+                                                  const SapWitWorldEndpointDescriptor *endpoint)
+{
+    char qualified_name[256];
+    size_t needed;
+    uint8_t *name_bytes = NULL;
+    uint32_t name_ptr = 0u;
+    int32_t args[2];
+    int32_t handle = 0;
+    uint32_t i;
+    int rc;
+
+    if (!ctx || !endpoint) {
+        return ERR_INVALID;
+    }
+
+    for (i = 0u; i < ctx->wit_guest_export_handle_count; i++) {
+        if (ctx->wit_guest_export_handles[i].endpoint == endpoint) {
+            return ctx->wit_guest_export_handles[i].handle;
+        }
+    }
+
+    needed = sap_wit_world_endpoint_name(endpoint, qualified_name, sizeof(qualified_name));
+    if (needed == 0u) {
+        return ERR_INVALID;
+    }
+
+    if (needed < sizeof(qualified_name)) {
+        name_bytes = (uint8_t *)qualified_name;
+    } else {
+        name_bytes = (uint8_t *)malloc(needed + 1u);
+        if (!name_bytes) {
+            return ERR_OOM;
+        }
+        sap_wit_world_endpoint_name(endpoint, (char *)name_bytes, needed + 1u);
+    }
+
+    rc = host_wasm_guest_copy_in(ctx, name_bytes, (uint32_t)needed, &name_ptr);
+    if (needed >= sizeof(qualified_name)) {
+        free(name_bytes);
+    }
+    if (rc != ERR_OK) {
+        return rc;
+    }
+
+    args[0] = (int32_t)name_ptr;
+    args[1] = (int32_t)needed;
+    rc = host_wasm_invoke_i32(ctx,
+                              "croft_wit_guest_find_export_endpoint",
+                              2u,
+                              args,
+                              &handle);
+    host_wasm_guest_free_buffer(ctx, name_ptr);
+    if (rc != ERR_OK) {
+        return rc;
+    }
+    if (handle <= 0) {
+        return handle < 0 ? -handle : ERR_NOT_FOUND;
+    }
+
+    rc = host_wasm_reserve_guest_export_handle_capacity(ctx, 1u);
+    if (rc != ERR_OK) {
+        return rc;
+    }
+    ctx->wit_guest_export_handles[ctx->wit_guest_export_handle_count].endpoint = endpoint;
+    ctx->wit_guest_export_handles[ctx->wit_guest_export_handle_count].handle = handle;
+    ctx->wit_guest_export_handle_count++;
+    return handle;
+}
+
+int32_t host_wasm_call_wit_export_endpoint(host_wasm_ctx_t *ctx,
+                                           const SapWitWorldEndpointDescriptor *endpoint,
+                                           const void *command,
+                                           void *reply_out)
+{
+    ThatchRegion region;
+    ThatchRegion view;
+    ThatchCursor cursor = 0u;
+    uint8_t *command_buf = NULL;
+    uint32_t command_cap = 0u;
+    uint32_t command_len = 0u;
+    uint32_t command_need;
+    uint32_t reply_need;
+    uint32_t guest_command_ptr = 0u;
+    uint32_t guest_reply_ptr = 0u;
+    uint32_t guest_reply_len_ptr = 0u;
+    uint32_t guest_reply_len = 0u;
+    uint8_t *guest_mem = NULL;
+    uint8_t *reply_data = NULL;
+    int32_t guest_handle;
+    int32_t guest_rc = ERR_INVALID;
+    int32_t args[6];
+    int rc;
+
+    if (!ctx || !endpoint || !command || !reply_out
+            || !endpoint->write_command || !endpoint->read_reply
+            || endpoint->command_size == 0u || endpoint->reply_size == 0u) {
+        return ERR_INVALID;
+    }
+
+    guest_handle = host_wasm_guest_find_export_handle(ctx, endpoint);
+    if (guest_handle <= 0) {
+        return guest_handle == 0 ? ERR_NOT_FOUND : guest_handle;
+    }
+
+    command_need = endpoint->command_size > 64u ? (uint32_t)endpoint->command_size : 64u;
+    for (;;) {
+        uint8_t *grown;
+
+        if (command_cap < command_need) {
+            grown = (uint8_t *)realloc(command_buf, command_need);
+            if (!grown) {
+                rc = ERR_OOM;
+                goto cleanup;
+            }
+            command_buf = grown;
+            command_cap = command_need;
+        }
+
+        memset(&region, 0, sizeof(region));
+        region.page_ptr = command_buf;
+        region.capacity = command_cap;
+        rc = endpoint->write_command(&region, command);
+        if (rc == ERR_FULL || rc == ERR_OOM) {
+            if (command_need >= UINT32_MAX / 2u) {
+                rc = rc == ERR_FULL ? ERR_FULL : ERR_OOM;
+                goto cleanup;
+            }
+            command_need *= 2u;
+            continue;
+        }
+        if (rc != ERR_OK) {
+            goto cleanup;
+        }
+        command_len = thatch_region_used(&region);
+        break;
+    }
+
+    rc = host_wasm_guest_copy_in(ctx, command_buf, command_len, &guest_command_ptr);
+    if (rc != ERR_OK) {
+        goto cleanup;
+    }
+
+    reply_need = endpoint->reply_size > 64u ? (uint32_t)endpoint->reply_size : 64u;
+    for (;;) {
+        rc = host_wasm_guest_alloc_buffer(ctx, reply_need, &guest_reply_ptr);
+        if (rc != ERR_OK) {
+            goto cleanup;
+        }
+        rc = host_wasm_guest_alloc_buffer(ctx, sizeof(uint32_t), &guest_reply_len_ptr);
+        if (rc != ERR_OK) {
+            goto cleanup;
+        }
+
+        rc = host_wasm_guest_memory_range(ctx, guest_reply_len_ptr, sizeof(uint32_t), &guest_mem);
+        if (rc != ERR_OK) {
+            goto cleanup;
+        }
+        memset(guest_mem + guest_reply_len_ptr, 0, sizeof(uint32_t));
+
+        args[0] = guest_handle;
+        args[1] = (int32_t)guest_command_ptr;
+        args[2] = (int32_t)command_len;
+        args[3] = (int32_t)guest_reply_ptr;
+        args[4] = (int32_t)reply_need;
+        args[5] = (int32_t)guest_reply_len_ptr;
+        rc = host_wasm_invoke_i32(ctx,
+                                  "croft_wit_guest_call_export_endpoint",
+                                  6u,
+                                  args,
+                                  &guest_rc);
+        if (rc != ERR_OK) {
+            goto cleanup;
+        }
+        if (guest_rc == ERR_FULL || guest_rc == ERR_OOM) {
+            host_wasm_guest_free_buffer(ctx, guest_reply_len_ptr);
+            host_wasm_guest_free_buffer(ctx, guest_reply_ptr);
+            guest_reply_len_ptr = 0u;
+            guest_reply_ptr = 0u;
+            if (reply_need >= UINT32_MAX / 2u) {
+                rc = guest_rc;
+                goto cleanup;
+            }
+            reply_need *= 2u;
+            continue;
+        }
+        if (guest_rc != ERR_OK) {
+            rc = guest_rc;
+            goto cleanup;
+        }
+        break;
+    }
+
+    rc = host_wasm_guest_memory_range(ctx, guest_reply_len_ptr, sizeof(uint32_t), &guest_mem);
+    if (rc != ERR_OK) {
+        goto cleanup;
+    }
+    memcpy(&guest_reply_len, guest_mem + guest_reply_len_ptr, sizeof(uint32_t));
+    if (guest_reply_len > reply_need) {
+        rc = ERR_CORRUPT;
+        goto cleanup;
+    }
+
+    rc = host_wasm_guest_memory_range(ctx, guest_reply_ptr, guest_reply_len, &guest_mem);
+    if (rc != ERR_OK) {
+        goto cleanup;
+    }
+    rc = host_wasm_reserve_guest_reply_buffer(ctx, guest_reply_len);
+    if (rc != ERR_OK) {
+        goto cleanup;
+    }
+    reply_data = ctx->wit_guest_reply_buffer;
+    if (guest_reply_len > 0u) {
+        memcpy(reply_data, guest_mem + guest_reply_ptr, guest_reply_len);
+    }
+
+    memset(reply_out, 0, endpoint->reply_size);
+    rc = thatch_region_init_readonly(&view, reply_data, guest_reply_len);
+    if (rc != ERR_OK) {
+        goto cleanup;
+    }
+    cursor = 0u;
+    rc = endpoint->read_reply(&view, &cursor, reply_out);
+    if (rc != ERR_OK) {
+        goto cleanup;
+    }
+    if (cursor != guest_reply_len) {
+        rc = ERR_CORRUPT;
+        goto cleanup;
+    }
+
+cleanup:
+    host_wasm_guest_free_buffer(ctx, guest_reply_len_ptr);
+    host_wasm_guest_free_buffer(ctx, guest_reply_ptr);
+    host_wasm_guest_free_buffer(ctx, guest_command_ptr);
+    free(command_buf);
+    return rc;
 }
 
 int host_wasm_runner_logic(void *userdata_ctx, void *host_api, const uint8_t *req,

@@ -46,6 +46,15 @@ int host_wasm_register_wit_world_endpoints(host_wasm_ctx_t *ctx,
                                            uint32_t count,
                                            const void *bindings);
 
+/*
+ * Call a guest-exported WIT world endpoint using the generated endpoint
+ * descriptor and guest-side export bridge helpers.
+ */
+int32_t host_wasm_call_wit_export_endpoint(host_wasm_ctx_t *ctx,
+                                           const SapWitWorldEndpointDescriptor *endpoint,
+                                           const void *command,
+                                           void *reply_out);
+
 /**
  * Implementation of `SapWasiGuestLogicV0` compliant callback.
  * When SapRunner executes `sap_runner_v0_worker_tick`, it invokes this function.

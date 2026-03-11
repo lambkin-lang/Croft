@@ -5991,6 +5991,40 @@ static void wit_world_guest_call_name(const WitRegistry *reg,
     }
 }
 
+static void wit_world_guest_register_name(const WitRegistry *reg,
+                                          const char *package_full,
+                                          const char *world_name,
+                                          char *out,
+                                          int n)
+{
+    char package_snake[MAX_NAME];
+    char world_display[MAX_SYMBOL];
+    char world_snake[MAX_SYMBOL];
+
+    if (!out || n <= 0) return;
+    out[0] = '\0';
+
+    wit_package_ident_from_full(package_full,
+                                wit_name_to_snake_ident,
+                                package_snake,
+                                (int)sizeof(package_snake));
+    wit_world_display_name(reg, package_full, world_name, world_display, (int)sizeof(world_display));
+    wit_name_to_snake_ident(world_display, world_snake, (int)sizeof(world_snake));
+
+    if (package_snake[0] != '\0') {
+        snprintf(out,
+                 n,
+                 "sap_wit_guest_register_%s_%s_exports",
+                 package_snake,
+                 world_snake[0] != '\0' ? world_snake : "world");
+    } else {
+        snprintf(out,
+                 n,
+                 "sap_wit_guest_register_%s_exports",
+                 world_snake[0] != '\0' ? world_snake : "world");
+    }
+}
+
 static void wit_world_endpoint_adapter_name(const WitRegistry *reg,
                                             const char *package_full,
                                             const char *world_name,
@@ -7076,6 +7110,21 @@ static void emit_header(FILE *out, const WitRegistry *reg,
                                                 (int)sizeof(endpoints_count_symbol));
                 fprintf(out, "extern const SapWitWorldEndpointDescriptor %s[];\n", endpoints_symbol);
                 fprintf(out, "extern const uint32_t %s;\n", endpoints_count_symbol);
+            }
+            {
+                char guest_register_name[MAX_NAME * 2];
+
+                wit_world_guest_register_name(reg,
+                                              reg->worlds[i].package_full,
+                                              reg->worlds[i].name,
+                                              guest_register_name,
+                                              (int)sizeof(guest_register_name));
+                fprintf(out, "#if defined(CROFT_WIT_FREESTANDING) || defined(__wasm32__)\n");
+                fprintf(out,
+                        "int32_t %s(const %s *bindings);\n",
+                        guest_register_name,
+                        exports_type);
+                fprintf(out, "#endif\n");
             }
             fprintf(out, "\n");
         }
@@ -8187,7 +8236,8 @@ static void emit_source(FILE *out, const WitRegistry *reg,
     fprintf(out, " */\n");
     fprintf(out, "#include \"%s\"\n", header_include);
     fprintf(out, "#include <stddef.h>\n");
-    fprintf(out, "#include \"croft/wit_runtime_support.h\"\n\n");
+    fprintf(out, "#include \"croft/wit_runtime_support.h\"\n");
+    fprintf(out, "#include \"croft/wit_guest_exports_runtime.h\"\n\n");
 
     fprintf(out, "#define SAP_WIT_CHECK(rc) do { if ((rc) != ERR_OK) return (rc); } while (0)\n\n");
 
@@ -8960,6 +9010,31 @@ static void emit_source(FILE *out, const WitRegistry *reg,
                 fprintf(out, "    (uint32_t)(sizeof(%s) / sizeof(%s[0]));\n\n",
                         endpoints_symbol,
                         endpoints_symbol);
+                {
+                    char guest_register_name[MAX_NAME * 2];
+
+                    wit_world_guest_register_name(reg,
+                                                  reg->worlds[i].package_full,
+                                                  reg->worlds[i].name,
+                                                  guest_register_name,
+                                                  (int)sizeof(guest_register_name));
+                    fprintf(out, "#if defined(CROFT_WIT_FREESTANDING) || defined(__wasm32__)\n");
+                    fprintf(out,
+                            "int32_t %s(const %s *bindings)\n{\n",
+                            guest_register_name,
+                            exports_type);
+                    fprintf(out, "    if (!bindings) {\n");
+                    fprintf(out, "        return ERR_INVALID;\n");
+                    fprintf(out, "    }\n");
+                    fprintf(out,
+                            "    return sap_wit_guest_exports_register(%s,\n"
+                            "                                         %s,\n"
+                            "                                         bindings);\n",
+                            endpoints_symbol,
+                            endpoints_count_symbol);
+                    fprintf(out, "}\n");
+                    fprintf(out, "#endif\n\n");
+                }
             }
         }
     }

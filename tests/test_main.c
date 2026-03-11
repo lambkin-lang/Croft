@@ -293,12 +293,22 @@ static int run_tier2_fs_tests(void) {
  * ═══════════════════════════════════════════════════════════════════ */
 
 extern void run_test_wasm_guest(int argc, char **argv);
+#ifdef CROFT_TEST_HAS_WIT_BRIDGE_WASM
 extern void run_test_wasm_wit_guest(int argc, char **argv);
+#endif
+#ifdef CROFT_TEST_HAS_WIT_EXPORT_WASM
+extern void run_test_wasm_wit_export_guest(int argc, char **argv);
+#endif
 
 static int run_tier4_wasm_tests(void) {
 #ifdef CROFT_TEST_HAS_WASM
     run_test_wasm_guest(0, NULL);
+#ifdef CROFT_TEST_HAS_WIT_BRIDGE_WASM
     run_test_wasm_wit_guest(0, NULL);
+#endif
+#ifdef CROFT_TEST_HAS_WIT_EXPORT_WASM
+    run_test_wasm_wit_export_guest(0, NULL);
+#endif
 #endif
     return 0;
 }

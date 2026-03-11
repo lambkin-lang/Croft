@@ -450,16 +450,18 @@ function(croft_add_wit_wasm_guest target)
     cmake_parse_arguments(WIT_GUEST
         ""
         "OUTPUT_NAME;OUTPUT_SUBDIR;OUT_VAR"
-        "SOURCES;DEPENDS;COMPILE_DEFINITIONS;COMPILE_OPTIONS;LINK_OPTIONS"
+        "SOURCES;DEPENDS;INCLUDE_DIRS;COMPILE_DEFINITIONS;COMPILE_OPTIONS;LINK_OPTIONS"
         ${ARGN})
     set(all_sources
         "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/wit_runtime_support_freestanding.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/wit_guest_exports_runtime.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/thatch_core.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/wit_skip.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/wit_world_runtime.c"
         ${WIT_GUEST_SOURCES})
     set(all_depends
         "${CMAKE_CURRENT_SOURCE_DIR}/include/croft/wit_runtime_support.h"
+        "${CMAKE_CURRENT_SOURCE_DIR}/include/croft/wit_guest_exports_runtime.h"
         "${CMAKE_CURRENT_SOURCE_DIR}/include/croft/wit_guest_runtime.h"
         "${CMAKE_CURRENT_SOURCE_DIR}/include/croft/wit_croft_wasm_guest.h"
         ${WIT_GUEST_DEPENDS})
@@ -467,19 +469,26 @@ function(croft_add_wit_wasm_guest target)
         CROFT_WIT_FREESTANDING=1
         ${WIT_GUEST_COMPILE_DEFINITIONS})
 
+    set(_croft_wit_guest_output_path "")
+
     croft_add_freestanding_c_wasm_guest(${target}
         OUTPUT_NAME "${WIT_GUEST_OUTPUT_NAME}"
         OUTPUT_SUBDIR "${WIT_GUEST_OUTPUT_SUBDIR}"
-        OUT_VAR ${WIT_GUEST_OUT_VAR}
+        OUT_VAR _croft_wit_guest_output_path
         SOURCES ${all_sources}
         DEPENDS ${all_depends}
         INCLUDE_DIRS
             "${CMAKE_CURRENT_SOURCE_DIR}/include"
             "${CMAKE_CURRENT_BINARY_DIR}/generated"
+            ${WIT_GUEST_INCLUDE_DIRS}
         COMPILE_DEFINITIONS ${all_defs}
         COMPILE_OPTIONS ${WIT_GUEST_COMPILE_OPTIONS}
         LINK_OPTIONS ${WIT_GUEST_LINK_OPTIONS}
     )
+
+    if(WIT_GUEST_OUT_VAR)
+        set(${WIT_GUEST_OUT_VAR} "${_croft_wit_guest_output_path}" PARENT_SCOPE)
+    endif()
 endfunction()
 
 # pthreads
@@ -2509,6 +2518,17 @@ if(TARGET croft_wasm_wasm3 AND CROFT_LLVM_CLANG_TOOL AND CROFT_WASM_LD_TOOL)
             "${WASI_CLI_COMMAND_WIT_GENERATED_H}"
             "${WASI_RANDOM_WORLD_WIT_GENERATED_H}"
     )
+    croft_add_wit_wasm_guest(wasm_wit_world_export_guest_gen
+        OUTPUT_NAME "wit_world_export_guest"
+        OUT_VAR WASM_WIT_WORLD_EXPORT_GUEST_BIN
+        SOURCES
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/wit_world_export_guest.c"
+            "${WORLD_INLINE_COMMAND_WIT_GENERATED_C}"
+        DEPENDS
+            "${WORLD_INLINE_COMMAND_WIT_GENERATED_H}"
+        INCLUDE_DIRS
+            "${CMAKE_CURRENT_BINARY_DIR}/tests/generated"
+    )
 elseif(TARGET croft_wasm_wasm3)
     croft_optional_missing("wasm-c-guest"
         "set CROFT_LLVM_CLANG_TOOL and CROFT_WASM_LD_TOOL to build the generated WIT C guest bridge")
@@ -2940,9 +2960,21 @@ if(CROFT_BUILD_TESTS)
         target_sources(test_croft PRIVATE tests/host_tests/test_wasm_wit_guest.c)
         target_link_libraries(test_croft PRIVATE croft_wit_wasi_machine_runtime)
         target_compile_definitions(test_croft PRIVATE
+            CROFT_TEST_HAS_WIT_BRIDGE_WASM
             WIT_WORLD_BRIDGE_GUEST_WASM_PATH="${WASM_WIT_WORLD_BRIDGE_BIN}"
         )
         add_dependencies(test_croft wasm_wit_world_bridge_guest_gen)
+    endif()
+
+    if(TARGET croft_wasm_wasm3 AND TARGET wasm_wit_world_export_guest_gen)
+        target_sources(test_croft PRIVATE tests/host_tests/test_wasm_wit_export_guest.c)
+        target_include_directories(test_croft PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/tests/generated>)
+        target_link_libraries(test_croft PRIVATE croft_wit_world_inline_command)
+        target_compile_definitions(test_croft PRIVATE
+            CROFT_TEST_HAS_WIT_EXPORT_WASM
+            WIT_WORLD_EXPORT_GUEST_WASM_PATH="${WASM_WIT_WORLD_EXPORT_GUEST_BIN}"
+        )
+        add_dependencies(test_croft wasm_wit_world_export_guest_gen world_inline_command_wit_schema_gen)
     endif()
 
     if(CROFT_EXAMPLE_UI_TARGET)
