@@ -184,6 +184,8 @@ int main(void)
                           "\"capability_bundles\": [\"wasi-cli-stdio-terminal-current-machine\", \"wasi-random-current-machine\", \"wasi-clocks-poll-current-machine\", \"wasi-filesystem-streams-current-machine\"]");
     ok &= expect_contains("xpi host window substrate", xpi_json, "\"name\": \"croft-window-system\"");
     ok &= expect_contains("xpi host window bundle", xpi_json, "\"name\": \"croft-host-window-current-machine\"");
+    ok &= expect_contains("xpi file dialog bundle", xpi_json, "\"name\": \"croft-host-file-dialog-current-machine\"");
+    ok &= expect_contains("xpi gesture bundle", xpi_json, "\"name\": \"croft-host-gesture-current-machine\"");
     ok &= expect_contains("xpi host editor-input bundle", xpi_json, "\"name\": \"croft-host-editor-input-normalization\"");
     ok &= expect_contains("xpi host editor-input helpers",
                           xpi_json,
@@ -199,9 +201,22 @@ int main(void)
     ok &= expect_contains("xpi editor entrypoint bundles",
                           xpi_json,
                           "\"requires_bundles\": [\"croft-host-window-current-machine\", \"croft-host-clock-current-machine\", \"croft-host-menu-current-machine\", \"croft-host-popup-menu-current-machine\", \"croft-host-clipboard-current-machine\", \"croft-host-editor-input-normalization\", \"croft-host-a11y-current-machine\"]");
+    ok &= expect_contains("xpi direct editor entrypoint",
+                          xpi_json,
+                          "\"name\": \"example_editor_text\"");
+    ok &= expect_contains("xpi direct editor bundles",
+                          xpi_json,
+                          "\"requires_bundles\": [\"croft-host-file-dialog-current-machine\", \"croft-host-popup-menu-current-machine\"]");
+    ok &= expect_contains("xpi zoom entrypoint",
+                          xpi_json,
+                          "\"name\": \"example_zoom_canvas\"");
+    ok &= expect_contains("xpi zoom bundles",
+                          xpi_json,
+                          "\"requires_bundles\": [\"croft-host-gesture-current-machine\"]");
     ok &= expect_contains("xpi host window runtime artifact",
                           xpi_json,
                           "\"name\": \"croft_wit_host_window_runtime\"");
+    ok &= expect_contains("xpi file dialog artifact", xpi_json, "\"name\": \"croft_file_dialog_macos\"");
     ok &= expect_contains("xpi filesystem helpers",
                           xpi_json,
                           "\"helper_interfaces\": [\"wasi:io@0.2.9/error\", \"wasi:filesystem@0.2.9/error\"]");
@@ -224,6 +239,12 @@ int main(void)
     ok &= expect_contains("artifact host editor-input helper",
                           artifact_json,
                           "\"helper_interfaces\": [\"lambkin:host-window@0.1.0/host-window\", \"lambkin:host-menu@0.1.0/host-menu\"]");
+    ok &= expect_contains("artifact file dialog bundle",
+                          artifact_json,
+                          "\"capability_bundles\": [\"croft-host-file-dialog-current-machine\"]");
+    ok &= expect_contains("artifact gesture bundle",
+                          artifact_json,
+                          "\"capability_bundles\": [\"croft-host-gesture-current-machine\"]");
 
     free(xpi_json);
     free(artifact_json);

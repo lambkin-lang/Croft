@@ -89,6 +89,33 @@ Making those consumer edges explicit is the first point where the XPI graph
 starts to resemble the eventual weaving problem instead of just the inventory
 of ingredients.
 
+## March 11, 2026: The Graph Also Needs Native Provider Layers, Not Just WIT Shims
+
+Once entrypoints started naming the bundles they consume, another asymmetry
+showed up: a number of current-machine seams still appeared in the graph only
+through their WIT wrappers, not through the underlying native provider
+artifacts.
+
+That loses useful structure. For composition, debugging, and later solver work,
+it matters that a bundle can have a provider stack:
+
+- native implementation artifacts such as file dialogs, gesture recognizers,
+  GLFW window backends, AppKit menu state, and accessibility providers,
+- generated WIT shims that adapt those providers into world/import surfaces,
+- and higher-level entrypoints that consume the resulting bundle.
+
+Treating only the WIT layer as XPI-participating makes the graph look flatter
+than the implementation really is. It also hides where a capability can be
+consumed directly by Croft code versus indirectly through WIT.
+
+The better model is for those native providers to participate in the same graph
+under the same capability bundle and substrate names. That preserves one
+composition vocabulary across:
+
+- direct-native editor/render shells,
+- WIT-mediated current-machine hosts,
+- and later Lambkin-selected mixes that may need to swap or omit one layer.
+
 ## March 11, 2026: Vendoring Needs A Drift Story, Not Just A Snapshot
 
 Once WASI `0.2.9` became a first-class vendored input, another missing piece

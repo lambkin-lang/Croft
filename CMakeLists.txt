@@ -1539,6 +1539,8 @@ add_library(croft_host_time STATIC src/host/host_time.c)
 croft_apply_public_includes(croft_host_time)
 target_link_libraries(croft_host_time PUBLIC croft_foundation)
 croft_register_artifact(croft_host_time host
+    CAPABILITY_BUNDLES croft-host-clock-current-machine
+    SHARED_SUBSTRATES croft-time-source
     TAGS tier0 host time
     DEPENDS croft_foundation
 )
@@ -2034,6 +2036,8 @@ add_library(croft_fs STATIC src/host/host_fs.c)
 croft_apply_public_includes(croft_fs)
 target_link_libraries(croft_fs PUBLIC croft_foundation)
 croft_register_artifact(croft_fs filesystem
+    CAPABILITY_BUNDLES croft-host-fs-current-machine
+    SHARED_SUBSTRATES croft-file-resources
     TAGS tier2 filesystem io
     DEPENDS croft_foundation
 )
@@ -2653,6 +2657,10 @@ if(CROFT_GLFW_TARGET)
         target_link_libraries(croft_ui_glfw_opengl PUBLIC "-framework OpenGL")
     endif()
     croft_register_artifact(croft_ui_glfw_opengl ui
+        CAPABILITY_BUNDLES
+            croft-host-window-current-machine
+            croft-host-clipboard-current-machine
+        SHARED_SUBSTRATES croft-window-system
         TAGS tier5 ui glfw opengl
         DEPENDS croft_host_log
     )
@@ -2663,6 +2671,10 @@ if(CROFT_GLFW_TARGET)
         target_compile_definitions(croft_ui_glfw_metal PRIVATE CROFT_HOST_UI_GLFW_NO_API=1)
         target_link_libraries(croft_ui_glfw_metal PUBLIC croft_host_log ${CROFT_GLFW_TARGET})
         croft_register_artifact(croft_ui_glfw_metal ui
+            CAPABILITY_BUNDLES
+                croft-host-window-current-machine
+                croft-host-clipboard-current-machine
+            SHARED_SUBSTRATES croft-window-system
             TAGS tier5 ui glfw metal macos
             DEPENDS croft_host_log
         )
@@ -2682,6 +2694,7 @@ if(CROFT_WIT_HOST_WINDOW_UI_TARGET)
         APPLICABILITY "current-machine-windowed"
         DESCRIPTION "Shared window/event substrate backing Croft window lifecycle, clipboard exchange, and window-scoped accessibility."
         ARTIFACTS
+            ${CROFT_WIT_HOST_WINDOW_UI_TARGET}
             croft_wit_host_window
             croft_wit_host_window_runtime
             croft_wit_host_clipboard
@@ -2698,6 +2711,7 @@ if(CROFT_WIT_HOST_WINDOW_UI_TARGET)
         APPLICABILITY "current-machine-windowed"
         DESCRIPTION "Croft window host mix-in over the current-machine window/event substrate."
         ARTIFACTS
+            ${CROFT_WIT_HOST_WINDOW_UI_TARGET}
             croft_wit_host_window
             croft_wit_host_window_runtime
         SUBSTRATES croft-window-system
@@ -2709,6 +2723,7 @@ if(CROFT_WIT_HOST_WINDOW_UI_TARGET)
         APPLICABILITY "current-machine-windowed"
         DESCRIPTION "Croft clipboard host mix-in over the shared current-machine window system substrate."
         ARTIFACTS
+            ${CROFT_WIT_HOST_WINDOW_UI_TARGET}
             croft_wit_host_clipboard
             croft_wit_host_clipboard_runtime
         SUBSTRATES croft-window-system
@@ -2751,6 +2766,7 @@ if(CROFT_GLFW_TARGET AND CROFT_TGFX_TARGET AND CROFT_TGFX_REQUEST_OPENGL)
         target_compile_definitions(croft_render_tgfx_opengl PRIVATE GL_SILENCE_DEPRECATION)
     endif()
     croft_register_artifact(croft_render_tgfx_opengl render
+        REQUIRES_BUNDLES croft-host-window-current-machine
         TAGS tier6 render tgfx opengl
         DEPENDS croft_ui_glfw_opengl
     )
@@ -2797,6 +2813,7 @@ if(APPLE AND CROFT_GLFW_TARGET AND CROFT_TGFX_TARGET AND CROFT_TGFX_REQUEST_META
             "-framework QuartzCore"
     )
     croft_register_artifact(croft_render_tgfx_metal render
+        REQUIRES_BUNDLES croft-host-window-current-machine
         TAGS tier6 render tgfx metal macos
         DEPENDS croft_ui_glfw_metal
     )
@@ -2841,6 +2858,8 @@ if(APPLE AND TARGET croft_ui_glfw_metal)
             "-framework QuartzCore"
     )
     croft_register_artifact(croft_render_metal_native render
+        CAPABILITY_BUNDLES croft-host-gpu2d-current-machine
+        SHARED_SUBSTRATES croft-native-2d-surface
         TAGS tier6 render metal native-direct macos
         DEPENDS croft_ui_glfw_metal
     )
@@ -2905,6 +2924,7 @@ if(APPLE AND TARGET croft_ui_glfw_metal)
             sapling_core
     )
     croft_register_artifact(croft_scene_text_editor_metal_native scene
+        REQUIRES_BUNDLES croft-host-gpu2d-current-machine
         TAGS tier7 scene text-editor metal native-direct macos sapling
         DEPENDS croft_scene_core_metal_native sapling_core
     )
@@ -2916,15 +2936,46 @@ if(APPLE)
     set_source_files_properties(src/host/mac/host_file_dialog.m PROPERTIES COMPILE_FLAGS "-fobjc-arc")
     target_link_libraries(croft_file_dialog_macos PUBLIC "-framework AppKit")
     croft_register_artifact(croft_file_dialog_macos host
+        CAPABILITY_BUNDLES croft-host-file-dialog-current-machine
+        SHARED_SUBSTRATES croft-file-dialog-selection
         TAGS macos native file-dialog
     )
 else()
     add_library(croft_file_dialog_macos STATIC src/host/host_file_dialog_stub.c)
     croft_apply_public_includes(croft_file_dialog_macos)
     croft_register_artifact(croft_file_dialog_macos host
+        CAPABILITY_BUNDLES croft-host-file-dialog-current-machine
+        SHARED_SUBSTRATES croft-file-dialog-selection
         TAGS file-dialog stub
     )
 endif()
+
+if(APPLE)
+    set(CROFT_FILE_DIALOG_XPI_SUPPORT_STATUS "host-implemented-subset")
+    set(CROFT_FILE_DIALOG_XPI_APPLICABILITY "current-machine-macos")
+    set(CROFT_FILE_DIALOG_XPI_DESCRIPTION
+        "Croft file-dialog mix-in over the native macOS open/save panel substrate.")
+else()
+    set(CROFT_FILE_DIALOG_XPI_SUPPORT_STATUS "stub")
+    set(CROFT_FILE_DIALOG_XPI_APPLICABILITY "current-machine")
+    set(CROFT_FILE_DIALOG_XPI_DESCRIPTION
+        "Croft file-dialog mix-in currently resolves to a stub on this build.")
+endif()
+croft_define_xpi_substrate_spec(croft-file-dialog-selection
+    KIND "file-dialog"
+    APPLICABILITY "${CROFT_FILE_DIALOG_XPI_APPLICABILITY}"
+    DESCRIPTION "Open/save file dialog substrate exposed by the current-machine host."
+    ARTIFACTS
+        croft_file_dialog_macos
+)
+croft_define_xpi_bundle_spec(croft-host-file-dialog-current-machine
+    SUPPORT_STATUS "${CROFT_FILE_DIALOG_XPI_SUPPORT_STATUS}"
+    APPLICABILITY "${CROFT_FILE_DIALOG_XPI_APPLICABILITY}"
+    DESCRIPTION "${CROFT_FILE_DIALOG_XPI_DESCRIPTION}"
+    ARTIFACTS
+        croft_file_dialog_macos
+    SUBSTRATES croft-file-dialog-selection
+)
 
 if(APPLE)
     add_library(croft_popup_menu_macos STATIC src/host/mac/host_popup_menu.m)
@@ -2932,12 +2983,16 @@ if(APPLE)
     set_source_files_properties(src/host/mac/host_popup_menu.m PROPERTIES COMPILE_FLAGS "-fobjc-arc")
     target_link_libraries(croft_popup_menu_macos PUBLIC "-framework AppKit")
     croft_register_artifact(croft_popup_menu_macos host
+        CAPABILITY_BUNDLES croft-host-popup-menu-current-machine
+        SHARED_SUBSTRATES croft-popup-menu-presentation
         TAGS macos native popup-menu
     )
 else()
     add_library(croft_popup_menu_macos STATIC src/host/host_popup_menu_stub.c)
     croft_apply_public_includes(croft_popup_menu_macos)
     croft_register_artifact(croft_popup_menu_macos host
+        CAPABILITY_BUNDLES croft-host-popup-menu-current-machine
+        SHARED_SUBSTRATES croft-popup-menu-presentation
         TAGS popup-menu stub
     )
 endif()
@@ -3003,6 +3058,7 @@ if(APPLE)
             "-framework AppKit"
     )
     croft_register_artifact(croft_editor_appkit editor
+        REQUIRES_BUNDLES croft-host-file-dialog-current-machine
         TAGS tier9 editor native appkit textkit macos cpu
         DEPENDS croft_editor_commands croft_editor_document_core croft_editor_document_fs
     )
@@ -3012,6 +3068,8 @@ if(APPLE)
     set_source_files_properties(src/host/mac/host_a11y.m PROPERTIES COMPILE_FLAGS "-fobjc-arc")
     target_link_libraries(croft_a11y_macos PUBLIC "-framework AppKit")
     croft_register_artifact(croft_a11y_macos accessibility
+        CAPABILITY_BUNDLES croft-host-a11y-current-machine
+        SHARED_SUBSTRATES croft-accessibility-tree
         TAGS tier9 a11y macos native
     )
 
@@ -3067,6 +3125,8 @@ if(APPLE)
     set_source_files_properties(src/host/mac/host_menu.m PROPERTIES COMPILE_FLAGS "-fobjc-arc")
     target_link_libraries(croft_menu_macos PUBLIC "-framework AppKit")
     croft_register_artifact(croft_menu_macos menu
+        CAPABILITY_BUNDLES croft-host-menu-current-machine
+        SHARED_SUBSTRATES croft-menu-bar-state
         TAGS menu macos native
     )
 
@@ -3113,6 +3173,8 @@ if(APPLE)
         set_source_files_properties(src/host/mac/host_gesture.m PROPERTIES COMPILE_FLAGS "-fobjc-arc")
         target_link_libraries(croft_gesture_macos PUBLIC croft_ui_glfw_opengl "-framework AppKit")
         croft_register_artifact(croft_gesture_macos gesture
+            CAPABILITY_BUNDLES croft-host-gesture-current-machine
+            SHARED_SUBSTRATES croft-gesture-input
             TAGS ui gesture macos native
             DEPENDS croft_ui_glfw_opengl
         )
@@ -3124,8 +3186,35 @@ if(APPLE)
         set_source_files_properties(src/host/mac/host_gesture.m PROPERTIES COMPILE_FLAGS "-fobjc-arc")
         target_link_libraries(croft_gesture_macos_metal PUBLIC croft_ui_glfw_metal "-framework AppKit")
         croft_register_artifact(croft_gesture_macos_metal gesture
+            CAPABILITY_BUNDLES croft-host-gesture-current-machine
+            SHARED_SUBSTRATES croft-gesture-input
             TAGS ui gesture macos native metal
             DEPENDS croft_ui_glfw_metal
+        )
+    endif()
+
+    set(CROFT_GESTURE_XPI_ARTIFACTS "")
+    if(TARGET croft_gesture_macos)
+        list(APPEND CROFT_GESTURE_XPI_ARTIFACTS croft_gesture_macos)
+    endif()
+    if(TARGET croft_gesture_macos_metal)
+        list(APPEND CROFT_GESTURE_XPI_ARTIFACTS croft_gesture_macos_metal)
+    endif()
+    if(CROFT_GESTURE_XPI_ARTIFACTS)
+        croft_define_xpi_substrate_spec(croft-gesture-input
+            KIND "gesture-input"
+            APPLICABILITY "current-machine-windowed"
+            DESCRIPTION "Trackpad and gesture event substrate layered on the current-machine window system."
+            ARTIFACTS ${CROFT_GESTURE_XPI_ARTIFACTS}
+        )
+        croft_define_xpi_bundle_spec(croft-host-gesture-current-machine
+            SUPPORT_STATUS "host-implemented-subset"
+            APPLICABILITY "current-machine-windowed"
+            DESCRIPTION "Croft gesture-input mix-in over native current-machine gesture recognizers."
+            ARTIFACTS ${CROFT_GESTURE_XPI_ARTIFACTS}
+            SUBSTRATES
+                croft-window-system
+                croft-gesture-input
         )
     endif()
 
@@ -3459,6 +3548,7 @@ if(TARGET croft_ui_glfw_opengl)
         SOURCES examples/ui_window.c
         LINKS croft_ui_glfw_opengl
         REQUIRES croft_ui_glfw_opengl
+        REQUIRES_BUNDLES croft-host-window-current-machine
         TAGS ui window glfw opengl
         FOCUS "Windowing-only sample using a GLFW OpenGL context and no renderer."
     )
@@ -3469,6 +3559,7 @@ if(TARGET croft_ui_glfw_metal)
         SOURCES examples/ui_window.c
         LINKS croft_ui_glfw_metal
         REQUIRES croft_ui_glfw_metal
+        REQUIRES_BUNDLES croft-host-window-current-machine
         TAGS ui window glfw metal macos
         FOCUS "Windowing-only sample using a GLFW no-API window for the Metal path."
     )
@@ -3479,6 +3570,7 @@ if(TARGET croft_render_tgfx_opengl)
         SOURCES examples/render_canvas_opengl.c
         LINKS croft_render_tgfx_opengl
         REQUIRES croft_render_tgfx_opengl
+        REQUIRES_BUNDLES croft-host-window-current-machine
         TAGS render canvas tgfx opengl
         FOCUS "GPU-backed 2D canvas rendering on the tgfx OpenGL path."
     )
@@ -3489,6 +3581,7 @@ if(TARGET croft_render_tgfx_metal)
         SOURCES examples/render_canvas_metal.c
         LINKS croft_render_tgfx_metal
         REQUIRES croft_render_tgfx_metal
+        REQUIRES_BUNDLES croft-host-window-current-machine
         TAGS render canvas tgfx metal macos
         FOCUS "GPU-backed 2D canvas rendering on the tgfx Metal path."
     )
@@ -3499,6 +3592,7 @@ if(TARGET croft_render_metal_native)
         SOURCES examples/render_canvas_metal_native.c
         LINKS croft_render_metal_native
         REQUIRES croft_render_metal_native
+        REQUIRES_BUNDLES croft-host-gpu2d-current-machine
         TAGS render canvas metal native-direct macos
         FOCUS "Direct Metal 2D rectangle rendering with no tgfx dependency."
     )
@@ -3518,14 +3612,17 @@ if(CROFT_EXAMPLE_SCENE_TARGET)
     if(NOT APPLE OR CROFT_EXAMPLE_GESTURE_TARGET)
         set(CROFT_ZOOM_EXAMPLE_LINKS ${CROFT_EXAMPLE_SCENE_TARGET} croft_a11y_stub)
         set(CROFT_ZOOM_EXAMPLE_REQUIRES ${CROFT_EXAMPLE_SCENE_TARGET})
+        set(CROFT_ZOOM_EXAMPLE_BUNDLES "")
         if(CROFT_EXAMPLE_GESTURE_TARGET)
             list(APPEND CROFT_ZOOM_EXAMPLE_LINKS ${CROFT_EXAMPLE_GESTURE_TARGET})
             list(APPEND CROFT_ZOOM_EXAMPLE_REQUIRES ${CROFT_EXAMPLE_GESTURE_TARGET})
+            list(APPEND CROFT_ZOOM_EXAMPLE_BUNDLES croft-host-gesture-current-machine)
         endif()
         croft_add_example(example_zoom_canvas
             SOURCES tests/host_tests/test_zoom_standalone.c
             LINKS ${CROFT_ZOOM_EXAMPLE_LINKS}
             REQUIRES ${CROFT_ZOOM_EXAMPLE_REQUIRES}
+            REQUIRES_BUNDLES ${CROFT_ZOOM_EXAMPLE_BUNDLES}
             TAGS scene zoom gesture canvas
             FOCUS "Scrollable and zoomable infinite-canvas scene demo."
         )
@@ -3547,6 +3644,9 @@ if(CROFT_EXAMPLE_EDITOR_TARGET)
         SOURCES examples/editor_scene_shell.c
         LINKS ${CROFT_EDITOR_EXAMPLE_LINKS}
         REQUIRES ${CROFT_EDITOR_EXAMPLE_REQUIRES}
+        REQUIRES_BUNDLES
+            croft-host-file-dialog-current-machine
+            croft-host-popup-menu-current-machine
         TAGS editor text sapling gui
         FOCUS "Text-editor shell built on Sapling text, scene, and host IO."
     )
@@ -3604,6 +3704,7 @@ if(TARGET croft_editor_appkit)
         SOURCES examples/editor_text_appkit.mm
         LINKS croft_editor_appkit croft_editor_document_fs
         REQUIRES croft_editor_appkit croft_editor_document_core croft_editor_document_fs
+        REQUIRES_BUNDLES croft-host-file-dialog-current-machine
         TAGS editor text sapling appkit textkit macos cpu
         FOCUS "CPU-based macOS text editor using AppKit/TextKit over a Sapling-backed document."
     )
@@ -3624,6 +3725,9 @@ if(TARGET croft_menu_macos AND TARGET croft_ui_glfw_opengl)
         SOURCES examples/window_menu.c
         LINKS croft_ui_glfw_opengl croft_menu_macos
         REQUIRES croft_ui_glfw_opengl croft_menu_macos
+        REQUIRES_BUNDLES
+            croft-host-window-current-machine
+            croft-host-menu-current-machine
         TAGS menu macos ui opengl
         FOCUS "Window and native menu shell with an OpenGL-capable GLFW context and no renderer."
     )
@@ -3634,6 +3738,9 @@ if(TARGET croft_menu_macos AND TARGET croft_ui_glfw_metal)
         SOURCES examples/window_menu.c
         LINKS croft_ui_glfw_metal croft_menu_macos
         REQUIRES croft_ui_glfw_metal croft_menu_macos
+        REQUIRES_BUNDLES
+            croft-host-window-current-machine
+            croft-host-menu-current-machine
         TAGS menu macos ui metal
         FOCUS "Window and native menu shell with a Metal-style no-API window and no renderer."
     )
