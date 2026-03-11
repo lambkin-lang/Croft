@@ -1518,92 +1518,82 @@ croft_register_artifact(croft_thatch_core serialization
     TAGS thatch packed-data serialization
 )
 
-add_library(croft_wit_common_core STATIC ${COMMON_WIT_GENERATED_C})
-add_dependencies(croft_wit_common_core common_wit_schema_gen)
-croft_apply_public_includes(croft_wit_common_core)
-target_link_libraries(croft_wit_common_core PUBLIC croft_thatch_core)
-croft_register_artifact(croft_wit_common_core wit
+croft_add_generated_wit_library(croft_wit_common_core
+    SCHEMA_TARGET common_wit_schema_gen
+    GENERATED_SOURCE ${COMMON_WIT_GENERATED_C}
+    PUBLIC_LINKS croft_thatch_core
     TAGS wit common-core resource-handles xpi
     DEPENDS croft_thatch_core
 )
 
-add_library(croft_wit_host_fs STATIC ${HOST_FS_WIT_GENERATED_C})
-add_dependencies(croft_wit_host_fs host_fs_wit_schema_gen)
-croft_apply_public_includes(croft_wit_host_fs)
-target_link_libraries(croft_wit_host_fs PUBLIC croft_thatch_core)
-croft_register_artifact(croft_wit_host_fs wit
+croft_add_generated_wit_library(croft_wit_host_fs
+    SCHEMA_TARGET host_fs_wit_schema_gen
+    GENERATED_SOURCE ${HOST_FS_WIT_GENERATED_C}
+    PUBLIC_LINKS croft_thatch_core
     TAGS wit host-fs resource-handles xpi
     DEPENDS croft_thatch_core
 )
 
-add_library(croft_wit_host_clock STATIC ${HOST_CLOCK_WIT_GENERATED_C})
-add_dependencies(croft_wit_host_clock host_clock_wit_schema_gen)
-croft_apply_public_includes(croft_wit_host_clock)
-target_link_libraries(croft_wit_host_clock PUBLIC croft_thatch_core)
-croft_register_artifact(croft_wit_host_clock wit
+croft_add_generated_wit_library(croft_wit_host_clock
+    SCHEMA_TARGET host_clock_wit_schema_gen
+    GENERATED_SOURCE ${HOST_CLOCK_WIT_GENERATED_C}
+    PUBLIC_LINKS croft_thatch_core
     TAGS wit host-clock service xpi
     DEPENDS croft_thatch_core
 )
 
-add_library(croft_wit_host_window STATIC ${HOST_WINDOW_WIT_GENERATED_C})
-add_dependencies(croft_wit_host_window host_window_wit_schema_gen)
-croft_apply_public_includes(croft_wit_host_window)
-target_link_libraries(croft_wit_host_window PUBLIC croft_thatch_core)
-croft_register_artifact(croft_wit_host_window wit
+croft_add_generated_wit_library(croft_wit_host_window
+    SCHEMA_TARGET host_window_wit_schema_gen
+    GENERATED_SOURCE ${HOST_WINDOW_WIT_GENERATED_C}
+    PUBLIC_LINKS croft_thatch_core
     TAGS wit host-window resource-handles xpi
     DEPENDS croft_thatch_core
 )
 
-add_library(croft_wit_host_gpu2d STATIC ${HOST_GPU2D_WIT_GENERATED_C})
-add_dependencies(croft_wit_host_gpu2d host_gpu2d_wit_schema_gen)
-croft_apply_public_includes(croft_wit_host_gpu2d)
-target_link_libraries(croft_wit_host_gpu2d PUBLIC croft_thatch_core)
-croft_register_artifact(croft_wit_host_gpu2d wit
+croft_add_generated_wit_library(croft_wit_host_gpu2d
+    SCHEMA_TARGET host_gpu2d_wit_schema_gen
+    GENERATED_SOURCE ${HOST_GPU2D_WIT_GENERATED_C}
+    PUBLIC_LINKS croft_thatch_core
     TAGS wit host-gpu2d resource-handles service xpi
     DEPENDS croft_thatch_core
 )
 
-add_library(croft_wit_host_menu STATIC ${HOST_MENU_WIT_GENERATED_C})
-add_dependencies(croft_wit_host_menu host_menu_wit_schema_gen)
-croft_apply_public_includes(croft_wit_host_menu)
-target_link_libraries(croft_wit_host_menu PUBLIC croft_thatch_core)
-croft_register_artifact(croft_wit_host_menu wit
+croft_add_generated_wit_library(croft_wit_host_menu
+    SCHEMA_TARGET host_menu_wit_schema_gen
+    GENERATED_SOURCE ${HOST_MENU_WIT_GENERATED_C}
+    PUBLIC_LINKS croft_thatch_core
     TAGS wit host-menu service xpi
     DEPENDS croft_thatch_core
 )
 
-add_library(croft_wit_host_popup_menu STATIC ${HOST_POPUP_MENU_WIT_GENERATED_C})
-add_dependencies(croft_wit_host_popup_menu host_popup_menu_wit_schema_gen)
-croft_apply_public_includes(croft_wit_host_popup_menu)
-target_link_libraries(croft_wit_host_popup_menu PUBLIC croft_thatch_core)
-croft_register_artifact(croft_wit_host_popup_menu wit
+croft_add_generated_wit_library(croft_wit_host_popup_menu
+    SCHEMA_TARGET host_popup_menu_wit_schema_gen
+    GENERATED_SOURCE ${HOST_POPUP_MENU_WIT_GENERATED_C}
+    PUBLIC_LINKS croft_thatch_core
     TAGS wit host-popup-menu service xpi
     DEPENDS croft_thatch_core
 )
 
-add_library(croft_wit_host_clipboard STATIC ${HOST_CLIPBOARD_WIT_GENERATED_C})
-add_dependencies(croft_wit_host_clipboard host_clipboard_wit_schema_gen)
-croft_apply_public_includes(croft_wit_host_clipboard)
-target_link_libraries(croft_wit_host_clipboard PUBLIC croft_thatch_core)
-croft_register_artifact(croft_wit_host_clipboard wit
+croft_add_generated_wit_library(croft_wit_host_clipboard
+    SCHEMA_TARGET host_clipboard_wit_schema_gen
+    GENERATED_SOURCE ${HOST_CLIPBOARD_WIT_GENERATED_C}
+    PUBLIC_LINKS croft_thatch_core
     TAGS wit host-clipboard service xpi
     DEPENDS croft_thatch_core
 )
 
-add_library(croft_wit_host_editor_input STATIC ${HOST_EDITOR_INPUT_WIT_GENERATED_C})
-add_dependencies(croft_wit_host_editor_input host_editor_input_wit_schema_gen)
-croft_apply_public_includes(croft_wit_host_editor_input)
-target_link_libraries(croft_wit_host_editor_input PUBLIC croft_thatch_core)
-croft_register_artifact(croft_wit_host_editor_input wit
+croft_add_generated_wit_library(croft_wit_host_editor_input
+    SCHEMA_TARGET host_editor_input_wit_schema_gen
+    GENERATED_SOURCE ${HOST_EDITOR_INPUT_WIT_GENERATED_C}
+    PUBLIC_LINKS croft_thatch_core
     TAGS wit host-editor-input service xpi editor
     DEPENDS croft_thatch_core
 )
 
-add_library(croft_wit_host_a11y STATIC ${HOST_A11Y_WIT_GENERATED_C})
-add_dependencies(croft_wit_host_a11y host_a11y_wit_schema_gen)
-croft_apply_public_includes(croft_wit_host_a11y)
-target_link_libraries(croft_wit_host_a11y PUBLIC croft_thatch_core)
-croft_register_artifact(croft_wit_host_a11y wit
+croft_add_generated_wit_library(croft_wit_host_a11y
+    SCHEMA_TARGET host_a11y_wit_schema_gen
+    GENERATED_SOURCE ${HOST_A11Y_WIT_GENERATED_C}
+    PUBLIC_LINKS croft_thatch_core
     TAGS wit host-a11y resource-handles service xpi accessibility
     DEPENDS croft_thatch_core
 )
@@ -2476,29 +2466,105 @@ croft_register_artifact(croft_wit_mailbox_runtime wit
     DEPENDS croft_wit_common_core
 )
 
+croft_define_xpi_substrate_spec(croft-file-resources
+    KIND "file-handle-set"
+    APPLICABILITY "current-machine"
+    DESCRIPTION "Shared host filesystem substrate backing Croft file handles and the WIT host-fs resource surface."
+    ARTIFACTS
+        croft_fs
+        croft_wit_host_fs
+        croft_wit_host_fs_runtime
+    INTERFACES
+        "lambkin:host-fs@0.1.0/host-fs"
+)
+croft_define_xpi_bundle_spec(croft-host-fs-current-machine
+    SUPPORT_STATUS "host-implemented-subset"
+    APPLICABILITY "current-machine"
+    DESCRIPTION "Croft filesystem host mix-in over file handles and current-machine path access."
+    ARTIFACTS
+        croft_fs
+        croft_wit_host_fs
+        croft_wit_host_fs_runtime
+    SUBSTRATES croft-file-resources
+    DECLARED_WORLDS "lambkin:host-fs@0.1.0/host-fs"
+    EXPANDED_SURFACES "lambkin:host-fs@0.1.0/host-fs"
+)
+
 add_library(croft_wit_host_fs_runtime STATIC src/runtime/wit_host_fs_runtime.c)
 add_dependencies(croft_wit_host_fs_runtime host_fs_wit_schema_gen)
 croft_apply_public_includes(croft_wit_host_fs_runtime)
 target_link_libraries(croft_wit_host_fs_runtime PUBLIC croft_fs croft_wit_host_fs)
-croft_register_artifact(croft_wit_host_fs_runtime wit
+croft_register_artifact_from_xpi_bundles(croft_wit_host_fs_runtime wit
+    BUNDLES croft-host-fs-current-machine
     TAGS tier8 wit host-fs file-handles host-mix-in machine-generated-model
     DEPENDS croft_fs croft_wit_host_fs
+)
+
+croft_define_xpi_substrate_spec(croft-time-source
+    KIND "clock-source"
+    APPLICABILITY "current-machine"
+    DESCRIPTION "Shared monotonic time substrate backing Croft host time and the WIT host-clock service."
+    ARTIFACTS
+        croft_host_time
+        croft_wit_host_clock
+        croft_wit_host_clock_runtime
+    INTERFACES
+        "lambkin:host-clock@0.1.0/host-clock"
+)
+croft_define_xpi_bundle_spec(croft-host-clock-current-machine
+    SUPPORT_STATUS "host-implemented-subset"
+    APPLICABILITY "current-machine"
+    DESCRIPTION "Croft monotonic-clock host mix-in over the current-machine time source."
+    ARTIFACTS
+        croft_host_time
+        croft_wit_host_clock
+        croft_wit_host_clock_runtime
+    SUBSTRATES croft-time-source
+    DECLARED_WORLDS "lambkin:host-clock@0.1.0/host-clock"
+    EXPANDED_SURFACES "lambkin:host-clock@0.1.0/host-clock"
 )
 
 add_library(croft_wit_host_clock_runtime STATIC src/runtime/wit_host_clock_runtime.c)
 add_dependencies(croft_wit_host_clock_runtime host_clock_wit_schema_gen)
 croft_apply_public_includes(croft_wit_host_clock_runtime)
 target_link_libraries(croft_wit_host_clock_runtime PUBLIC croft_host_time croft_wit_host_clock)
-croft_register_artifact(croft_wit_host_clock_runtime wit
+croft_register_artifact_from_xpi_bundles(croft_wit_host_clock_runtime wit
+    BUNDLES croft-host-clock-current-machine
     TAGS tier8 wit host-clock host-mix-in service machine-generated-model
     DEPENDS croft_host_time croft_wit_host_clock
+)
+
+croft_define_xpi_substrate_spec(croft-editor-command-queue
+    KIND "command-queue"
+    APPLICABILITY "host-neutral"
+    DESCRIPTION "Normalized editor command queue receiving host window/menu events and yielding editor actions."
+    ARTIFACTS
+        croft_wit_host_editor_input
+        croft_wit_host_editor_input_runtime
+    INTERFACES
+        "lambkin:host-editor-input@0.1.0/host-editor-input"
+)
+croft_define_xpi_bundle_spec(croft-host-editor-input-normalization
+    SUPPORT_STATUS "host-implemented-subset"
+    APPLICABILITY "host-neutral"
+    DESCRIPTION "Croft host-editor-input normalization mix-in translating host window and menu events into editor actions."
+    ARTIFACTS
+        croft_wit_host_editor_input
+        croft_wit_host_editor_input_runtime
+    SUBSTRATES croft-editor-command-queue
+    DECLARED_WORLDS "lambkin:host-editor-input@0.1.0/host-editor-input"
+    EXPANDED_SURFACES "lambkin:host-editor-input@0.1.0/host-editor-input"
+    HELPER_INTERFACES
+        "lambkin:host-window@0.1.0/host-window"
+        "lambkin:host-menu@0.1.0/host-menu"
 )
 
 add_library(croft_wit_host_editor_input_runtime STATIC src/runtime/wit_host_editor_input_runtime.c)
 add_dependencies(croft_wit_host_editor_input_runtime host_editor_input_wit_schema_gen)
 croft_apply_public_includes(croft_wit_host_editor_input_runtime)
 target_link_libraries(croft_wit_host_editor_input_runtime PUBLIC croft_wit_host_editor_input)
-croft_register_artifact(croft_wit_host_editor_input_runtime wit
+croft_register_artifact_from_xpi_bundles(croft_wit_host_editor_input_runtime wit
+    BUNDLES croft-host-editor-input-normalization
     TAGS tier8 wit host-editor-input host-mix-in service editor machine-generated-model
     DEPENDS croft_wit_host_editor_input
 )
@@ -2572,6 +2638,45 @@ elseif(TARGET croft_ui_glfw_opengl)
 endif()
 
 if(CROFT_WIT_HOST_WINDOW_UI_TARGET)
+    croft_define_xpi_substrate_spec(croft-window-system
+        KIND "window-system"
+        APPLICABILITY "current-machine-windowed"
+        DESCRIPTION "Shared window/event substrate backing Croft window lifecycle, clipboard exchange, and window-scoped accessibility."
+        ARTIFACTS
+            croft_wit_host_window
+            croft_wit_host_window_runtime
+            croft_wit_host_clipboard
+            croft_wit_host_clipboard_runtime
+            croft_wit_host_a11y
+            croft_wit_host_a11y_runtime
+        INTERFACES
+            "lambkin:host-window@0.1.0/host-window"
+            "lambkin:host-clipboard@0.1.0/host-clipboard"
+            "lambkin:host-a11y@0.1.0/host-a11y"
+    )
+    croft_define_xpi_bundle_spec(croft-host-window-current-machine
+        SUPPORT_STATUS "host-implemented-subset"
+        APPLICABILITY "current-machine-windowed"
+        DESCRIPTION "Croft window host mix-in over the current-machine window/event substrate."
+        ARTIFACTS
+            croft_wit_host_window
+            croft_wit_host_window_runtime
+        SUBSTRATES croft-window-system
+        DECLARED_WORLDS "lambkin:host-window@0.1.0/host-window"
+        EXPANDED_SURFACES "lambkin:host-window@0.1.0/host-window"
+    )
+    croft_define_xpi_bundle_spec(croft-host-clipboard-current-machine
+        SUPPORT_STATUS "host-implemented-subset"
+        APPLICABILITY "current-machine-windowed"
+        DESCRIPTION "Croft clipboard host mix-in over the shared current-machine window system substrate."
+        ARTIFACTS
+            croft_wit_host_clipboard
+            croft_wit_host_clipboard_runtime
+        SUBSTRATES croft-window-system
+        DECLARED_WORLDS "lambkin:host-clipboard@0.1.0/host-clipboard"
+        EXPANDED_SURFACES "lambkin:host-clipboard@0.1.0/host-clipboard"
+    )
+
     add_library(croft_wit_host_window_runtime STATIC src/runtime/wit_host_window_runtime.c)
     add_dependencies(croft_wit_host_window_runtime host_window_wit_schema_gen)
     croft_apply_public_includes(croft_wit_host_window_runtime)
@@ -2579,7 +2684,8 @@ if(CROFT_WIT_HOST_WINDOW_UI_TARGET)
         ${CROFT_WIT_HOST_WINDOW_UI_TARGET}
         croft_wit_host_window
     )
-    croft_register_artifact(croft_wit_host_window_runtime wit
+    croft_register_artifact_from_xpi_bundles(croft_wit_host_window_runtime wit
+        BUNDLES croft-host-window-current-machine
         TAGS tier8 wit host-window resource-handles host-mix-in event-queue machine-generated-model
         DEPENDS ${CROFT_WIT_HOST_WINDOW_UI_TARGET} croft_wit_host_window
     )
@@ -2591,7 +2697,8 @@ if(CROFT_WIT_HOST_WINDOW_UI_TARGET)
         ${CROFT_WIT_HOST_WINDOW_UI_TARGET}
         croft_wit_host_clipboard
     )
-    croft_register_artifact(croft_wit_host_clipboard_runtime wit
+    croft_register_artifact_from_xpi_bundles(croft_wit_host_clipboard_runtime wit
+        BUNDLES croft-host-clipboard-current-machine
         TAGS tier8 wit host-clipboard host-mix-in service machine-generated-model
         DEPENDS ${CROFT_WIT_HOST_WINDOW_UI_TARGET} croft_wit_host_clipboard
     )
@@ -2699,6 +2806,30 @@ if(APPLE AND TARGET croft_ui_glfw_metal)
         DEPENDS croft_ui_glfw_metal
     )
 
+    croft_define_xpi_substrate_spec(croft-native-2d-surface
+        KIND "surface-presentation"
+        APPLICABILITY "current-machine-macos"
+        DESCRIPTION "Direct-Metal 2D surface substrate backing Croft host-gpu2d surface resources on macOS."
+        ARTIFACTS
+            croft_render_metal_native
+            croft_wit_host_gpu2d
+            croft_wit_host_gpu2d_runtime
+        INTERFACES
+            "lambkin:host-gpu2d@0.1.0/host-gpu2d"
+    )
+    croft_define_xpi_bundle_spec(croft-host-gpu2d-current-machine
+        SUPPORT_STATUS "host-implemented-subset"
+        APPLICABILITY "current-machine-macos"
+        DESCRIPTION "Croft host-gpu2d mix-in over the direct-Metal current-machine surface substrate."
+        ARTIFACTS
+            croft_render_metal_native
+            croft_wit_host_gpu2d
+            croft_wit_host_gpu2d_runtime
+        SUBSTRATES croft-native-2d-surface
+        DECLARED_WORLDS "lambkin:host-gpu2d@0.1.0/host-gpu2d"
+        EXPANDED_SURFACES "lambkin:host-gpu2d@0.1.0/host-gpu2d"
+    )
+
     add_library(croft_wit_host_gpu2d_runtime STATIC src/runtime/wit_host_gpu2d_runtime.c)
     add_dependencies(croft_wit_host_gpu2d_runtime host_gpu2d_wit_schema_gen)
     croft_apply_public_includes(croft_wit_host_gpu2d_runtime)
@@ -2706,7 +2837,8 @@ if(APPLE AND TARGET croft_ui_glfw_metal)
         croft_render_metal_native
         croft_wit_host_gpu2d
     )
-    croft_register_artifact(croft_wit_host_gpu2d_runtime wit
+    croft_register_artifact_from_xpi_bundles(croft_wit_host_gpu2d_runtime wit
+        BUNDLES croft-host-gpu2d-current-machine
         TAGS tier8 wit host-gpu2d surface render metal native-direct host-mix-in machine-generated-model
         DEPENDS croft_render_metal_native croft_wit_host_gpu2d
     )
@@ -2771,6 +2903,41 @@ else()
     )
 endif()
 
+if(APPLE)
+    set(CROFT_POPUP_MENU_XPI_SUPPORT_STATUS "host-implemented-subset")
+    set(CROFT_POPUP_MENU_XPI_APPLICABILITY "current-machine-macos")
+    set(CROFT_POPUP_MENU_XPI_DESCRIPTION
+        "Croft popup-menu mix-in over the native macOS popup presentation substrate.")
+else()
+    set(CROFT_POPUP_MENU_XPI_SUPPORT_STATUS "stub")
+    set(CROFT_POPUP_MENU_XPI_APPLICABILITY "current-machine")
+    set(CROFT_POPUP_MENU_XPI_DESCRIPTION
+        "Croft popup-menu mix-in currently resolves to a stub on this build.")
+endif()
+croft_define_xpi_substrate_spec(croft-popup-menu-presentation
+    KIND "popup-menu"
+    APPLICABILITY "${CROFT_POPUP_MENU_XPI_APPLICABILITY}"
+    DESCRIPTION "Synchronous popup-menu presentation substrate used by the Croft popup-menu host mix-in."
+    ARTIFACTS
+        croft_popup_menu_macos
+        croft_wit_host_popup_menu
+        croft_wit_host_popup_menu_runtime
+    INTERFACES
+        "lambkin:host-popup-menu@0.1.0/host-popup-menu"
+)
+croft_define_xpi_bundle_spec(croft-host-popup-menu-current-machine
+    SUPPORT_STATUS "${CROFT_POPUP_MENU_XPI_SUPPORT_STATUS}"
+    APPLICABILITY "${CROFT_POPUP_MENU_XPI_APPLICABILITY}"
+    DESCRIPTION "${CROFT_POPUP_MENU_XPI_DESCRIPTION}"
+    ARTIFACTS
+        croft_popup_menu_macos
+        croft_wit_host_popup_menu
+        croft_wit_host_popup_menu_runtime
+    SUBSTRATES croft-popup-menu-presentation
+    DECLARED_WORLDS "lambkin:host-popup-menu@0.1.0/host-popup-menu"
+    EXPANDED_SURFACES "lambkin:host-popup-menu@0.1.0/host-popup-menu"
+)
+
 add_library(croft_wit_host_popup_menu_runtime STATIC src/runtime/wit_host_popup_menu_runtime.c)
 add_dependencies(croft_wit_host_popup_menu_runtime host_popup_menu_wit_schema_gen)
 croft_apply_public_includes(croft_wit_host_popup_menu_runtime)
@@ -2778,7 +2945,8 @@ target_link_libraries(croft_wit_host_popup_menu_runtime PUBLIC
     croft_popup_menu_macos
     croft_wit_host_popup_menu
 )
-croft_register_artifact(croft_wit_host_popup_menu_runtime wit
+croft_register_artifact_from_xpi_bundles(croft_wit_host_popup_menu_runtime wit
+    BUNDLES croft-host-popup-menu-current-machine
     TAGS tier8 wit host-popup-menu host-mix-in service machine-generated-model
     DEPENDS croft_popup_menu_macos croft_wit_host_popup_menu
 )
@@ -2809,6 +2977,33 @@ if(APPLE)
     )
 
     if(CROFT_WIT_HOST_WINDOW_UI_TARGET)
+        croft_define_xpi_substrate_spec(croft-accessibility-tree
+            KIND "accessibility-tree"
+            APPLICABILITY "current-machine-macos"
+            DESCRIPTION "Native accessibility tree substrate backing the Croft host-a11y mix-in on macOS."
+            ARTIFACTS
+                croft_a11y_macos
+                croft_wit_host_a11y
+                croft_wit_host_a11y_runtime
+            INTERFACES
+                "lambkin:host-a11y@0.1.0/host-a11y"
+        )
+        croft_define_xpi_bundle_spec(croft-host-a11y-current-machine
+            SUPPORT_STATUS "host-implemented-subset"
+            APPLICABILITY "current-machine-macos"
+            DESCRIPTION "Croft accessibility mix-in over the shared window system and native accessibility tree substrates."
+            ARTIFACTS
+                croft_a11y_macos
+                croft_wit_host_a11y
+                croft_wit_host_a11y_runtime
+            SUBSTRATES
+                croft-window-system
+                croft-accessibility-tree
+            DECLARED_WORLDS "lambkin:host-a11y@0.1.0/host-a11y"
+            EXPANDED_SURFACES "lambkin:host-a11y@0.1.0/host-a11y"
+            HELPER_INTERFACES "lambkin:host-window@0.1.0/host-window"
+        )
+
         add_library(croft_wit_host_a11y_runtime STATIC src/runtime/wit_host_a11y_runtime.c)
         add_dependencies(croft_wit_host_a11y_runtime host_a11y_wit_schema_gen)
         croft_apply_public_includes(croft_wit_host_a11y_runtime)
@@ -2817,7 +3012,8 @@ if(APPLE)
             croft_a11y_macos
             croft_wit_host_a11y
         )
-        croft_register_artifact(croft_wit_host_a11y_runtime wit
+        croft_register_artifact_from_xpi_bundles(croft_wit_host_a11y_runtime wit
+            BUNDLES croft-host-a11y-current-machine
             TAGS tier8 wit host-a11y host-mix-in resource-handles accessibility machine-generated-model
             DEPENDS ${CROFT_WIT_HOST_WINDOW_UI_TARGET} croft_a11y_macos croft_wit_host_a11y
         )
@@ -2835,6 +3031,30 @@ if(APPLE)
         TAGS menu macos native
     )
 
+    croft_define_xpi_substrate_spec(croft-menu-bar-state
+        KIND "menu-bar"
+        APPLICABILITY "current-machine-macos"
+        DESCRIPTION "Native menu-bar state and action substrate backing the Croft host-menu mix-in on macOS."
+        ARTIFACTS
+            croft_menu_macos
+            croft_wit_host_menu
+            croft_wit_host_menu_runtime
+        INTERFACES
+            "lambkin:host-menu@0.1.0/host-menu"
+    )
+    croft_define_xpi_bundle_spec(croft-host-menu-current-machine
+        SUPPORT_STATUS "host-implemented-subset"
+        APPLICABILITY "current-machine-macos"
+        DESCRIPTION "Croft menu-bar mix-in over the native macOS menu-bar state substrate."
+        ARTIFACTS
+            croft_menu_macos
+            croft_wit_host_menu
+            croft_wit_host_menu_runtime
+        SUBSTRATES croft-menu-bar-state
+        DECLARED_WORLDS "lambkin:host-menu@0.1.0/host-menu"
+        EXPANDED_SURFACES "lambkin:host-menu@0.1.0/host-menu"
+    )
+
     add_library(croft_wit_host_menu_runtime STATIC src/runtime/wit_host_menu_runtime.c)
     add_dependencies(croft_wit_host_menu_runtime host_menu_wit_schema_gen menu_wit_schema_gen)
     croft_apply_public_includes(croft_wit_host_menu_runtime)
@@ -2842,7 +3062,8 @@ if(APPLE)
         croft_menu_macos
         croft_wit_host_menu
     )
-    croft_register_artifact(croft_wit_host_menu_runtime wit
+    croft_register_artifact_from_xpi_bundles(croft_wit_host_menu_runtime wit
+        BUNDLES croft-host-menu-current-machine
         TAGS tier8 wit host-menu host-mix-in service machine-generated-model
         DEPENDS croft_menu_macos croft_wit_host_menu
     )

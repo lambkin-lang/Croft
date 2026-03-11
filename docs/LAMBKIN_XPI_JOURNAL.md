@@ -31,6 +31,34 @@ The better model is:
 That keeps one authoritative graph for solver consumption while preserving the
 broader build inventory for other tools.
 
+## March 11, 2026: Croft Host Mix-Ins Need The Same Bundle Treatment As WASI
+
+Once `croft-xpi.json` started projecting artifact participation directly, the
+remaining asymmetry became obvious: WASI had an explicit bundle/substrate
+graph, while Croft's own host mix-ins were still mostly "just tagged
+artifacts."
+
+That was the wrong shape for Lambkin. The host mix-ins are exactly the kind of
+small, crosscutting capability seams the solver will need to reason about:
+
+- filesystem handles,
+- clock queries,
+- window lifecycle and events,
+- clipboard access,
+- menu and popup action streams,
+- editor-input normalization,
+- GPU surface access,
+- and accessibility trees.
+
+The useful conclusion is that these should not wait for some future general
+XPI phase. They already are the current in-tree mix-in catalog.
+
+Treating them as explicit bundles over shared substrates does two things:
+
+- it makes the current-machine editor family less ad hoc in metadata,
+- and it gives the solver a more realistic early model of how Croft-specific
+  seams can compose, overlap, and share lower substrates just like WASI ones.
+
 ## March 11, 2026: Vendoring Needs A Drift Story, Not Just A Snapshot
 
 Once WASI `0.2.9` became a first-class vendored input, another missing piece

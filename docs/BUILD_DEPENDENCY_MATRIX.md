@@ -177,6 +177,7 @@ It records:
   a second file first
 - shared substrates such as byte streams, descriptor tables, pollables, system random, and time-base
 - current-machine capability bundles such as CLI stdio/terminal, random, clocks/poll, and filesystem/streams
+- Croft host mix-in bundles and substrates for filesystem, clock, window, clipboard, popup-menu, menu-bar, editor-input normalization, GPU surface access, and accessibility where the current machine provides them
 - the declared worlds versus expanded callable surfaces for those bundles
 - helper-interface couplings such as `wasi:io/error` and `wasi:filesystem/error`
 

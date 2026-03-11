@@ -181,6 +181,15 @@ int main(void)
     ok &= expect_contains("xpi runtime bundles",
                           xpi_json,
                           "\"capability_bundles\": [\"wasi-cli-stdio-terminal-current-machine\", \"wasi-random-current-machine\", \"wasi-clocks-poll-current-machine\", \"wasi-filesystem-streams-current-machine\"]");
+    ok &= expect_contains("xpi host window substrate", xpi_json, "\"name\": \"croft-window-system\"");
+    ok &= expect_contains("xpi host window bundle", xpi_json, "\"name\": \"croft-host-window-current-machine\"");
+    ok &= expect_contains("xpi host editor-input bundle", xpi_json, "\"name\": \"croft-host-editor-input-normalization\"");
+    ok &= expect_contains("xpi host editor-input helpers",
+                          xpi_json,
+                          "\"helper_interfaces\": [\"lambkin:host-window@0.1.0/host-window\", \"lambkin:host-menu@0.1.0/host-menu\"]");
+    ok &= expect_contains("xpi host window runtime artifact",
+                          xpi_json,
+                          "\"name\": \"croft_wit_host_window_runtime\"");
     ok &= expect_contains("xpi filesystem helpers",
                           xpi_json,
                           "\"helper_interfaces\": [\"wasi:io@0.2.9/error\", \"wasi:filesystem@0.2.9/error\"]");
@@ -194,6 +203,15 @@ int main(void)
     ok &= expect_contains("artifact filesystem helper",
                           artifact_json,
                           "\"helper_interfaces\": [\"wasi:filesystem@0.2.9/error\"]");
+    ok &= expect_contains("artifact host window bundle",
+                          artifact_json,
+                          "\"capability_bundles\": [\"croft-host-window-current-machine\"]");
+    ok &= expect_contains("artifact host window substrate",
+                          artifact_json,
+                          "\"shared_substrates\": [\"croft-window-system\"]");
+    ok &= expect_contains("artifact host editor-input helper",
+                          artifact_json,
+                          "\"helper_interfaces\": [\"lambkin:host-window@0.1.0/host-window\", \"lambkin:host-menu@0.1.0/host-menu\"]");
 
     free(xpi_json);
     free(artifact_json);
