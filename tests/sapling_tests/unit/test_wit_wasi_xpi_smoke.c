@@ -176,6 +176,12 @@ int main(void)
 
     ok &= expect_contains("xpi substrate name", xpi_json, "\"name\": \"wasi-descriptor-table\"");
     ok &= expect_contains("xpi filesystem bundle", xpi_json, "\"name\": \"wasi-filesystem-streams-current-machine\"");
+    ok &= expect_contains("xpi filesystem bundle requirements",
+                          xpi_json,
+                          "\"requires_bundles\": [\"wasi-clocks-poll-current-machine\"]");
+    ok &= expect_contains("xpi clocks bundle compatibility",
+                          xpi_json,
+                          "\"compatible_bundles\": [\"wasi-filesystem-streams-current-machine\"]");
     ok &= expect_contains("xpi artifacts section", xpi_json, "\"artifacts\": [");
     ok &= expect_contains("xpi entrypoints section", xpi_json, "\"entrypoints\": [");
     ok &= expect_contains("xpi runtime artifact", xpi_json, "\"name\": \"croft_wit_wasi_machine_runtime\"");
@@ -190,6 +196,12 @@ int main(void)
     ok &= expect_contains("xpi host editor-input helpers",
                           xpi_json,
                           "\"helper_interfaces\": [\"lambkin:host-window@0.1.0/host-window\", \"lambkin:host-menu@0.1.0/host-menu\"]");
+    ok &= expect_contains("xpi host editor-input requirements",
+                          xpi_json,
+                          "\"requires_bundles\": [\"croft-host-window-current-machine\", \"croft-host-menu-current-machine\"]");
+    ok &= expect_contains("xpi host editor-input compatibility",
+                          xpi_json,
+                          "\"compatible_bundles\": [\"croft-host-clipboard-current-machine\", \"croft-host-popup-menu-current-machine\"]");
     ok &= expect_contains("xpi aggregate artifact", xpi_json, "\"name\": \"croft\"");
     ok &= expect_contains("xpi aggregate artifact bundles",
                           xpi_json,
@@ -247,6 +259,9 @@ int main(void)
     ok &= expect_contains("artifact host editor-input helper",
                           artifact_json,
                           "\"helper_interfaces\": [\"lambkin:host-window@0.1.0/host-window\", \"lambkin:host-menu@0.1.0/host-menu\"]");
+    ok &= expect_contains("artifact host editor-input requires bundles",
+                          artifact_json,
+                          "\"requires_bundles\": [\"croft-host-window-current-machine\", \"croft-host-menu-current-machine\"]");
     ok &= expect_contains("artifact file dialog bundle",
                           artifact_json,
                           "\"capability_bundles\": [\"croft-host-file-dialog-current-machine\"]");

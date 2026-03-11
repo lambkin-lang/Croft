@@ -346,6 +346,8 @@ function(croft_register_artifact target kind)
     croft_collect_registered_artifact_requirement_bundles(derived_requires_bundles ${ART_DEPENDS})
     croft_collect_registered_artifact_participation_bundles(derived_provider_bundles ${ART_DERIVE_REQUIRES_FROM})
     set(effective_requires_bundles ${ART_REQUIRES_BUNDLES} ${derived_requires_bundles} ${derived_provider_bundles})
+    croft_collect_transitive_xpi_bundle_requirements(transitive_requires_bundles ${effective_requires_bundles})
+    list(APPEND effective_requires_bundles ${transitive_requires_bundles})
     if(effective_requires_bundles)
         list(REMOVE_DUPLICATES effective_requires_bundles)
     endif()
@@ -433,7 +435,7 @@ function(croft_register_xpi_bundle name)
     cmake_parse_arguments(XPI
         ""
         "SUPPORT_STATUS;APPLICABILITY;DESCRIPTION"
-        "ARTIFACTS;SUBSTRATES;DECLARED_WORLDS;EXPANDED_SURFACES;HELPER_INTERFACES"
+        "ARTIFACTS;SUBSTRATES;DECLARED_WORLDS;EXPANDED_SURFACES;HELPER_INTERFACES;REQUIRES_BUNDLES;COMPATIBLE_BUNDLES;CONFLICTS_WITH"
         ${ARGN})
     if(XPI_SUPPORT_STATUS)
         croft_json_string(support_status_json "${XPI_SUPPORT_STATUS}")
@@ -455,7 +457,10 @@ function(croft_register_xpi_bundle name)
     croft_json_array(declared_worlds_json ${XPI_DECLARED_WORLDS})
     croft_json_array(expanded_surfaces_json ${XPI_EXPANDED_SURFACES})
     croft_json_array(helper_interfaces_json ${XPI_HELPER_INTERFACES})
-    set(entry "    {\n      \"name\": \"${name}\",\n      \"support_status\": ${support_status_json},\n      \"applicability\": ${applicability_json},\n      \"description\": ${description_json},\n      \"artifacts\": ${artifacts_json},\n      \"substrates\": ${substrates_json},\n      \"declared_worlds\": ${declared_worlds_json},\n      \"expanded_surfaces\": ${expanded_surfaces_json},\n      \"helper_interfaces\": ${helper_interfaces_json}\n    }")
+    croft_json_array(requires_bundles_json ${XPI_REQUIRES_BUNDLES})
+    croft_json_array(compatible_bundles_json ${XPI_COMPATIBLE_BUNDLES})
+    croft_json_array(conflicts_with_json ${XPI_CONFLICTS_WITH})
+    set(entry "    {\n      \"name\": \"${name}\",\n      \"support_status\": ${support_status_json},\n      \"applicability\": ${applicability_json},\n      \"description\": ${description_json},\n      \"artifacts\": ${artifacts_json},\n      \"substrates\": ${substrates_json},\n      \"declared_worlds\": ${declared_worlds_json},\n      \"expanded_surfaces\": ${expanded_surfaces_json},\n      \"helper_interfaces\": ${helper_interfaces_json},\n      \"requires_bundles\": ${requires_bundles_json},\n      \"compatible_bundles\": ${compatible_bundles_json},\n      \"conflicts_with\": ${conflicts_with_json}\n    }")
     set_property(GLOBAL APPEND PROPERTY CROFT_XPI_BUNDLE_ENTRIES "${entry}")
 endfunction()
 
@@ -485,7 +490,7 @@ function(croft_define_xpi_bundle_spec name)
     cmake_parse_arguments(XPI
         ""
         "SUPPORT_STATUS;APPLICABILITY;DESCRIPTION"
-        "ARTIFACTS;SUBSTRATES;DECLARED_WORLDS;EXPANDED_SURFACES;HELPER_INTERFACES"
+        "ARTIFACTS;SUBSTRATES;DECLARED_WORLDS;EXPANDED_SURFACES;HELPER_INTERFACES;REQUIRES_BUNDLES;COMPATIBLE_BUNDLES;CONFLICTS_WITH"
         ${ARGN})
     string(MAKE_C_IDENTIFIER "${name}" key)
     set_property(GLOBAL APPEND PROPERTY CROFT_DEFINED_XPI_BUNDLES "${name}")
@@ -497,6 +502,9 @@ function(croft_define_xpi_bundle_spec name)
     set_property(GLOBAL PROPERTY "CROFT_XPI_BUNDLE_${key}_DECLARED_WORLDS" "${XPI_DECLARED_WORLDS}")
     set_property(GLOBAL PROPERTY "CROFT_XPI_BUNDLE_${key}_EXPANDED_SURFACES" "${XPI_EXPANDED_SURFACES}")
     set_property(GLOBAL PROPERTY "CROFT_XPI_BUNDLE_${key}_HELPER_INTERFACES" "${XPI_HELPER_INTERFACES}")
+    set_property(GLOBAL PROPERTY "CROFT_XPI_BUNDLE_${key}_REQUIRES_BUNDLES" "${XPI_REQUIRES_BUNDLES}")
+    set_property(GLOBAL PROPERTY "CROFT_XPI_BUNDLE_${key}_COMPATIBLE_BUNDLES" "${XPI_COMPATIBLE_BUNDLES}")
+    set_property(GLOBAL PROPERTY "CROFT_XPI_BUNDLE_${key}_CONFLICTS_WITH" "${XPI_CONFLICTS_WITH}")
     croft_register_xpi_bundle(${name}
         SUPPORT_STATUS "${XPI_SUPPORT_STATUS}"
         APPLICABILITY "${XPI_APPLICABILITY}"
@@ -506,6 +514,9 @@ function(croft_define_xpi_bundle_spec name)
         DECLARED_WORLDS ${XPI_DECLARED_WORLDS}
         EXPANDED_SURFACES ${XPI_EXPANDED_SURFACES}
         HELPER_INTERFACES ${XPI_HELPER_INTERFACES}
+        REQUIRES_BUNDLES ${XPI_REQUIRES_BUNDLES}
+        COMPATIBLE_BUNDLES ${XPI_COMPATIBLE_BUNDLES}
+        CONFLICTS_WITH ${XPI_CONFLICTS_WITH}
     )
 endfunction()
 
@@ -546,6 +557,35 @@ function(croft_collect_xpi_bundle_field out_var field)
     set(${out_var} ${values} PARENT_SCOPE)
 endfunction()
 
+function(croft_collect_transitive_xpi_bundle_requirements out_var)
+    set(pending ${ARGN})
+    set(result "")
+    set(visited "")
+
+    while(pending)
+        list(GET pending 0 current)
+        list(REMOVE_AT pending 0)
+        if(current IN_LIST visited)
+            continue()
+        endif()
+        list(APPEND visited "${current}")
+        croft_get_xpi_bundle_field(required_bundles "${current}" "REQUIRES_BUNDLES")
+        foreach(required IN LISTS required_bundles)
+            if(NOT required IN_LIST result)
+                list(APPEND result "${required}")
+            endif()
+            if(NOT required IN_LIST visited)
+                list(APPEND pending "${required}")
+            endif()
+        endforeach()
+    endwhile()
+
+    if(result)
+        list(REMOVE_DUPLICATES result)
+    endif()
+    set(${out_var} ${result} PARENT_SCOPE)
+endfunction()
+
 function(croft_register_artifact_from_xpi_bundles target kind)
     cmake_parse_arguments(ART
         ""
@@ -565,6 +605,7 @@ function(croft_register_artifact_from_xpi_bundles target kind)
     croft_collect_named_xpi_bundle_field(helper_interfaces HELPER_INTERFACES ${ART_BUNDLES})
     croft_collect_named_xpi_bundle_field(declared_worlds DECLARED_WORLDS ${ART_BUNDLES})
     croft_collect_named_xpi_bundle_field(expanded_surfaces EXPANDED_SURFACES ${ART_BUNDLES})
+    croft_collect_transitive_xpi_bundle_requirements(required_bundles ${ART_BUNDLES})
 
     list(APPEND shared_substrates ${ART_EXTRA_SHARED_SUBSTRATES})
     list(APPEND helper_interfaces ${ART_EXTRA_HELPER_INTERFACES})
@@ -583,7 +624,8 @@ function(croft_register_artifact_from_xpi_bundles target kind)
         SHARED_SUBSTRATES ${shared_substrates}
         HELPER_INTERFACES ${helper_interfaces}
         DECLARED_WORLDS ${declared_worlds}
-        EXPANDED_SURFACES ${expanded_surfaces})
+        EXPANDED_SURFACES ${expanded_surfaces}
+        REQUIRES_BUNDLES ${required_bundles})
     if(ART_PROFILE)
         list(APPEND register_args PROFILE "${ART_PROFILE}")
     endif()
@@ -634,9 +676,14 @@ function(croft_register_xpi_entrypoint name)
     else()
         set(applicability_json "null")
     endif()
+    croft_collect_transitive_xpi_bundle_requirements(transitive_requires_bundles ${XPI_ENTRY_REQUIRES_BUNDLES})
+    set(effective_requires_bundles ${XPI_ENTRY_REQUIRES_BUNDLES} ${transitive_requires_bundles})
+    if(effective_requires_bundles)
+        list(REMOVE_DUPLICATES effective_requires_bundles)
+    endif()
     croft_json_array(tags_json ${XPI_ENTRY_TAGS})
     croft_json_array(requires_json ${XPI_ENTRY_REQUIRES})
-    croft_json_array(requires_bundles_json ${XPI_ENTRY_REQUIRES_BUNDLES})
+    croft_json_array(requires_bundles_json ${effective_requires_bundles})
     set(entry "    {\n      \"name\": \"${name}\",\n      \"kind\": ${kind_json},\n      \"focus\": ${focus_json},\n      \"applicability\": ${applicability_json},\n      \"tags\": ${tags_json},\n      \"requires\": ${requires_json},\n      \"requires_bundles\": ${requires_bundles_json}\n    }")
     set_property(GLOBAL APPEND PROPERTY CROFT_XPI_ENTRYPOINT_ENTRIES "${entry}")
 endfunction()
@@ -651,6 +698,8 @@ function(croft_add_example target)
     cmake_parse_arguments(EXAMPLE "" "FOCUS;APPLICABILITY" "SOURCES;LINKS;REQUIRES;REQUIRES_BUNDLES;TAGS;COMPILE_DEFINITIONS" ${ARGN})
     croft_collect_registered_artifact_participation_bundles(derived_requires_bundles ${EXAMPLE_REQUIRES})
     set(effective_requires_bundles ${EXAMPLE_REQUIRES_BUNDLES} ${derived_requires_bundles})
+    croft_collect_transitive_xpi_bundle_requirements(transitive_requires_bundles ${effective_requires_bundles})
+    list(APPEND effective_requires_bundles ${transitive_requires_bundles})
     if(effective_requires_bundles)
         list(REMOVE_DUPLICATES effective_requires_bundles)
     endif()
@@ -2475,6 +2524,7 @@ croft_define_xpi_bundle_spec(wasi-clocks-poll-current-machine
         "wasi:clocks@0.2.9/wall-clock"
         "wasi:clocks@0.2.9/timezone"
         "wasi:io@0.2.9/poll"
+    COMPATIBLE_BUNDLES wasi-filesystem-streams-current-machine
 )
 croft_define_xpi_bundle_spec(wasi-filesystem-streams-current-machine
     SUPPORT_STATUS "host-implemented-subset"
@@ -2500,6 +2550,8 @@ croft_define_xpi_bundle_spec(wasi-filesystem-streams-current-machine
     HELPER_INTERFACES
         "wasi:io@0.2.9/error"
         "wasi:filesystem@0.2.9/error"
+    REQUIRES_BUNDLES wasi-clocks-poll-current-machine
+    COMPATIBLE_BUNDLES wasi-clocks-poll-current-machine
 )
 
 set(CROFT_WASI_MACHINE_RUNTIME_BUNDLES
@@ -2668,6 +2720,12 @@ croft_define_xpi_bundle_spec(croft-host-editor-input-normalization
     HELPER_INTERFACES
         "lambkin:host-window@0.1.0/host-window"
         "lambkin:host-menu@0.1.0/host-menu"
+    REQUIRES_BUNDLES
+        croft-host-window-current-machine
+        croft-host-menu-current-machine
+    COMPATIBLE_BUNDLES
+        croft-host-clipboard-current-machine
+        croft-host-popup-menu-current-machine
 )
 
 add_library(croft_wit_host_editor_input_runtime STATIC src/runtime/wit_host_editor_input_runtime.c)
@@ -2785,6 +2843,14 @@ if(CROFT_WIT_HOST_WINDOW_UI_TARGET)
         SUBSTRATES croft-window-system
         DECLARED_WORLDS "lambkin:host-window@0.1.0/host-window"
         EXPANDED_SURFACES "lambkin:host-window@0.1.0/host-window"
+        COMPATIBLE_BUNDLES
+            croft-host-clipboard-current-machine
+            croft-host-gpu2d-current-machine
+            croft-host-menu-current-machine
+            croft-host-popup-menu-current-machine
+            croft-host-editor-input-normalization
+            croft-host-a11y-current-machine
+            croft-host-gesture-current-machine
     )
     croft_define_xpi_bundle_spec(croft-host-clipboard-current-machine
         SUPPORT_STATUS "host-implemented-subset"
@@ -2797,6 +2863,10 @@ if(CROFT_WIT_HOST_WINDOW_UI_TARGET)
         SUBSTRATES croft-window-system
         DECLARED_WORLDS "lambkin:host-clipboard@0.1.0/host-clipboard"
         EXPANDED_SURFACES "lambkin:host-clipboard@0.1.0/host-clipboard"
+        REQUIRES_BUNDLES croft-host-window-current-machine
+        COMPATIBLE_BUNDLES
+            croft-host-gpu2d-current-machine
+            croft-host-editor-input-normalization
     )
 
     add_library(croft_wit_host_window_runtime STATIC src/runtime/wit_host_window_runtime.c)
@@ -2958,6 +3028,13 @@ if(APPLE AND TARGET croft_ui_glfw_metal)
         SUBSTRATES croft-native-2d-surface
         DECLARED_WORLDS "lambkin:host-gpu2d@0.1.0/host-gpu2d"
         EXPANDED_SURFACES "lambkin:host-gpu2d@0.1.0/host-gpu2d"
+        COMPATIBLE_BUNDLES
+            croft-host-window-current-machine
+            croft-host-clipboard-current-machine
+            croft-host-popup-menu-current-machine
+            croft-host-editor-input-normalization
+            croft-host-a11y-current-machine
+            croft-host-gesture-current-machine
     )
 
     add_library(croft_wit_host_gpu2d_runtime STATIC src/runtime/wit_host_gpu2d_runtime.c)
@@ -3103,6 +3180,10 @@ croft_define_xpi_bundle_spec(croft-host-popup-menu-current-machine
     SUBSTRATES croft-popup-menu-presentation
     DECLARED_WORLDS "lambkin:host-popup-menu@0.1.0/host-popup-menu"
     EXPANDED_SURFACES "lambkin:host-popup-menu@0.1.0/host-popup-menu"
+    REQUIRES_BUNDLES croft-host-window-current-machine
+    COMPATIBLE_BUNDLES
+        croft-host-editor-input-normalization
+        croft-host-gpu2d-current-machine
 )
 
 add_library(croft_wit_host_popup_menu_runtime STATIC src/runtime/wit_host_popup_menu_runtime.c)
@@ -3174,6 +3255,10 @@ if(APPLE)
             DECLARED_WORLDS "lambkin:host-a11y@0.1.0/host-a11y"
             EXPANDED_SURFACES "lambkin:host-a11y@0.1.0/host-a11y"
             HELPER_INTERFACES "lambkin:host-window@0.1.0/host-window"
+            REQUIRES_BUNDLES croft-host-window-current-machine
+            COMPATIBLE_BUNDLES
+                croft-host-gpu2d-current-machine
+                croft-host-editor-input-normalization
         )
 
         add_library(croft_wit_host_a11y_runtime STATIC src/runtime/wit_host_a11y_runtime.c)
@@ -3227,6 +3312,10 @@ if(APPLE)
         SUBSTRATES croft-menu-bar-state
         DECLARED_WORLDS "lambkin:host-menu@0.1.0/host-menu"
         EXPANDED_SURFACES "lambkin:host-menu@0.1.0/host-menu"
+        COMPATIBLE_BUNDLES
+            croft-host-window-current-machine
+            croft-host-editor-input-normalization
+            croft-host-popup-menu-current-machine
     )
 
     add_library(croft_wit_host_menu_runtime STATIC src/runtime/wit_host_menu_runtime.c)
@@ -3290,6 +3379,10 @@ if(APPLE)
             SUBSTRATES
                 croft-window-system
                 croft-gesture-input
+            REQUIRES_BUNDLES croft-host-window-current-machine
+            COMPATIBLE_BUNDLES
+                croft-host-gpu2d-current-machine
+                croft-host-clipboard-current-machine
         )
     endif()
 

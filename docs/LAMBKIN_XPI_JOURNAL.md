@@ -162,6 +162,31 @@ This is closer to the actual Lambkin composition story. Some nodes in the graph
 are leaves, some are providers, and some are composition layers that should be
 visible as such rather than flattened back into raw target dependencies.
 
+The next missing piece after that was bundle-to-bundle structure.
+
+Some relationships are not artifact edges at all. They are capability facts:
+
+- `host-editor-input` consumes window and menu event surfaces,
+- popup menus, gestures, clipboard, and accessibility are meaningful only in a
+  windowed host,
+- filesystem streams rely on the pollable substrate if `subscribe` is meant to
+  be honest instead of decorative.
+
+Those are not well represented by repeating bundle names on every example. They
+belong on the bundle definitions themselves.
+
+That leads to a better split:
+
+- artifacts and entrypoints still name the bundles they provide or consume,
+- bundle specs carry `requires_bundles`, `compatible_bundles`, and eventually
+  `conflicts_with`,
+- top-level consumers expand those bundle requirements transitively at
+  configure time.
+
+That is much closer to a solver input than a build inventory. It lets Lambkin
+see the difference between "this artifact links that target" and "this
+capability only makes sense if these companion capabilities are also present."
+
 ## March 11, 2026: Vendoring Needs A Drift Story, Not Just A Snapshot
 
 Once WASI `0.2.9` became a first-class vendored input, another missing piece

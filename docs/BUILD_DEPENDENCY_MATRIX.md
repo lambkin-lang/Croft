@@ -186,6 +186,14 @@ It records:
   higher-level unit; that keeps `croft`, editor document layers, and scene/app
   shells honest in the XPI graph without forcing ordinary dependency edges to
   inherit every lower bundle automatically
+- bundle specs now also carry relationship metadata of their own:
+  `requires_bundles` for hard companion capabilities, `compatible_bundles` for
+  known-good co-composition edges, and `conflicts_with` for future competing
+  variants when those appear
+- those bundle-level `requires_bundles` are expanded transitively into XPI
+  entrypoints and bundle-backed runtime artifacts at configure time, so the
+  graph reflects actual composition constraints instead of repeating them
+  ad hoc in every top-level target
 - shared substrates such as byte streams, descriptor tables, pollables, system random, and time-base
 - current-machine capability bundles such as CLI stdio/terminal, random, clocks/poll, and filesystem/streams
 - Croft host mix-in bundles and substrates for filesystem, clock, window, clipboard, popup-menu, menu-bar, editor-input normalization, GPU surface access, and accessibility where the current machine provides them
