@@ -291,12 +291,66 @@ function(croft_json_string out_var value)
     set(${out_var} "\"${escaped}\"" PARENT_SCOPE)
 endfunction()
 
+function(croft_get_registered_artifact_bundle_field out_var target field)
+    string(MAKE_C_IDENTIFIER "${target}" key)
+    get_property(values GLOBAL PROPERTY "CROFT_REGISTERED_ARTIFACT_${key}_${field}")
+    if(NOT values OR values MATCHES "-NOTFOUND$")
+        set(values "")
+    endif()
+    set(${out_var} ${values} PARENT_SCOPE)
+endfunction()
+
+function(croft_collect_registered_artifact_requirement_bundles out_var)
+    set(artifact_names ${ARGN})
+    if(NOT artifact_names)
+        set(${out_var} "" PARENT_SCOPE)
+        return()
+    endif()
+
+    set(values "")
+    foreach(name IN LISTS artifact_names)
+        croft_get_registered_artifact_bundle_field(requirement_values "${name}" "REQUIRES_BUNDLES")
+        list(APPEND values ${requirement_values})
+    endforeach()
+    if(values)
+        list(REMOVE_DUPLICATES values)
+    endif()
+    set(${out_var} ${values} PARENT_SCOPE)
+endfunction()
+
+function(croft_collect_registered_artifact_participation_bundles out_var)
+    set(artifact_names ${ARGN})
+    if(NOT artifact_names)
+        set(${out_var} "" PARENT_SCOPE)
+        return()
+    endif()
+
+    set(values "")
+    foreach(name IN LISTS artifact_names)
+        croft_get_registered_artifact_bundle_field(capability_values "${name}" "CAPABILITY_BUNDLES")
+        croft_get_registered_artifact_bundle_field(requirement_values "${name}" "REQUIRES_BUNDLES")
+        list(APPEND values ${capability_values} ${requirement_values})
+    endforeach()
+    if(values)
+        list(REMOVE_DUPLICATES values)
+    endif()
+    set(${out_var} ${values} PARENT_SCOPE)
+endfunction()
+
 function(croft_register_artifact target kind)
     cmake_parse_arguments(ART
         ""
         "PROFILE;UPSTREAM_PACKAGE;UPSTREAM_VERSION;SUPPORT_STATUS;APPLICABILITY"
         "TAGS;DEPENDS;CAPABILITY_BUNDLES;SHARED_SUBSTRATES;HELPER_INTERFACES;DECLARED_WORLDS;EXPANDED_SURFACES;REQUIRES_BUNDLES"
         ${ARGN})
+    croft_collect_registered_artifact_requirement_bundles(derived_requires_bundles ${ART_DEPENDS})
+    set(effective_requires_bundles ${ART_REQUIRES_BUNDLES} ${derived_requires_bundles})
+    if(effective_requires_bundles)
+        list(REMOVE_DUPLICATES effective_requires_bundles)
+    endif()
+    foreach(bundle IN LISTS ART_CAPABILITY_BUNDLES)
+        list(REMOVE_ITEM effective_requires_bundles "${bundle}")
+    endforeach()
     if(ART_PROFILE)
         set(profile "${ART_PROFILE}")
     else()
@@ -334,13 +388,16 @@ function(croft_register_artifact target kind)
     croft_json_array(helper_interfaces_json ${ART_HELPER_INTERFACES})
     croft_json_array(declared_worlds_json ${ART_DECLARED_WORLDS})
     croft_json_array(expanded_surfaces_json ${ART_EXPANDED_SURFACES})
-    croft_json_array(requires_bundles_json ${ART_REQUIRES_BUNDLES})
+    croft_json_array(requires_bundles_json ${effective_requires_bundles})
     set(entry "    {\n      \"name\": \"${target}\",\n      \"kind\": \"${kind}\",\n      \"profile\": ${profile_json},\n      \"upstream_package\": ${upstream_package_json},\n      \"upstream_version\": ${upstream_version_json},\n      \"support_status\": ${support_status_json},\n      \"applicability\": ${applicability_json},\n      \"capability_bundles\": ${capability_bundles_json},\n      \"shared_substrates\": ${shared_substrates_json},\n      \"helper_interfaces\": ${helper_interfaces_json},\n      \"declared_worlds\": ${declared_worlds_json},\n      \"expanded_surfaces\": ${expanded_surfaces_json},\n      \"requires_bundles\": ${requires_bundles_json},\n      \"tags\": ${tags_json},\n      \"depends\": ${depends_json}\n    }")
     set_property(GLOBAL APPEND PROPERTY CROFT_ARTIFACT_ENTRIES "${entry}")
     if(ART_CAPABILITY_BUNDLES OR ART_SHARED_SUBSTRATES OR ART_HELPER_INTERFACES
-       OR ART_DECLARED_WORLDS OR ART_EXPANDED_SURFACES OR ART_REQUIRES_BUNDLES)
+       OR ART_DECLARED_WORLDS OR ART_EXPANDED_SURFACES OR effective_requires_bundles)
         set_property(GLOBAL APPEND PROPERTY CROFT_XPI_ARTIFACT_ENTRIES "${entry}")
     endif()
+    string(MAKE_C_IDENTIFIER "${target}" key)
+    set_property(GLOBAL PROPERTY "CROFT_REGISTERED_ARTIFACT_${key}_CAPABILITY_BUNDLES" "${ART_CAPABILITY_BUNDLES}")
+    set_property(GLOBAL PROPERTY "CROFT_REGISTERED_ARTIFACT_${key}_REQUIRES_BUNDLES" "${effective_requires_bundles}")
     set_property(GLOBAL APPEND PROPERTY CROFT_INSTALL_TARGETS "${target}")
 endfunction()
 
@@ -591,6 +648,11 @@ endfunction()
 
 function(croft_add_example target)
     cmake_parse_arguments(EXAMPLE "" "FOCUS;APPLICABILITY" "SOURCES;LINKS;REQUIRES;REQUIRES_BUNDLES;TAGS;COMPILE_DEFINITIONS" ${ARGN})
+    croft_collect_registered_artifact_participation_bundles(derived_requires_bundles ${EXAMPLE_REQUIRES})
+    set(effective_requires_bundles ${EXAMPLE_REQUIRES_BUNDLES} ${derived_requires_bundles})
+    if(effective_requires_bundles)
+        list(REMOVE_DUPLICATES effective_requires_bundles)
+    endif()
     add_executable(${target} EXCLUDE_FROM_ALL ${EXAMPLE_SOURCES})
     target_include_directories(${target} PRIVATE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -606,7 +668,7 @@ function(croft_add_example target)
         FOCUS "${EXAMPLE_FOCUS}"
         TAGS ${EXAMPLE_TAGS}
         REQUIRES ${EXAMPLE_REQUIRES}
-        REQUIRES_BUNDLES ${EXAMPLE_REQUIRES_BUNDLES}
+        REQUIRES_BUNDLES ${effective_requires_bundles}
     )
     croft_register_xpi_entrypoint(${target}
         KIND "example"
@@ -614,7 +676,7 @@ function(croft_add_example target)
         APPLICABILITY "${EXAMPLE_APPLICABILITY}"
         TAGS ${EXAMPLE_TAGS}
         REQUIRES ${EXAMPLE_REQUIRES}
-        REQUIRES_BUNDLES ${EXAMPLE_REQUIRES_BUNDLES}
+        REQUIRES_BUNDLES ${effective_requires_bundles}
     )
 endfunction()
 
@@ -3357,7 +3419,6 @@ croft_add_example(example_wit_fs_read
     SOURCES examples/wit_fs_read.c
     LINKS croft_wit_host_fs_runtime
     REQUIRES croft_wit_host_fs_runtime
-    REQUIRES_BUNDLES croft-host-fs-current-machine
     TAGS wit xpi host-fs file-handles host-mix-in
     FOCUS "Host filesystem access driven through generated WIT file resource handles."
 )
@@ -3379,7 +3440,6 @@ croft_add_example(example_wit_clock_now
     SOURCES examples/wit_clock_now.c
     LINKS croft_wit_host_clock_runtime
     REQUIRES croft_wit_host_clock_runtime
-    REQUIRES_BUNDLES croft-host-clock-current-machine
     TAGS wit xpi host-clock host-mix-in
     FOCUS "Host monotonic clock access driven through generated WIT service commands."
 )
@@ -3390,9 +3450,6 @@ if(TARGET croft_wit_host_window_runtime)
         SOURCES examples/wit_window_events.c
         LINKS croft_wit_host_window_runtime croft_wit_host_clock_runtime
         REQUIRES croft_wit_host_window_runtime croft_wit_host_clock_runtime
-        REQUIRES_BUNDLES
-            croft-host-window-current-machine
-            croft-host-clock-current-machine
         TAGS wit xpi host-window host-clock host-mix-in event-queue
         FOCUS "Window lifecycle and polled UI events driven through generated WIT commands."
     )
@@ -3404,10 +3461,6 @@ if(TARGET croft_wit_host_window_runtime AND TARGET croft_wit_host_gpu2d_runtime)
         SOURCES examples/wit_gpu_canvas.c
         LINKS croft_wit_host_window_runtime croft_wit_host_gpu2d_runtime croft_wit_host_clock_runtime
         REQUIRES croft_wit_host_window_runtime croft_wit_host_gpu2d_runtime croft_wit_host_clock_runtime
-        REQUIRES_BUNDLES
-            croft-host-window-current-machine
-            croft-host-gpu2d-current-machine
-            croft-host-clock-current-machine
         TAGS wit xpi host-window host-gpu2d host-clock render metal native-direct
         FOCUS "Direct-Metal host GPU surface access driven through generated WIT window, clock, and GPU mix-ins."
     )
@@ -3427,10 +3480,6 @@ if(TARGET croft_wit_host_window_runtime AND TARGET croft_wit_host_gpu2d_runtime 
                  croft_wit_host_clock_runtime
                  croft_wit_text_program
                  croft_wit_text_runtime
-        REQUIRES_BUNDLES
-                 croft-host-window-current-machine
-                 croft-host-gpu2d-current-machine
-                 croft-host-clock-current-machine
         TAGS wit xpi common-core host-window host-gpu2d host-clock shared-logic native-window
         FOCUS "The same common-side WIT text logic rendered through native window and GPU mix-ins."
     )
@@ -3464,13 +3513,6 @@ if(TARGET croft_wit_host_window_runtime
                  croft_editor_commands
                  croft_wit_text_program
                  croft_wit_text_runtime
-        REQUIRES_BUNDLES
-                 croft-host-window-current-machine
-                 croft-host-gpu2d-current-machine
-                 croft-host-clock-current-machine
-                 croft-host-menu-current-machine
-                 croft-host-clipboard-current-machine
-                 croft-host-editor-input-normalization
         TAGS wit xpi common-core host-window host-gpu2d host-clock host-menu host-clipboard host-editor-input textpad native-window
         FOCUS "A small non-scene textpad that reuses WIT window, menu, clipboard, and editor-input mix-ins over the common text resource."
     )
@@ -3548,7 +3590,6 @@ if(TARGET croft_ui_glfw_opengl)
         SOURCES examples/ui_window.c
         LINKS croft_ui_glfw_opengl
         REQUIRES croft_ui_glfw_opengl
-        REQUIRES_BUNDLES croft-host-window-current-machine
         TAGS ui window glfw opengl
         FOCUS "Windowing-only sample using a GLFW OpenGL context and no renderer."
     )
@@ -3559,7 +3600,6 @@ if(TARGET croft_ui_glfw_metal)
         SOURCES examples/ui_window.c
         LINKS croft_ui_glfw_metal
         REQUIRES croft_ui_glfw_metal
-        REQUIRES_BUNDLES croft-host-window-current-machine
         TAGS ui window glfw metal macos
         FOCUS "Windowing-only sample using a GLFW no-API window for the Metal path."
     )
@@ -3570,7 +3610,6 @@ if(TARGET croft_render_tgfx_opengl)
         SOURCES examples/render_canvas_opengl.c
         LINKS croft_render_tgfx_opengl
         REQUIRES croft_render_tgfx_opengl
-        REQUIRES_BUNDLES croft-host-window-current-machine
         TAGS render canvas tgfx opengl
         FOCUS "GPU-backed 2D canvas rendering on the tgfx OpenGL path."
     )
@@ -3581,7 +3620,6 @@ if(TARGET croft_render_tgfx_metal)
         SOURCES examples/render_canvas_metal.c
         LINKS croft_render_tgfx_metal
         REQUIRES croft_render_tgfx_metal
-        REQUIRES_BUNDLES croft-host-window-current-machine
         TAGS render canvas tgfx metal macos
         FOCUS "GPU-backed 2D canvas rendering on the tgfx Metal path."
     )
@@ -3592,7 +3630,6 @@ if(TARGET croft_render_metal_native)
         SOURCES examples/render_canvas_metal_native.c
         LINKS croft_render_metal_native
         REQUIRES croft_render_metal_native
-        REQUIRES_BUNDLES croft-host-gpu2d-current-machine
         TAGS render canvas metal native-direct macos
         FOCUS "Direct Metal 2D rectangle rendering with no tgfx dependency."
     )
@@ -3612,17 +3649,14 @@ if(CROFT_EXAMPLE_SCENE_TARGET)
     if(NOT APPLE OR CROFT_EXAMPLE_GESTURE_TARGET)
         set(CROFT_ZOOM_EXAMPLE_LINKS ${CROFT_EXAMPLE_SCENE_TARGET} croft_a11y_stub)
         set(CROFT_ZOOM_EXAMPLE_REQUIRES ${CROFT_EXAMPLE_SCENE_TARGET})
-        set(CROFT_ZOOM_EXAMPLE_BUNDLES "")
         if(CROFT_EXAMPLE_GESTURE_TARGET)
             list(APPEND CROFT_ZOOM_EXAMPLE_LINKS ${CROFT_EXAMPLE_GESTURE_TARGET})
             list(APPEND CROFT_ZOOM_EXAMPLE_REQUIRES ${CROFT_EXAMPLE_GESTURE_TARGET})
-            list(APPEND CROFT_ZOOM_EXAMPLE_BUNDLES croft-host-gesture-current-machine)
         endif()
         croft_add_example(example_zoom_canvas
             SOURCES tests/host_tests/test_zoom_standalone.c
             LINKS ${CROFT_ZOOM_EXAMPLE_LINKS}
             REQUIRES ${CROFT_ZOOM_EXAMPLE_REQUIRES}
-            REQUIRES_BUNDLES ${CROFT_ZOOM_EXAMPLE_BUNDLES}
             TAGS scene zoom gesture canvas
             FOCUS "Scrollable and zoomable infinite-canvas scene demo."
         )
@@ -3644,9 +3678,6 @@ if(CROFT_EXAMPLE_EDITOR_TARGET)
         SOURCES examples/editor_scene_shell.c
         LINKS ${CROFT_EDITOR_EXAMPLE_LINKS}
         REQUIRES ${CROFT_EDITOR_EXAMPLE_REQUIRES}
-        REQUIRES_BUNDLES
-            croft-host-file-dialog-current-machine
-            croft-host-popup-menu-current-machine
         TAGS editor text sapling gui
         FOCUS "Text-editor shell built on Sapling text, scene, and host IO."
     )
@@ -3686,14 +3717,6 @@ if(TARGET croft_scene_text_editor_metal_native
                  croft_wit_host_clipboard_runtime
                  croft_wit_host_editor_input_runtime
                  croft_wit_host_a11y_runtime
-        REQUIRES_BUNDLES
-                 croft-host-window-current-machine
-                 croft-host-clock-current-machine
-                 croft-host-menu-current-machine
-                 croft-host-popup-menu-current-machine
-                 croft-host-clipboard-current-machine
-                 croft-host-editor-input-normalization
-                 croft-host-a11y-current-machine
         TAGS editor text sapling metal native-direct macos wit xpi host-window host-menu host-popup-menu host-clipboard host-editor-input host-a11y
         FOCUS "Text-editor shell built on the direct-Metal renderer while routing window, menu, popup menu, clipboard, input, and accessibility through WIT host mix-ins."
     )
@@ -3704,7 +3727,6 @@ if(TARGET croft_editor_appkit)
         SOURCES examples/editor_text_appkit.mm
         LINKS croft_editor_appkit croft_editor_document_fs
         REQUIRES croft_editor_appkit croft_editor_document_core croft_editor_document_fs
-        REQUIRES_BUNDLES croft-host-file-dialog-current-machine
         TAGS editor text sapling appkit textkit macos cpu
         FOCUS "CPU-based macOS text editor using AppKit/TextKit over a Sapling-backed document."
     )
@@ -3725,9 +3747,6 @@ if(TARGET croft_menu_macos AND TARGET croft_ui_glfw_opengl)
         SOURCES examples/window_menu.c
         LINKS croft_ui_glfw_opengl croft_menu_macos
         REQUIRES croft_ui_glfw_opengl croft_menu_macos
-        REQUIRES_BUNDLES
-            croft-host-window-current-machine
-            croft-host-menu-current-machine
         TAGS menu macos ui opengl
         FOCUS "Window and native menu shell with an OpenGL-capable GLFW context and no renderer."
     )
@@ -3738,9 +3757,6 @@ if(TARGET croft_menu_macos AND TARGET croft_ui_glfw_metal)
         SOURCES examples/window_menu.c
         LINKS croft_ui_glfw_metal croft_menu_macos
         REQUIRES croft_ui_glfw_metal croft_menu_macos
-        REQUIRES_BUNDLES
-            croft-host-window-current-machine
-            croft-host-menu-current-machine
         TAGS menu macos ui metal
         FOCUS "Window and native menu shell with a Metal-style no-API window and no renderer."
     )

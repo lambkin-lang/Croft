@@ -116,6 +116,31 @@ composition vocabulary across:
 - WIT-mediated current-machine hosts,
 - and later Lambkin-selected mixes that may need to swap or omit one layer.
 
+## March 11, 2026: Requirement Propagation Must Be Narrower Than Participation
+
+Once native providers and entrypoints were both projected into `croft-xpi.json`,
+one more distinction became necessary.
+
+There are two different questions:
+
+- which bundles an artifact participates in as a provider,
+- and which bundles a dependent artifact should inherit as requirements.
+
+If those are treated as the same relation, multipurpose providers become
+misleading. A single GLFW/AppKit window backend may participate in both window
+and clipboard bundles, but a render layer built on top of it does not
+necessarily consume clipboard semantics just because it links that backend.
+
+The more stable rule is:
+
+- entrypoints may derive bundle requirements from the full participation of the
+  artifacts they explicitly require, because they are the top-level consumers,
+- but artifact-to-artifact propagation should follow inherited requirements,
+  not every capability a lower provider happens to expose.
+
+That keeps the graph informative without turning every dependency edge into an
+over-approximation of the whole lower layer.
+
 ## March 11, 2026: Vendoring Needs A Drift Story, Not Just A Snapshot
 
 Once WASI `0.2.9` became a first-class vendored input, another missing piece

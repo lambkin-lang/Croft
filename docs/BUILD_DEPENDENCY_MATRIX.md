@@ -177,6 +177,10 @@ It records:
   a second file first
 - XPI entrypoints/examples with explicit required bundle sets, so top-level
   editor and WIT shells show up as consumers of the same capability graph
+- entrypoint bundle requirements are now derived from the registered artifacts
+  they explicitly require, while artifact-to-artifact requirement propagation
+  follows dependency `requires_bundles` rather than every capability a lower
+  provider happens to participate in
 - shared substrates such as byte streams, descriptor tables, pollables, system random, and time-base
 - current-machine capability bundles such as CLI stdio/terminal, random, clocks/poll, and filesystem/streams
 - Croft host mix-in bundles and substrates for filesystem, clock, window, clipboard, popup-menu, menu-bar, editor-input normalization, GPU surface access, and accessibility where the current machine provides them
