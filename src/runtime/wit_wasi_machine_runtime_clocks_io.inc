@@ -1616,6 +1616,17 @@ static const SapWitIoPollDispatchOps g_croft_wit_wasi_io_poll_ops = {
     .poll = croft_wit_wasi_dispatch_io_poll,
 };
 
+static const croft_wit_wasi_endpoint_binding g_croft_wit_wasi_clocks_bundle_bindings[] = {
+    {"monotonic-clock", &g_croft_wit_wasi_monotonic_ops},
+    {"wall-clock", &g_croft_wit_wasi_wall_clock_ops},
+    {"timezone", &g_croft_wit_wasi_timezone_ops},
+};
+
+static const croft_wit_wasi_endpoint_binding g_croft_wit_wasi_io_bundle_bindings[] = {
+    {"streams", &g_croft_wit_wasi_io_streams_ops},
+    {"poll", &g_croft_wit_wasi_io_poll_ops},
+};
+
 int32_t croft_wit_wasi_machine_runtime_dispatch_io_error(
     croft_wit_wasi_machine_runtime* runtime,
     const SapWitIoErrorCommand* command,
@@ -1632,62 +1643,34 @@ int croft_wit_wasi_machine_runtime_bind_clocks_imports(
     croft_wit_wasi_machine_runtime* runtime,
     SapWitClocksImportsWorldImports* bindings)
 {
-    int rc;
-
     if (!runtime || !bindings) {
         return ERR_INVALID;
     }
     memset(bindings, 0, sizeof(*bindings));
-
-    rc = croft_wit_wasi_bind_endpoint(bindings,
-                                      sap_wit_clocks_imports_import_endpoints,
-                                      sap_wit_clocks_imports_import_endpoints_count,
-                                      "monotonic-clock",
-                                      runtime,
-                                      &g_croft_wit_wasi_monotonic_ops);
-    if (rc != ERR_OK) {
-        return rc;
-    }
-    rc = croft_wit_wasi_bind_endpoint(bindings,
-                                      sap_wit_clocks_imports_import_endpoints,
-                                      sap_wit_clocks_imports_import_endpoints_count,
-                                      "wall-clock",
-                                      runtime,
-                                      &g_croft_wit_wasi_wall_clock_ops);
-    if (rc != ERR_OK) {
-        return rc;
-    }
-    return croft_wit_wasi_bind_endpoint(bindings,
-                                        sap_wit_clocks_imports_import_endpoints,
-                                        sap_wit_clocks_imports_import_endpoints_count,
-                                        "timezone",
-                                        runtime,
-                                        &g_croft_wit_wasi_timezone_ops);
+    return croft_wit_wasi_bind_endpoint_group(
+        bindings,
+        sap_wit_clocks_imports_import_endpoints,
+        sap_wit_clocks_imports_import_endpoints_count,
+        runtime,
+        g_croft_wit_wasi_clocks_bundle_bindings,
+        sizeof(g_croft_wit_wasi_clocks_bundle_bindings)
+            / sizeof(g_croft_wit_wasi_clocks_bundle_bindings[0]));
 }
 
 int croft_wit_wasi_machine_runtime_bind_io_imports(
     croft_wit_wasi_machine_runtime* runtime,
     SapWitIoImportsWorldImports* bindings)
 {
-    int rc;
-
     if (!runtime || !bindings) {
         return ERR_INVALID;
     }
     memset(bindings, 0, sizeof(*bindings));
-    rc = croft_wit_wasi_bind_endpoint(bindings,
-                                      sap_wit_io_imports_import_endpoints,
-                                      sap_wit_io_imports_import_endpoints_count,
-                                      "streams",
-                                      runtime,
-                                      &g_croft_wit_wasi_io_streams_ops);
-    if (rc != ERR_OK) {
-        return rc;
-    }
-    return croft_wit_wasi_bind_endpoint(bindings,
-                                        sap_wit_io_imports_import_endpoints,
-                                        sap_wit_io_imports_import_endpoints_count,
-                                        "poll",
-                                        runtime,
-                                        &g_croft_wit_wasi_io_poll_ops);
+    return croft_wit_wasi_bind_endpoint_group(
+        bindings,
+        sap_wit_io_imports_import_endpoints,
+        sap_wit_io_imports_import_endpoints_count,
+        runtime,
+        g_croft_wit_wasi_io_bundle_bindings,
+        sizeof(g_croft_wit_wasi_io_bundle_bindings)
+            / sizeof(g_croft_wit_wasi_io_bundle_bindings[0]));
 }

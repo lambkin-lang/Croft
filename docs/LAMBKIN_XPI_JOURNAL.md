@@ -5,6 +5,31 @@ its aspect libraries are still co-evolving. These notes are not intended to
 freeze the design; they are meant to preserve the useful pressure points,
 surprises, and open questions that surfaced while forcing the ideas into code.
 
+## March 11, 2026: The Solver Needs An Explicit Bundle Graph, Not Just Tagged Artifacts
+
+The first pass at current-machine WASI metadata proved something useful by
+failing to be enough.
+
+`support_status`, tags, and upstream provenance are necessary, but they do not
+actually tell the solver what shares a substrate with what. Once `io/world`
+clearly belonged to both the clocks/poll story and the filesystem/streams
+story, the missing structure became obvious.
+
+The repo now needs to carry a separate machine-readable bundle graph on purpose:
+
+- substrates such as byte streams, descriptor tables, pollables, system random,
+  and time-base,
+- bundles such as CLI stdio/terminal, random, clocks/poll, and
+  filesystem/streams,
+- declared worlds as authored,
+- expanded callable surfaces as bound,
+- and helper interfaces that are semantically coupled even when they are not
+  explicit world items.
+
+That is a better fit for Lambkin than treating `croft-artifacts.json` as the
+whole truth. Artifacts are build units; bundles and substrates are closer to
+the units the solver will actually compose, tangle, and validate.
+
 ## March 11, 2026: Capability Bundles Sit Above Shared Substrates
 
 The current-machine WASI work crossed an important threshold once `stdin`,

@@ -16,6 +16,36 @@ extern "C" {
 
 typedef struct croft_wit_wasi_machine_runtime croft_wit_wasi_machine_runtime;
 
+typedef enum croft_wit_wasi_machine_bundle_kind {
+    CROFT_WIT_WASI_MACHINE_BUNDLE_CLI_STDIO_TERMINAL = 0,
+    CROFT_WIT_WASI_MACHINE_BUNDLE_RANDOM = 1,
+    CROFT_WIT_WASI_MACHINE_BUNDLE_CLOCKS_POLL = 2,
+    CROFT_WIT_WASI_MACHINE_BUNDLE_FILESYSTEM_STREAMS = 3,
+} croft_wit_wasi_machine_bundle_kind;
+
+typedef struct croft_wit_wasi_machine_substrate_descriptor {
+    const char* name;
+    const char* kind;
+    const char* applicability;
+    const char* description;
+} croft_wit_wasi_machine_substrate_descriptor;
+
+typedef struct croft_wit_wasi_machine_bundle_descriptor {
+    croft_wit_wasi_machine_bundle_kind kind;
+    const char* name;
+    const char* support_status;
+    const char* applicability;
+    const char* description;
+    const char* const* substrates;
+    uint32_t substrate_count;
+    const char* const* declared_worlds;
+    uint32_t declared_world_count;
+    const char* const* expanded_surfaces;
+    uint32_t expanded_surface_count;
+    const char* const* helper_interfaces;
+    uint32_t helper_interface_count;
+} croft_wit_wasi_machine_bundle_descriptor;
+
 typedef struct croft_wit_wasi_machine_preopen {
     const char* host_path;
     const char* guest_path;
@@ -39,6 +69,18 @@ typedef struct croft_wit_wasi_machine_runtime_options {
 
 void croft_wit_wasi_machine_runtime_options_default(
     croft_wit_wasi_machine_runtime_options* options);
+
+extern const croft_wit_wasi_machine_substrate_descriptor croft_wit_wasi_machine_substrates[];
+extern const uint32_t croft_wit_wasi_machine_substrates_count;
+
+extern const croft_wit_wasi_machine_bundle_descriptor croft_wit_wasi_machine_bundles[];
+extern const uint32_t croft_wit_wasi_machine_bundles_count;
+
+const croft_wit_wasi_machine_substrate_descriptor* croft_wit_wasi_machine_find_substrate_descriptor(
+    const char* name);
+
+const croft_wit_wasi_machine_bundle_descriptor* croft_wit_wasi_machine_find_bundle_descriptor(
+    const char* name);
 
 croft_wit_wasi_machine_runtime* croft_wit_wasi_machine_runtime_create(
     const croft_wit_wasi_machine_runtime_options* options);

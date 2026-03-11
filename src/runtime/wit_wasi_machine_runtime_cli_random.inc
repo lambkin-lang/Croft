@@ -311,6 +311,16 @@ static const SapWitCliTerminalStderrDispatchOps g_croft_wit_wasi_cli_terminal_st
     .get_terminal_stderr = croft_wit_wasi_dispatch_cli_get_terminal_stderr,
 };
 
+static const croft_wit_wasi_endpoint_binding g_croft_wit_wasi_cli_bundle_bindings[] = {
+    {"environment", &g_croft_wit_wasi_cli_environment_ops},
+    {"stdin", &g_croft_wit_wasi_cli_stdin_ops},
+    {"stdout", &g_croft_wit_wasi_cli_stdout_ops},
+    {"stderr", &g_croft_wit_wasi_cli_stderr_ops},
+    {"terminal-stdin", &g_croft_wit_wasi_cli_terminal_stdin_ops},
+    {"terminal-stdout", &g_croft_wit_wasi_cli_terminal_stdout_ops},
+    {"terminal-stderr", &g_croft_wit_wasi_cli_terminal_stderr_ops},
+};
+
 static const SapWitRandomDispatchOps g_croft_wit_wasi_random_ops = {
     .get_random_bytes = croft_wit_wasi_dispatch_get_random_bytes,
     .get_random_u64 = croft_wit_wasi_dispatch_get_random_u64,
@@ -325,184 +335,63 @@ static const SapWitRandomInsecureSeedDispatchOps g_croft_wit_wasi_random_insecur
     .insecure_seed = croft_wit_wasi_dispatch_insecure_seed,
 };
 
+static const croft_wit_wasi_endpoint_binding g_croft_wit_wasi_random_bundle_bindings[] = {
+    {"random", &g_croft_wit_wasi_random_ops},
+    {"insecure", &g_croft_wit_wasi_random_insecure_ops},
+    {"insecure-seed", &g_croft_wit_wasi_random_insecure_seed_ops},
+};
+
 
 int croft_wit_wasi_machine_runtime_bind_cli_command_imports(
     croft_wit_wasi_machine_runtime* runtime,
     SapWitCliCommandWorldImports* bindings)
 {
-    int rc;
-
     if (!runtime || !bindings) {
         return ERR_INVALID;
     }
     memset(bindings, 0, sizeof(*bindings));
-    rc = croft_wit_wasi_bind_endpoint(bindings,
-                                      sap_wit_cli_command_import_endpoints,
-                                      sap_wit_cli_command_import_endpoints_count,
-                                      "environment",
-                                      runtime,
-                                      &g_croft_wit_wasi_cli_environment_ops);
-    if (rc != ERR_OK) {
-        return rc;
-    }
-    rc = croft_wit_wasi_bind_endpoint(bindings,
-                                      sap_wit_cli_command_import_endpoints,
-                                      sap_wit_cli_command_import_endpoints_count,
-                                      "stdin",
-                                      runtime,
-                                      &g_croft_wit_wasi_cli_stdin_ops);
-    if (rc != ERR_OK) {
-        return rc;
-    }
-    rc = croft_wit_wasi_bind_endpoint(bindings,
-                                      sap_wit_cli_command_import_endpoints,
-                                      sap_wit_cli_command_import_endpoints_count,
-                                      "stdout",
-                                      runtime,
-                                      &g_croft_wit_wasi_cli_stdout_ops);
-    if (rc != ERR_OK) {
-        return rc;
-    }
-    rc = croft_wit_wasi_bind_endpoint(bindings,
-                                      sap_wit_cli_command_import_endpoints,
-                                      sap_wit_cli_command_import_endpoints_count,
-                                      "stderr",
-                                      runtime,
-                                      &g_croft_wit_wasi_cli_stderr_ops);
-    if (rc != ERR_OK) {
-        return rc;
-    }
-    rc = croft_wit_wasi_bind_endpoint(bindings,
-                                      sap_wit_cli_command_import_endpoints,
-                                      sap_wit_cli_command_import_endpoints_count,
-                                      "terminal-stdin",
-                                      runtime,
-                                      &g_croft_wit_wasi_cli_terminal_stdin_ops);
-    if (rc != ERR_OK) {
-        return rc;
-    }
-    rc = croft_wit_wasi_bind_endpoint(bindings,
-                                      sap_wit_cli_command_import_endpoints,
-                                      sap_wit_cli_command_import_endpoints_count,
-                                      "terminal-stdout",
-                                      runtime,
-                                      &g_croft_wit_wasi_cli_terminal_stdout_ops);
-    if (rc != ERR_OK) {
-        return rc;
-    }
-    return croft_wit_wasi_bind_endpoint(bindings,
-                                        sap_wit_cli_command_import_endpoints,
-                                        sap_wit_cli_command_import_endpoints_count,
-                                        "terminal-stderr",
-                                        runtime,
-                                        &g_croft_wit_wasi_cli_terminal_stderr_ops);
+    return croft_wit_wasi_bind_endpoint_group(
+        bindings,
+        sap_wit_cli_command_import_endpoints,
+        sap_wit_cli_command_import_endpoints_count,
+        runtime,
+        g_croft_wit_wasi_cli_bundle_bindings,
+        sizeof(g_croft_wit_wasi_cli_bundle_bindings)
+            / sizeof(g_croft_wit_wasi_cli_bundle_bindings[0]));
 }
 
 int croft_wit_wasi_machine_runtime_bind_cli_imports(
     croft_wit_wasi_machine_runtime* runtime,
     SapWitCliImportsWorldImports* bindings)
 {
-    int rc;
-
     if (!runtime || !bindings) {
         return ERR_INVALID;
     }
     memset(bindings, 0, sizeof(*bindings));
-    rc = croft_wit_wasi_bind_endpoint(bindings,
-                                      sap_wit_cli_imports_import_endpoints,
-                                      sap_wit_cli_imports_import_endpoints_count,
-                                      "environment",
-                                      runtime,
-                                      &g_croft_wit_wasi_cli_environment_ops);
-    if (rc != ERR_OK) {
-        return rc;
-    }
-    rc = croft_wit_wasi_bind_endpoint(bindings,
-                                      sap_wit_cli_imports_import_endpoints,
-                                      sap_wit_cli_imports_import_endpoints_count,
-                                      "stdin",
-                                      runtime,
-                                      &g_croft_wit_wasi_cli_stdin_ops);
-    if (rc != ERR_OK) {
-        return rc;
-    }
-    rc = croft_wit_wasi_bind_endpoint(bindings,
-                                      sap_wit_cli_imports_import_endpoints,
-                                      sap_wit_cli_imports_import_endpoints_count,
-                                      "stdout",
-                                      runtime,
-                                      &g_croft_wit_wasi_cli_stdout_ops);
-    if (rc != ERR_OK) {
-        return rc;
-    }
-    rc = croft_wit_wasi_bind_endpoint(bindings,
-                                      sap_wit_cli_imports_import_endpoints,
-                                      sap_wit_cli_imports_import_endpoints_count,
-                                      "stderr",
-                                      runtime,
-                                      &g_croft_wit_wasi_cli_stderr_ops);
-    if (rc != ERR_OK) {
-        return rc;
-    }
-    rc = croft_wit_wasi_bind_endpoint(bindings,
-                                      sap_wit_cli_imports_import_endpoints,
-                                      sap_wit_cli_imports_import_endpoints_count,
-                                      "terminal-stdin",
-                                      runtime,
-                                      &g_croft_wit_wasi_cli_terminal_stdin_ops);
-    if (rc != ERR_OK) {
-        return rc;
-    }
-    rc = croft_wit_wasi_bind_endpoint(bindings,
-                                      sap_wit_cli_imports_import_endpoints,
-                                      sap_wit_cli_imports_import_endpoints_count,
-                                      "terminal-stdout",
-                                      runtime,
-                                      &g_croft_wit_wasi_cli_terminal_stdout_ops);
-    if (rc != ERR_OK) {
-        return rc;
-    }
-    return croft_wit_wasi_bind_endpoint(bindings,
-                                        sap_wit_cli_imports_import_endpoints,
-                                        sap_wit_cli_imports_import_endpoints_count,
-                                        "terminal-stderr",
-                                        runtime,
-                                        &g_croft_wit_wasi_cli_terminal_stderr_ops);
+    return croft_wit_wasi_bind_endpoint_group(
+        bindings,
+        sap_wit_cli_imports_import_endpoints,
+        sap_wit_cli_imports_import_endpoints_count,
+        runtime,
+        g_croft_wit_wasi_cli_bundle_bindings,
+        sizeof(g_croft_wit_wasi_cli_bundle_bindings)
+            / sizeof(g_croft_wit_wasi_cli_bundle_bindings[0]));
 }
 
 int croft_wit_wasi_machine_runtime_bind_random_imports(
     croft_wit_wasi_machine_runtime* runtime,
     SapWitRandomImportsWorldImports* bindings)
 {
-    int rc;
-
     if (!runtime || !bindings) {
         return ERR_INVALID;
     }
     memset(bindings, 0, sizeof(*bindings));
-
-    rc = croft_wit_wasi_bind_endpoint(bindings,
-                                      sap_wit_random_imports_import_endpoints,
-                                      sap_wit_random_imports_import_endpoints_count,
-                                      "random",
-                                      runtime,
-                                      &g_croft_wit_wasi_random_ops);
-    if (rc != ERR_OK) {
-        return rc;
-    }
-    rc = croft_wit_wasi_bind_endpoint(bindings,
-                                      sap_wit_random_imports_import_endpoints,
-                                      sap_wit_random_imports_import_endpoints_count,
-                                      "insecure",
-                                      runtime,
-                                      &g_croft_wit_wasi_random_insecure_ops);
-    if (rc != ERR_OK) {
-        return rc;
-    }
-    return croft_wit_wasi_bind_endpoint(bindings,
-                                        sap_wit_random_imports_import_endpoints,
-                                        sap_wit_random_imports_import_endpoints_count,
-                                        "insecure-seed",
-                                        runtime,
-                                        &g_croft_wit_wasi_random_insecure_seed_ops);
+    return croft_wit_wasi_bind_endpoint_group(
+        bindings,
+        sap_wit_random_imports_import_endpoints,
+        sap_wit_random_imports_import_endpoints_count,
+        runtime,
+        g_croft_wit_wasi_random_bundle_bindings,
+        sizeof(g_croft_wit_wasi_random_bundle_bindings)
+            / sizeof(g_croft_wit_wasi_random_bundle_bindings[0]));
 }

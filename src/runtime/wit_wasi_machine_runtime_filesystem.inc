@@ -2353,6 +2353,11 @@ static const SapWitFilesystemPreopensDispatchOps g_croft_wit_wasi_filesystem_pre
     .get_directories = croft_wit_wasi_dispatch_fs_preopens_get_directories,
 };
 
+static const croft_wit_wasi_endpoint_binding g_croft_wit_wasi_filesystem_bundle_bindings[] = {
+    {"types", &g_croft_wit_wasi_filesystem_types_ops},
+    {"preopens", &g_croft_wit_wasi_filesystem_preopens_ops},
+};
+
 static const SapWitFilesystemErrorDispatchOps g_croft_wit_wasi_filesystem_error_ops = {
     .to_debug_string = croft_wit_wasi_dispatch_fs_error_to_debug_string,
 };
@@ -2381,8 +2386,6 @@ int croft_wit_wasi_machine_runtime_bind_filesystem_imports(
     croft_wit_wasi_machine_runtime* runtime,
     SapWitFilesystemImportsWorldImports* bindings)
 {
-    int rc;
-
     if (!runtime || !bindings) {
         return ERR_INVALID;
     }
@@ -2392,20 +2395,13 @@ int croft_wit_wasi_machine_runtime_bind_filesystem_imports(
     return ERR_UNSUPPORTED;
 #else
     memset(bindings, 0, sizeof(*bindings));
-    rc = croft_wit_wasi_bind_endpoint(bindings,
-                                      sap_wit_filesystem_imports_import_endpoints,
-                                      sap_wit_filesystem_imports_import_endpoints_count,
-                                      "types",
-                                      runtime,
-                                      &g_croft_wit_wasi_filesystem_types_ops);
-    if (rc != ERR_OK) {
-        return rc;
-    }
-    return croft_wit_wasi_bind_endpoint(bindings,
-                                        sap_wit_filesystem_imports_import_endpoints,
-                                        sap_wit_filesystem_imports_import_endpoints_count,
-                                        "preopens",
-                                        runtime,
-                                        &g_croft_wit_wasi_filesystem_preopens_ops);
+    return croft_wit_wasi_bind_endpoint_group(
+        bindings,
+        sap_wit_filesystem_imports_import_endpoints,
+        sap_wit_filesystem_imports_import_endpoints_count,
+        runtime,
+        g_croft_wit_wasi_filesystem_bundle_bindings,
+        sizeof(g_croft_wit_wasi_filesystem_bundle_bindings)
+            / sizeof(g_croft_wit_wasi_filesystem_bundle_bindings[0]));
 #endif
 }

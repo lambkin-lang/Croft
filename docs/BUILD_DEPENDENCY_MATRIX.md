@@ -143,6 +143,7 @@ The full current-machine build now emits:
 
 - generated public WIT headers under `build/generated/`
 - generated WIT manifests under `build/generated/` and installable copies under `share/croft/wit-manifests/`
+- artifact and XPI metadata under `build/croft-artifacts.json` and `build/croft-xpi.json`
 - native current-machine WASI host runtime glue via `croft_wit_wasi_machine_runtime`
 - dependency audit reports under `build/reports/`
 
@@ -167,6 +168,14 @@ and the dependency audit now tracks the extra Unix/macOS surface this uses:
 `dup`, `pipe`, and `isatty`. That runtime layer deliberately treats CLI stdio
 as a capability view over the shared stream substrate rather than as a special
 filesystem path.
+
+`croft-xpi.json` is now the build's machine-readable summary of that structure.
+It records:
+
+- shared substrates such as byte streams, descriptor tables, pollables, system random, and time-base
+- current-machine capability bundles such as CLI stdio/terminal, random, clocks/poll, and filesystem/streams
+- the declared worlds versus expanded callable surfaces for those bundles
+- helper-interface couplings such as `wasi:io/error` and `wasi:filesystem/error`
 
 ## Reproducibility Note On FetchContent Pins
 
