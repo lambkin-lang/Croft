@@ -71,6 +71,20 @@ int croft_wit_wasi_machine_runtime_bind_filesystem_imports(
     croft_wit_wasi_machine_runtime* runtime,
     SapWitFilesystemImportsWorldImports* bindings);
 
+/*
+ * Direct interface dispatch for imported resource helper interfaces which are
+ * not necessarily present as world items in the current guest.
+ */
+int32_t croft_wit_wasi_machine_runtime_dispatch_io_error(
+    croft_wit_wasi_machine_runtime* runtime,
+    const SapWitIoErrorCommand* command,
+    SapWitIoErrorReply* reply_out);
+
+int32_t croft_wit_wasi_machine_runtime_dispatch_filesystem_error(
+    croft_wit_wasi_machine_runtime* runtime,
+    const SapWitFilesystemErrorCommand* command,
+    SapWitFilesystemErrorReply* reply_out);
+
 #ifdef __cplusplus
 }
 #endif
