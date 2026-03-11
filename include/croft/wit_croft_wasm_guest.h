@@ -2,11 +2,10 @@
 #define CROFT_WIT_CROFT_WASM_GUEST_H
 
 #include "croft/wit_guest_runtime.h"
+#include "croft/wit_runtime_support.h"
 #include "sapling/err.h"
 
 #include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -63,7 +62,7 @@ static inline void sap_wit_croft_wasm_guest_context_init(SapWitCroftWasmGuestCon
     if (!ctx) {
         return;
     }
-    memset(ctx, 0, sizeof(*ctx));
+    sap_wit_rt_memset(ctx, 0, sizeof(*ctx));
     ctx->imports = imports;
 }
 
@@ -83,8 +82,8 @@ static inline void sap_wit_croft_wasm_guest_context_dispose(SapWitCroftWasmGuest
     if (!ctx) {
         return;
     }
-    free(ctx->handles);
-    memset(ctx, 0, sizeof(*ctx));
+    sap_wit_rt_free(ctx->handles);
+    sap_wit_rt_memset(ctx, 0, sizeof(*ctx));
 }
 
 static inline int sap_wit_croft_wasm_guest_context_reserve(SapWitCroftWasmGuestContext *ctx,
@@ -109,7 +108,7 @@ static inline int sap_wit_croft_wasm_guest_context_reserve(SapWitCroftWasmGuestC
         capacity *= 2u;
     }
 
-    grown = (SapWitCroftWasmGuestEndpointHandle *)realloc(
+    grown = (SapWitCroftWasmGuestEndpointHandle *)sap_wit_rt_realloc(
         ctx->handles,
         (size_t)capacity * sizeof(*grown));
     if (!grown) {
@@ -140,7 +139,7 @@ static inline int32_t sap_wit_croft_wasm_guest_find_handle(SapWitCroftWasmGuestC
     }
 
     handle = ctx->imports.find_endpoint((const uint8_t *)qualified_name,
-                                        (uint32_t)strlen(qualified_name));
+                                        (uint32_t)sap_wit_rt_strlen(qualified_name));
     if (handle <= 0) {
         return handle == 0 ? ERR_NOT_FOUND : sap_wit_croft_wasm_guest_normalize_rc(handle);
     }

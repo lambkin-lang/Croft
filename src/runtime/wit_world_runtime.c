@@ -1,16 +1,54 @@
 #include "croft/wit_world_runtime.h"
+#include "croft/wit_runtime_support.h"
 
 #include "sapling/err.h"
 
 #include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
 static int sap_wit_name_equals(const char *actual, const char *expected)
 {
-    return actual && expected && strcmp(actual, expected) == 0;
+    if (!actual || !expected) {
+        return 0;
+    }
+    while (*actual && *expected) {
+        if (*actual != *expected) {
+            return 0;
+        }
+        actual++;
+        expected++;
+    }
+    return *actual == '\0' && *expected == '\0';
+}
+
+static size_t sap_wit_append_text(char *out,
+                                  size_t out_size,
+                                  size_t offset,
+                                  const char *text)
+{
+    size_t i;
+
+    if (!text) {
+        return offset;
+    }
+    for (i = 0u; text[i] != '\0'; i++) {
+        if (out && offset + 1u < out_size) {
+            out[offset] = text[i];
+        }
+        offset++;
+    }
+    return offset;
+}
+
+static size_t sap_wit_append_char(char *out,
+                                  size_t out_size,
+                                  size_t offset,
+                                  char ch)
+{
+    if (out && offset + 1u < out_size) {
+        out[offset] = ch;
+    }
+    return offset + 1u;
 }
 
 static const char *sap_wit_world_item_kind_name(SapWitWorldItemKind kind)
@@ -32,7 +70,7 @@ static void sap_wit_world_region_init_writable(ThatchRegion *region, void *data,
     if (!region) {
         return;
     }
-    memset(region, 0, sizeof(*region));
+    sap_wit_rt_memset(region, 0, sizeof(*region));
     region->page_ptr = data;
     region->capacity = cap;
     region->head = 0u;
@@ -122,7 +160,7 @@ size_t sap_wit_world_endpoint_name(const SapWitWorldEndpointDescriptor *endpoint
     const char *world_name;
     const char *item_name;
     const char *kind_name;
-    int needed;
+    size_t needed = 0u;
 
     if (!endpoint) {
         return 0u;
@@ -132,14 +170,17 @@ size_t sap_wit_world_endpoint_name(const SapWitWorldEndpointDescriptor *endpoint
     world_name = endpoint->world_name ? endpoint->world_name : "";
     item_name = endpoint->item_name ? endpoint->item_name : "";
     kind_name = sap_wit_world_item_kind_name(endpoint->kind);
-    needed = snprintf(NULL, 0, "%s/%s#%s:%s", package_id, world_name, kind_name, item_name);
-    if (needed < 0) {
-        return 0u;
-    }
+    needed = sap_wit_append_text(out, out_size, needed, package_id);
+    needed = sap_wit_append_char(out, out_size, needed, '/');
+    needed = sap_wit_append_text(out, out_size, needed, world_name);
+    needed = sap_wit_append_char(out, out_size, needed, '#');
+    needed = sap_wit_append_text(out, out_size, needed, kind_name);
+    needed = sap_wit_append_char(out, out_size, needed, ':');
+    needed = sap_wit_append_text(out, out_size, needed, item_name);
     if (out && out_size > 0u) {
-        (void)snprintf(out, out_size, "%s/%s#%s:%s", package_id, world_name, kind_name, item_name);
+        out[needed < out_size ? needed : (out_size - 1u)] = '\0';
     }
-    return (size_t)needed;
+    return needed;
 }
 
 int sap_wit_world_endpoint_name_equals(const SapWitWorldEndpointDescriptor *endpoint,
@@ -157,19 +198,19 @@ int sap_wit_world_endpoint_name_equals(const SapWitWorldEndpointDescriptor *endp
         return 0;
     }
     if (needed < sizeof(stack_name)) {
-        return strcmp(stack_name, qualified_name) == 0;
+        return sap_wit_name_equals(stack_name, qualified_name);
     }
 
     {
-        char *heap_name = (char *)malloc(needed + 1u);
+        char *heap_name = (char *)sap_wit_rt_malloc(needed + 1u);
         int matches = 0;
 
         if (!heap_name) {
             return 0;
         }
         sap_wit_world_endpoint_name(endpoint, heap_name, needed + 1u);
-        matches = strcmp(heap_name, qualified_name) == 0;
-        free(heap_name);
+        matches = sap_wit_name_equals(heap_name, qualified_name);
+        sap_wit_rt_free(heap_name);
         return matches;
     }
 }
@@ -277,12 +318,14 @@ int32_t sap_wit_world_endpoint_invoke_bytes(const SapWitWorldEndpointDescriptor 
     }
 
     *reply_len_out = 0u;
-    command = calloc(1u, endpoint->command_size);
-    reply = calloc(1u, endpoint->reply_size);
+    command = sap_wit_rt_malloc(endpoint->command_size);
+    reply = sap_wit_rt_malloc(endpoint->reply_size);
     if (!command || !reply) {
         rc = ERR_OOM;
         goto cleanup;
     }
+    sap_wit_rt_memset(command, 0, endpoint->command_size);
+    sap_wit_rt_memset(reply, 0, endpoint->reply_size);
 
     rc = thatch_region_init_readonly(&command_region, command_data, command_len);
     if (rc != ERR_OK) {
@@ -316,7 +359,7 @@ cleanup:
     if (reply && endpoint->dispose_reply) {
         endpoint->dispose_reply(reply);
     }
-    free(reply);
-    free(command);
+    sap_wit_rt_free(reply);
+    sap_wit_rt_free(command);
     return rc;
 }

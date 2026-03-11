@@ -1,6 +1,5 @@
 #include "sapling/thatch.h"
-
-#include <string.h>
+#include "croft/wit_runtime_support.h"
 
 int thatch_write_tag(ThatchRegion *region, uint8_t tag)
 {
@@ -25,7 +24,7 @@ int thatch_write_data(ThatchRegion *region, const void *data, uint32_t len)
         return ERR_OOM;
 
     uint8_t *mem = (uint8_t *)region->page_ptr;
-    memcpy(mem + region->head, data, len);
+    sap_wit_rt_memcpy(mem + region->head, data, len);
     region->head += len;
     return ERR_OK;
 }
@@ -51,7 +50,7 @@ int thatch_commit_skip(ThatchRegion *region, ThatchCursor skip_loc)
 
     uint32_t skip_len = region->head - skip_loc - sizeof(uint32_t);
     uint8_t *mem = (uint8_t *)region->page_ptr;
-    memcpy(mem + skip_loc, &skip_len, sizeof(uint32_t));
+    sap_wit_rt_memcpy(mem + skip_loc, &skip_len, sizeof(uint32_t));
     return ERR_OK;
 }
 
@@ -80,7 +79,7 @@ int thatch_read_data(const ThatchRegion *region, ThatchCursor *cursor, uint32_t 
         return ERR_RANGE;
 
     uint8_t *mem = (uint8_t *)region->page_ptr;
-    memcpy(data_out, mem + *cursor, len);
+    sap_wit_rt_memcpy(data_out, mem + *cursor, len);
     *cursor += len;
     return ERR_OK;
 }
@@ -95,7 +94,7 @@ int thatch_read_skip_len(const ThatchRegion *region, ThatchCursor *cursor, uint3
         return ERR_RANGE;
 
     uint8_t *mem = (uint8_t *)region->page_ptr;
-    memcpy(skip_len_out, mem + *cursor, sizeof(uint32_t));
+    sap_wit_rt_memcpy(skip_len_out, mem + *cursor, sizeof(uint32_t));
     *cursor += sizeof(uint32_t);
     return ERR_OK;
 }
@@ -141,7 +140,7 @@ int thatch_region_init_readonly(ThatchRegion *out, const void *data, uint32_t le
     if (!data && len)
         return ERR_INVALID;
 
-    memset(out, 0, sizeof(*out));
+    sap_wit_rt_memset(out, 0, sizeof(*out));
     out->page_ptr = (void *)data;
     out->capacity = len;
     out->head = len;

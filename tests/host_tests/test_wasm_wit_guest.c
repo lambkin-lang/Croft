@@ -3,7 +3,6 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 #ifndef WIT_WORLD_BRIDGE_GUEST_WASM_PATH
 #define WIT_WORLD_BRIDGE_GUEST_WASM_PATH "wit_world_bridge_guest.wasm"
@@ -57,83 +56,9 @@ static uint8_t *slurp_file(const char *path, uint32_t *out_len)
     return buf;
 }
 
-static void init_writable_region(ThatchRegion *region, uint8_t *data, uint32_t cap)
+static int32_t call_guest_noargs(host_wasm_ctx_t *ctx, const char *func_name)
 {
-    memset(region, 0, sizeof(*region));
-    region->page_ptr = data;
-    region->capacity = cap;
-    region->head = 0u;
-    region->sealed = 0;
-}
-
-static uint32_t encode_cli_get_arguments_command(uint8_t *out, uint32_t out_cap)
-{
-    SapWitCliEnvironmentCommand command = {0};
-    ThatchRegion region = {0};
-
-    command.case_tag = SAP_WIT_CLI_ENVIRONMENT_COMMAND_GET_ARGUMENTS;
-    init_writable_region(&region, out, out_cap);
-    CHECK(sap_wit_write_cli_environment_command(&region, &command) == 0);
-    return thatch_region_used(&region);
-}
-
-static uint32_t encode_random_get_random_u64_command(uint8_t *out, uint32_t out_cap)
-{
-    SapWitRandomCommand command = {0};
-    ThatchRegion region = {0};
-
-    command.case_tag = SAP_WIT_RANDOM_COMMAND_GET_RANDOM_U64;
-    init_writable_region(&region, out, out_cap);
-    CHECK(sap_wit_write_random_command(&region, &command) == 0);
-    return thatch_region_used(&region);
-}
-
-static void write_u32(uint8_t *memory, uint32_t offset, uint32_t value)
-{
-    memcpy(memory + offset, &value, sizeof(value));
-}
-
-static uint32_t read_u32(const uint8_t *memory, uint32_t offset)
-{
-    uint32_t value = 0u;
-    memcpy(&value, memory + offset, sizeof(value));
-    return value;
-}
-
-static int32_t invoke_guest_endpoint(host_wasm_ctx_t *ctx,
-                                     uint32_t name_offset,
-                                     uint32_t name_len,
-                                     uint32_t command_offset,
-                                     uint32_t command_len,
-                                     uint32_t reply_offset,
-                                     uint32_t reply_cap,
-                                     uint32_t reply_len_offset)
-{
-    char name_offset_arg[32];
-    char name_len_arg[32];
-    char command_offset_arg[32];
-    char command_len_arg[32];
-    char reply_offset_arg[32];
-    char reply_cap_arg[32];
-    char reply_len_offset_arg[32];
-    const char *argv[7];
-
-    snprintf(name_offset_arg, sizeof(name_offset_arg), "%u", name_offset);
-    snprintf(name_len_arg, sizeof(name_len_arg), "%u", name_len);
-    snprintf(command_offset_arg, sizeof(command_offset_arg), "%u", command_offset);
-    snprintf(command_len_arg, sizeof(command_len_arg), "%u", command_len);
-    snprintf(reply_offset_arg, sizeof(reply_offset_arg), "%u", reply_offset);
-    snprintf(reply_cap_arg, sizeof(reply_cap_arg), "%u", reply_cap);
-    snprintf(reply_len_offset_arg, sizeof(reply_len_offset_arg), "%u", reply_len_offset);
-
-    argv[0] = name_offset_arg;
-    argv[1] = name_len_arg;
-    argv[2] = command_offset_arg;
-    argv[3] = command_len_arg;
-    argv[4] = reply_offset_arg;
-    argv[5] = reply_cap_arg;
-    argv[6] = reply_len_offset_arg;
-    return host_wasm_call(ctx, "invoke_endpoint", 7, argv);
+    return host_wasm_call(ctx, func_name, 0, NULL);
 }
 
 void run_test_wasm_wit_guest(int argc, char **argv)
@@ -146,29 +71,8 @@ void run_test_wasm_wit_guest(int argc, char **argv)
     uint32_t wasm_len = 0u;
     uint8_t *wasm_bytes = NULL;
     host_wasm_ctx_t *ctx = NULL;
-    uint8_t *memory = NULL;
-    uint32_t memory_size = 0u;
-    const char *cli_name = "wasi:cli@0.2.9/command#import:environment";
-    const char *random_name = "wasi:random@0.2.9/imports#import:random";
-    const uint32_t cli_name_offset = 1024u;
-    const uint32_t cli_command_offset = 1152u;
-    const uint32_t cli_reply_offset = 1280u;
-    const uint32_t cli_reply_len_offset = 1536u;
-    const uint32_t random_name_offset = 1600u;
-    const uint32_t random_command_offset = 1728u;
-    const uint32_t random_reply_offset = 1856u;
-    const uint32_t random_reply_len_offset = 1984u;
-    uint8_t cli_command_bytes[32] = {0};
-    uint8_t random_command_bytes[32] = {0};
-    uint32_t cli_command_len = 0u;
-    uint32_t cli_reply_len = 0u;
-    uint32_t random_command_len = 0u;
-    uint32_t random_reply_len = 0u;
-    ThatchRegion view = {0};
-    ThatchCursor cursor = 0u;
-    SapWitCliEnvironmentReply cli_reply = {0};
-    SapWitRandomReply random_reply = {0};
     int32_t rc = 0;
+    uint64_t random_value = 0u;
 
     (void)argc;
     (void)argv;
@@ -203,55 +107,23 @@ void run_test_wasm_wit_guest(int argc, char **argv)
                                                  &random_bindings)
           == 0);
 
-    memory = host_wasm_get_memory(ctx, &memory_size);
-    CHECK(memory != NULL);
-    CHECK(memory_size > random_reply_len_offset + 64u);
+    CHECK(call_guest_noargs(ctx, "wit_guest_handle_count") == 0);
 
-    memcpy(memory + cli_name_offset, cli_name, strlen(cli_name));
-    memcpy(memory + random_name_offset, random_name, strlen(random_name));
-
-    cli_command_len = encode_cli_get_arguments_command(cli_command_bytes, sizeof(cli_command_bytes));
-    random_command_len = encode_random_get_random_u64_command(random_command_bytes,
-                                                              sizeof(random_command_bytes));
-    memcpy(memory + cli_command_offset, cli_command_bytes, cli_command_len);
-    memcpy(memory + random_command_offset, random_command_bytes, random_command_len);
-    write_u32(memory, cli_reply_len_offset, 0u);
-    write_u32(memory, random_reply_len_offset, 0u);
-
-    rc = invoke_guest_endpoint(ctx,
-                               cli_name_offset,
-                               (uint32_t)strlen(cli_name),
-                               cli_command_offset,
-                               cli_command_len,
-                               cli_reply_offset,
-                               128u,
-                               cli_reply_len_offset);
+    rc = call_guest_noargs(ctx, "wit_guest_fetch_arguments");
     CHECK(rc == 0);
-    cli_reply_len = read_u32(memory, cli_reply_len_offset);
-    CHECK(cli_reply_len > 0u);
-    CHECK(thatch_region_init_readonly(&view, memory + cli_reply_offset, cli_reply_len) == 0);
-    cursor = 0u;
-    CHECK(sap_wit_read_cli_environment_reply(&view, &cursor, &cli_reply) == 0);
-    CHECK(cursor == cli_reply_len);
-    CHECK(cli_reply.case_tag == SAP_WIT_CLI_ENVIRONMENT_REPLY_GET_ARGUMENTS);
-    CHECK(cli_reply.val.get_arguments.len == 2u);
+    CHECK(call_guest_noargs(ctx, "wit_guest_argument_count") == 2);
+    CHECK(call_guest_noargs(ctx, "wit_guest_handle_count") == 1);
 
-    rc = invoke_guest_endpoint(ctx,
-                               random_name_offset,
-                               (uint32_t)strlen(random_name),
-                               random_command_offset,
-                               random_command_len,
-                               random_reply_offset,
-                               64u,
-                               random_reply_len_offset);
+    rc = call_guest_noargs(ctx, "wit_guest_fetch_random_u64");
     CHECK(rc == 0);
-    random_reply_len = read_u32(memory, random_reply_len_offset);
-    CHECK(random_reply_len > 0u);
-    CHECK(thatch_region_init_readonly(&view, memory + random_reply_offset, random_reply_len) == 0);
-    cursor = 0u;
-    CHECK(sap_wit_read_random_reply(&view, &cursor, &random_reply) == 0);
-    CHECK(cursor == random_reply_len);
-    CHECK(random_reply.case_tag == SAP_WIT_RANDOM_REPLY_GET_RANDOM_U64);
+    CHECK(call_guest_noargs(ctx, "wit_guest_handle_count") == 2);
+    random_value = (uint64_t)(uint32_t)call_guest_noargs(ctx, "wit_guest_random_low32");
+    random_value |= (uint64_t)(uint32_t)call_guest_noargs(ctx, "wit_guest_random_high32") << 32;
+    (void)random_value;
+
+    rc = call_guest_noargs(ctx, "wit_guest_fetch_random_u64");
+    CHECK(rc == 0);
+    CHECK(call_guest_noargs(ctx, "wit_guest_handle_count") == 2);
 
     host_wasm_destroy(ctx);
     free(wasm_bytes);

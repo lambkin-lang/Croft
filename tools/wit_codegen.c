@@ -8117,7 +8117,7 @@ static void emit_reply_helper_functions(FILE *out, const WitRegistry *reg,
     fprintf(out, "    if (!out) {\n");
     fprintf(out, "        return;\n");
     fprintf(out, "    }\n");
-    fprintf(out, "    memset(out, 0, sizeof(*out));\n");
+    fprintf(out, "    sap_wit_rt_memset(out, 0, sizeof(*out));\n");
     fprintf(out, "}\n\n");
 
     fprintf(out, "/* Generated dispose helper for %s. */\n", var->name);
@@ -8138,13 +8138,13 @@ static void emit_reply_helper_functions(FILE *out, const WitRegistry *reg,
         if (ownership_kind == 1) {
             fprintf(out, "        if (out->val.%s.is_v_ok && out->val.%s.v_val.ok.v_data) {\n",
                     case_snake, case_snake);
-            fprintf(out, "            free((void*)out->val.%s.v_val.ok.v_data);\n", case_snake);
+            fprintf(out, "            sap_wit_rt_free((void*)out->val.%s.v_val.ok.v_data);\n", case_snake);
             fprintf(out, "        }\n");
         } else if (ownership_kind == 2) {
             fprintf(out, "        if (out->val.%s.is_v_ok\n", case_snake);
             fprintf(out, "                && out->val.%s.v_val.ok.has_v\n", case_snake);
             fprintf(out, "                && out->val.%s.v_val.ok.v_data) {\n", case_snake);
-            fprintf(out, "            free((void*)out->val.%s.v_val.ok.v_data);\n", case_snake);
+            fprintf(out, "            sap_wit_rt_free((void*)out->val.%s.v_val.ok.v_data);\n", case_snake);
             fprintf(out, "        }\n");
         }
         fprintf(out, "        break;\n");
@@ -8152,7 +8152,7 @@ static void emit_reply_helper_functions(FILE *out, const WitRegistry *reg,
     fprintf(out, "    default:\n");
     fprintf(out, "        break;\n");
     fprintf(out, "    }\n");
-    fprintf(out, "    memset(out, 0, sizeof(*out));\n");
+    fprintf(out, "    sap_wit_rt_memset(out, 0, sizeof(*out));\n");
     fprintf(out, "}\n\n");
 }
 
@@ -8187,8 +8187,7 @@ static void emit_source(FILE *out, const WitRegistry *reg,
     fprintf(out, " */\n");
     fprintf(out, "#include \"%s\"\n", header_include);
     fprintf(out, "#include <stddef.h>\n");
-    fprintf(out, "#include <stdlib.h>\n");
-    fprintf(out, "#include <string.h>\n\n");
+    fprintf(out, "#include \"croft/wit_runtime_support.h\"\n\n");
 
     fprintf(out, "#define SAP_WIT_CHECK(rc) do { if ((rc) != ERR_OK) return (rc); } while (0)\n\n");
 
@@ -8983,7 +8982,7 @@ static void emit_source(FILE *out, const WitRegistry *reg,
         fprintf(out, "    if (thatch_region_init_readonly(&view, data, len) != ERR_OK) return -1;\n");
         fprintf(out, "    ThatchCursor cur = 0;\n");
         fprintf(out, "    %s scratch;\n", type_name);
-        fprintf(out, "    memset(&scratch, 0, sizeof(scratch));\n");
+        fprintf(out, "    sap_wit_rt_memset(&scratch, 0, sizeof(scratch));\n");
         wit_reader_name(reg, dbis[i].val_rec, type_name, (int)sizeof(type_name));
         fprintf(out, "    int rc = %s(&view, &cur, &scratch);\n", type_name);
         fprintf(out, "    if (rc != ERR_OK) return -1;\n");

@@ -2,12 +2,11 @@
 #define CROFT_WIT_GUEST_RUNTIME_H
 
 #include "croft/wit_world_runtime.h"
+#include "croft/wit_runtime_support.h"
 #include "sapling/err.h"
 
 #include <stddef.h>
 #include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -47,7 +46,7 @@ static inline void sap_wit_guest_region_init_writable(ThatchRegion *region, void
     if (!region) {
         return;
     }
-    memset(region, 0, sizeof(*region));
+    sap_wit_rt_memset(region, 0, sizeof(*region));
     region->page_ptr = data;
     region->capacity = cap;
     region->head = 0u;
@@ -84,7 +83,7 @@ static inline int sap_wit_guest_transport_reserve(uint8_t **buffer,
         return ERR_OOM;
     }
 
-    grown = (uint8_t *)realloc(*buffer, (size_t)new_capacity);
+    grown = (uint8_t *)sap_wit_rt_realloc(*buffer, (size_t)new_capacity);
     if (!grown) {
         return ERR_OOM;
     }
@@ -101,7 +100,7 @@ static inline void sap_wit_guest_transport_init(SapWitGuestTransport *transport,
     if (!transport) {
         return;
     }
-    memset(transport, 0, sizeof(*transport));
+    sap_wit_rt_memset(transport, 0, sizeof(*transport));
     transport->ctx = ctx;
     transport->invoke = invoke;
 }
@@ -111,9 +110,9 @@ static inline void sap_wit_guest_transport_dispose(SapWitGuestTransport *transpo
     if (!transport) {
         return;
     }
-    free(transport->reply_buffer);
-    free(transport->command_buffer);
-    memset(transport, 0, sizeof(*transport));
+    sap_wit_rt_free(transport->reply_buffer);
+    sap_wit_rt_free(transport->command_buffer);
+    sap_wit_rt_memset(transport, 0, sizeof(*transport));
 }
 
 /*
@@ -149,7 +148,7 @@ static inline int32_t sap_wit_guest_transport_call(SapWitGuestTransport *transpo
         return ERR_INVALID;
     }
     if (qualified_name_len >= sizeof(stack_name)) {
-        heap_name = (char *)malloc(qualified_name_len + 1u);
+        heap_name = (char *)sap_wit_rt_malloc(qualified_name_len + 1u);
         if (!heap_name) {
             return ERR_OOM;
         }
@@ -216,7 +215,7 @@ static inline int32_t sap_wit_guest_transport_call(SapWitGuestTransport *transpo
         break;
     }
 
-    memset(reply_out, 0, endpoint->reply_size);
+    sap_wit_rt_memset(reply_out, 0, endpoint->reply_size);
     rc = thatch_region_init_readonly(&view, transport->reply_buffer, reply_len);
     if (rc != ERR_OK) {
         goto cleanup;
@@ -233,7 +232,7 @@ static inline int32_t sap_wit_guest_transport_call(SapWitGuestTransport *transpo
     }
 
 cleanup:
-    free(heap_name);
+    sap_wit_rt_free(heap_name);
     return rc;
 }
 

@@ -2335,7 +2335,6 @@ endif()
 if(TARGET croft_wasm_wasm3 AND CROFT_WAT2WASM_TOOL)
     set(WASM_GUEST_BIN "${CMAKE_CURRENT_BINARY_DIR}/examples/dummy_guest.wasm")
     set(WASM_TEXT_BRIDGE_BIN "${CMAKE_CURRENT_BINARY_DIR}/examples/text_bridge_guest.wasm")
-    set(WASM_WIT_WORLD_BRIDGE_BIN "${CMAKE_CURRENT_BINARY_DIR}/examples/wit_world_bridge_guest.wasm")
     add_custom_command(
         OUTPUT ${WASM_GUEST_BIN}
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/examples"
@@ -2355,16 +2354,57 @@ if(TARGET croft_wasm_wasm3 AND CROFT_WAT2WASM_TOOL)
         COMMENT "Compiling text_bridge_guest.wat to Wasm..."
     )
     add_custom_target(wasm_text_bridge_guest_gen DEPENDS ${WASM_TEXT_BRIDGE_BIN})
+endif()
 
+if(TARGET croft_wasm_wasm3 AND CROFT_LLVM_CLANG_TOOL AND CROFT_WASM_LD_TOOL)
+    set(WASM_WIT_WORLD_BRIDGE_BIN "${CMAKE_CURRENT_BINARY_DIR}/examples/wit_world_bridge_guest.wasm")
     add_custom_command(
         OUTPUT ${WASM_WIT_WORLD_BRIDGE_BIN}
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/examples"
-        COMMAND ${CROFT_WAT2WASM_TOOL} "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/wit_world_bridge_guest.wat"
-                                     -o ${WASM_WIT_WORLD_BRIDGE_BIN}
-        DEPENDS ${CROFT_WAT2WASM_DEP} "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/wit_world_bridge_guest.wat"
-        COMMENT "Compiling wit_world_bridge_guest.wat to Wasm..."
+        COMMAND ${CROFT_LLVM_CLANG_TOOL}
+                --target=wasm32-unknown-unknown
+                -std=c11
+                -Oz
+                -ffreestanding
+                -fno-builtin
+                -fno-stack-protector
+                -DCROFT_WIT_FREESTANDING=1
+                -I"${CMAKE_CURRENT_SOURCE_DIR}/include"
+                -I"${CMAKE_CURRENT_BINARY_DIR}/generated"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/wit_world_bridge_guest.c"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/wit_runtime_support_freestanding.c"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/thatch_core.c"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/wit_skip.c"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/wit_world_runtime.c"
+                "${WASI_CLI_COMMAND_WIT_GENERATED_C}"
+                "${WASI_RANDOM_WORLD_WIT_GENERATED_C}"
+                -nostdlib
+                -Wl,--no-entry
+                -Wl,--allow-undefined
+                -Wl,--export-memory
+                -Wl,--initial-memory=131072
+                -Wl,-z,stack-size=32768
+                -fuse-ld=${CROFT_WASM_LD_TOOL}
+                -o ${WASM_WIT_WORLD_BRIDGE_BIN}
+        DEPENDS
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/wit_world_bridge_guest.c"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/wit_runtime_support_freestanding.c"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/thatch_core.c"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/wit_skip.c"
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/wit_world_runtime.c"
+                "${CMAKE_CURRENT_SOURCE_DIR}/include/croft/wit_runtime_support.h"
+                "${CMAKE_CURRENT_SOURCE_DIR}/include/croft/wit_guest_runtime.h"
+                "${CMAKE_CURRENT_SOURCE_DIR}/include/croft/wit_croft_wasm_guest.h"
+                "${WASI_CLI_COMMAND_WIT_GENERATED_C}"
+                "${WASI_CLI_COMMAND_WIT_GENERATED_H}"
+                "${WASI_RANDOM_WORLD_WIT_GENERATED_C}"
+                "${WASI_RANDOM_WORLD_WIT_GENERATED_H}"
+        COMMENT "Compiling wit_world_bridge_guest.c to Wasm..."
     )
     add_custom_target(wasm_wit_world_bridge_guest_gen DEPENDS ${WASM_WIT_WORLD_BRIDGE_BIN})
+elseif(TARGET croft_wasm_wasm3)
+    croft_optional_missing("wasm-c-guest"
+        "set CROFT_LLVM_CLANG_TOOL and CROFT_WASM_LD_TOOL to build the generated WIT C guest bridge")
 endif()
 
 # ── Examples ─────────────────────────────────────────────────────────
