@@ -336,6 +336,10 @@ function(croft_register_artifact target kind)
     croft_json_array(expanded_surfaces_json ${ART_EXPANDED_SURFACES})
     set(entry "    {\n      \"name\": \"${target}\",\n      \"kind\": \"${kind}\",\n      \"profile\": ${profile_json},\n      \"upstream_package\": ${upstream_package_json},\n      \"upstream_version\": ${upstream_version_json},\n      \"support_status\": ${support_status_json},\n      \"applicability\": ${applicability_json},\n      \"capability_bundles\": ${capability_bundles_json},\n      \"shared_substrates\": ${shared_substrates_json},\n      \"helper_interfaces\": ${helper_interfaces_json},\n      \"declared_worlds\": ${declared_worlds_json},\n      \"expanded_surfaces\": ${expanded_surfaces_json},\n      \"tags\": ${tags_json},\n      \"depends\": ${depends_json}\n    }")
     set_property(GLOBAL APPEND PROPERTY CROFT_ARTIFACT_ENTRIES "${entry}")
+    if(ART_CAPABILITY_BUNDLES OR ART_SHARED_SUBSTRATES OR ART_HELPER_INTERFACES
+       OR ART_DECLARED_WORLDS OR ART_EXPANDED_SURFACES)
+        set_property(GLOBAL APPEND PROPERTY CROFT_XPI_ARTIFACT_ENTRIES "${entry}")
+    endif()
     set_property(GLOBAL APPEND PROPERTY CROFT_INSTALL_TARGETS "${target}")
 endfunction()
 
@@ -455,9 +459,9 @@ function(croft_get_xpi_bundle_field out_var name field)
     set(${out_var} ${values} PARENT_SCOPE)
 endfunction()
 
-function(croft_collect_xpi_bundle_field out_var field)
-    get_property(bundle_names GLOBAL PROPERTY CROFT_DEFINED_XPI_BUNDLES)
-    if(NOT bundle_names OR bundle_names MATCHES "-NOTFOUND$")
+function(croft_collect_named_xpi_bundle_field out_var field)
+    set(bundle_names ${ARGN})
+    if(NOT bundle_names)
         set(${out_var} "" PARENT_SCOPE)
         return()
     endif()
@@ -471,6 +475,72 @@ function(croft_collect_xpi_bundle_field out_var field)
         list(REMOVE_DUPLICATES values)
     endif()
     set(${out_var} ${values} PARENT_SCOPE)
+endfunction()
+
+function(croft_collect_xpi_bundle_field out_var field)
+    get_property(bundle_names GLOBAL PROPERTY CROFT_DEFINED_XPI_BUNDLES)
+    if(NOT bundle_names OR bundle_names MATCHES "-NOTFOUND$")
+        set(${out_var} "" PARENT_SCOPE)
+        return()
+    endif()
+    croft_collect_named_xpi_bundle_field(values "${field}" ${bundle_names})
+    set(${out_var} ${values} PARENT_SCOPE)
+endfunction()
+
+function(croft_register_artifact_from_xpi_bundles target kind)
+    cmake_parse_arguments(ART
+        ""
+        "PROFILE;UPSTREAM_PACKAGE;UPSTREAM_VERSION;SUPPORT_STATUS;APPLICABILITY"
+        "BUNDLES;TAGS;DEPENDS;EXTRA_CAPABILITY_BUNDLES;EXTRA_SHARED_SUBSTRATES;EXTRA_HELPER_INTERFACES;EXTRA_DECLARED_WORLDS;EXTRA_EXPANDED_SURFACES"
+        ${ARGN})
+    if(NOT ART_BUNDLES)
+        message(FATAL_ERROR "croft_register_artifact_from_xpi_bundles(${target}) requires BUNDLES")
+    endif()
+
+    set(capability_bundles ${ART_BUNDLES} ${ART_EXTRA_CAPABILITY_BUNDLES})
+    if(capability_bundles)
+        list(REMOVE_DUPLICATES capability_bundles)
+    endif()
+
+    croft_collect_named_xpi_bundle_field(shared_substrates SUBSTRATES ${ART_BUNDLES})
+    croft_collect_named_xpi_bundle_field(helper_interfaces HELPER_INTERFACES ${ART_BUNDLES})
+    croft_collect_named_xpi_bundle_field(declared_worlds DECLARED_WORLDS ${ART_BUNDLES})
+    croft_collect_named_xpi_bundle_field(expanded_surfaces EXPANDED_SURFACES ${ART_BUNDLES})
+
+    list(APPEND shared_substrates ${ART_EXTRA_SHARED_SUBSTRATES})
+    list(APPEND helper_interfaces ${ART_EXTRA_HELPER_INTERFACES})
+    list(APPEND declared_worlds ${ART_EXTRA_DECLARED_WORLDS})
+    list(APPEND expanded_surfaces ${ART_EXTRA_EXPANDED_SURFACES})
+    foreach(list_var IN ITEMS shared_substrates helper_interfaces declared_worlds expanded_surfaces)
+        if(${list_var})
+            list(REMOVE_DUPLICATES ${list_var})
+        endif()
+    endforeach()
+
+    set(register_args
+        TAGS ${ART_TAGS}
+        DEPENDS ${ART_DEPENDS}
+        CAPABILITY_BUNDLES ${capability_bundles}
+        SHARED_SUBSTRATES ${shared_substrates}
+        HELPER_INTERFACES ${helper_interfaces}
+        DECLARED_WORLDS ${declared_worlds}
+        EXPANDED_SURFACES ${expanded_surfaces})
+    if(ART_PROFILE)
+        list(APPEND register_args PROFILE "${ART_PROFILE}")
+    endif()
+    if(ART_UPSTREAM_PACKAGE)
+        list(APPEND register_args UPSTREAM_PACKAGE "${ART_UPSTREAM_PACKAGE}")
+    endif()
+    if(ART_UPSTREAM_VERSION)
+        list(APPEND register_args UPSTREAM_VERSION "${ART_UPSTREAM_VERSION}")
+    endif()
+    if(ART_SUPPORT_STATUS)
+        list(APPEND register_args SUPPORT_STATUS "${ART_SUPPORT_STATUS}")
+    endif()
+    if(ART_APPLICABILITY)
+        list(APPEND register_args APPLICABILITY "${ART_APPLICABILITY}")
+    endif()
+    croft_register_artifact(${target} ${kind} ${register_args})
 endfunction()
 
 function(croft_register_example target)
@@ -2331,14 +2401,11 @@ croft_define_xpi_bundle_spec(wasi-filesystem-streams-current-machine
         "wasi:filesystem@0.2.9/error"
 )
 
-croft_collect_xpi_bundle_field(CROFT_WASI_MACHINE_RUNTIME_SUBSTRATES SUBSTRATES)
-croft_collect_xpi_bundle_field(CROFT_WASI_MACHINE_RUNTIME_HELPER_INTERFACES HELPER_INTERFACES)
-croft_collect_xpi_bundle_field(CROFT_WASI_MACHINE_RUNTIME_DECLARED_WORLDS DECLARED_WORLDS)
-croft_collect_xpi_bundle_field(CROFT_WASI_MACHINE_RUNTIME_EXPANDED_SURFACES EXPANDED_SURFACES)
-get_property(CROFT_WASI_MACHINE_RUNTIME_BUNDLES GLOBAL PROPERTY CROFT_DEFINED_XPI_BUNDLES)
-if(NOT CROFT_WASI_MACHINE_RUNTIME_BUNDLES OR CROFT_WASI_MACHINE_RUNTIME_BUNDLES MATCHES "-NOTFOUND$")
-    set(CROFT_WASI_MACHINE_RUNTIME_BUNDLES "")
-endif()
+set(CROFT_WASI_MACHINE_RUNTIME_BUNDLES
+    wasi-cli-stdio-terminal-current-machine
+    wasi-random-current-machine
+    wasi-clocks-poll-current-machine
+    wasi-filesystem-streams-current-machine)
 
 add_library(croft_wit_wasi_machine_runtime STATIC src/runtime/wit_wasi_machine_runtime.c)
 add_dependencies(croft_wit_wasi_machine_runtime
@@ -2356,16 +2423,12 @@ target_link_libraries(croft_wit_wasi_machine_runtime PUBLIC
     croft_wit_wasi_io_world
     croft_wit_wasi_clocks_world
     croft_wit_wasi_filesystem_world)
-croft_register_artifact(croft_wit_wasi_machine_runtime wit
+croft_register_artifact_from_xpi_bundles(croft_wit_wasi_machine_runtime wit
+    BUNDLES ${CROFT_WASI_MACHINE_RUNTIME_BUNDLES}
     UPSTREAM_PACKAGE "wasi"
     UPSTREAM_VERSION "0.2.9"
     SUPPORT_STATUS "host-implemented-subset"
     APPLICABILITY "current-machine-unix"
-    CAPABILITY_BUNDLES ${CROFT_WASI_MACHINE_RUNTIME_BUNDLES}
-    SHARED_SUBSTRATES ${CROFT_WASI_MACHINE_RUNTIME_SUBSTRATES}
-    HELPER_INTERFACES ${CROFT_WASI_MACHINE_RUNTIME_HELPER_INTERFACES}
-    DECLARED_WORLDS ${CROFT_WASI_MACHINE_RUNTIME_DECLARED_WORLDS}
-    EXPANDED_SURFACES ${CROFT_WASI_MACHINE_RUNTIME_EXPANDED_SURFACES}
     TAGS tier8 wit wasi runtime current-machine unix generated-glue host
     DEPENDS croft_wit_world_runtime
             croft_wit_wasi_cli_command
@@ -3619,8 +3682,13 @@ if(NOT CROFT_XPI_BUNDLE_ENTRIES)
     set(CROFT_XPI_BUNDLE_ENTRIES "")
 endif()
 string(JOIN ",\n" CROFT_XPI_BUNDLE_ENTRIES_JSON ${CROFT_XPI_BUNDLE_ENTRIES})
+get_property(CROFT_XPI_ARTIFACT_ENTRIES GLOBAL PROPERTY CROFT_XPI_ARTIFACT_ENTRIES)
+if(NOT CROFT_XPI_ARTIFACT_ENTRIES)
+    set(CROFT_XPI_ARTIFACT_ENTRIES "")
+endif()
+string(JOIN ",\n" CROFT_XPI_ARTIFACT_ENTRIES_JSON ${CROFT_XPI_ARTIFACT_ENTRIES})
 file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/croft-xpi.json"
-    CONTENT "{\n  \"substrates\": [\n${CROFT_XPI_SUBSTRATE_ENTRIES_JSON}\n  ],\n  \"bundles\": [\n${CROFT_XPI_BUNDLE_ENTRIES_JSON}\n  ]\n}\n")
+    CONTENT "{\n  \"artifacts\": [\n${CROFT_XPI_ARTIFACT_ENTRIES_JSON}\n  ],\n  \"substrates\": [\n${CROFT_XPI_SUBSTRATE_ENTRIES_JSON}\n  ],\n  \"bundles\": [\n${CROFT_XPI_BUNDLE_ENTRIES_JSON}\n  ]\n}\n")
 
 get_property(CROFT_INSTALL_TARGETS GLOBAL PROPERTY CROFT_INSTALL_TARGETS)
 if(NOT CROFT_INSTALL_TARGETS)

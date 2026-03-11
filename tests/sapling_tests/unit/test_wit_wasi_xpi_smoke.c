@@ -176,6 +176,11 @@ int main(void)
 
     ok &= expect_contains("xpi substrate name", xpi_json, "\"name\": \"wasi-descriptor-table\"");
     ok &= expect_contains("xpi filesystem bundle", xpi_json, "\"name\": \"wasi-filesystem-streams-current-machine\"");
+    ok &= expect_contains("xpi artifacts section", xpi_json, "\"artifacts\": [");
+    ok &= expect_contains("xpi runtime artifact", xpi_json, "\"name\": \"croft_wit_wasi_machine_runtime\"");
+    ok &= expect_contains("xpi runtime bundles",
+                          xpi_json,
+                          "\"capability_bundles\": [\"wasi-cli-stdio-terminal-current-machine\", \"wasi-random-current-machine\", \"wasi-clocks-poll-current-machine\", \"wasi-filesystem-streams-current-machine\"]");
     ok &= expect_contains("xpi filesystem helpers",
                           xpi_json,
                           "\"helper_interfaces\": [\"wasi:io@0.2.9/error\", \"wasi:filesystem@0.2.9/error\"]");

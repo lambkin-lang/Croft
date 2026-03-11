@@ -5,6 +5,32 @@ its aspect libraries are still co-evolving. These notes are not intended to
 freeze the design; they are meant to preserve the useful pressure points,
 surprises, and open questions that surfaced while forcing the ideas into code.
 
+## March 11, 2026: The Solver Should Not Have To Reconstruct Artifact Participation
+
+The earlier split between `croft-artifacts.json` and `croft-xpi.json` was
+useful, but it still left too much implicit for the solver.
+
+It forced a join step just to answer a basic question:
+
+- which concrete build artifacts actually realize a bundle,
+- and which substrates or helper interfaces those artifacts carry with them?
+
+That join is easy for humans and annoying for tooling. More importantly, it
+encourages the wrong mental model: that the artifact inventory is one concern
+and the XPI graph is another.
+
+The better model is:
+
+- `croft-artifacts.json` stays the full build inventory,
+- `croft-xpi.json` carries the XPI-facing projection of the participating
+  artifacts,
+- and bundle/substrate declarations should be able to drive artifact
+  projection directly when an artifact is really the implementation aggregate
+  of several bundles.
+
+That keeps one authoritative graph for solver consumption while preserving the
+broader build inventory for other tools.
+
 ## March 11, 2026: Vendoring Needs A Drift Story, Not Just A Snapshot
 
 Once WASI `0.2.9` became a first-class vendored input, another missing piece

@@ -172,6 +172,9 @@ filesystem path.
 `croft-xpi.json` is now the build's machine-readable summary of that structure.
 It records:
 
+- XPI-participating artifact projections, so the solver can see which build
+  units realize which bundle memberships and shared substrates without joining
+  a second file first
 - shared substrates such as byte streams, descriptor tables, pollables, system random, and time-base
 - current-machine capability bundles such as CLI stdio/terminal, random, clocks/poll, and filesystem/streams
 - the declared worlds versus expanded callable surfaces for those bundles
