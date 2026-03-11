@@ -341,10 +341,11 @@ function(croft_register_artifact target kind)
     cmake_parse_arguments(ART
         ""
         "PROFILE;UPSTREAM_PACKAGE;UPSTREAM_VERSION;SUPPORT_STATUS;APPLICABILITY"
-        "TAGS;DEPENDS;CAPABILITY_BUNDLES;SHARED_SUBSTRATES;HELPER_INTERFACES;DECLARED_WORLDS;EXPANDED_SURFACES;REQUIRES_BUNDLES"
+        "TAGS;DEPENDS;CAPABILITY_BUNDLES;SHARED_SUBSTRATES;HELPER_INTERFACES;DECLARED_WORLDS;EXPANDED_SURFACES;REQUIRES_BUNDLES;DERIVE_REQUIRES_FROM"
         ${ARGN})
     croft_collect_registered_artifact_requirement_bundles(derived_requires_bundles ${ART_DEPENDS})
-    set(effective_requires_bundles ${ART_REQUIRES_BUNDLES} ${derived_requires_bundles})
+    croft_collect_registered_artifact_participation_bundles(derived_provider_bundles ${ART_DERIVE_REQUIRES_FROM})
+    set(effective_requires_bundles ${ART_REQUIRES_BUNDLES} ${derived_requires_bundles} ${derived_provider_bundles})
     if(effective_requires_bundles)
         list(REMOVE_DUPLICATES effective_requires_bundles)
     endif()
@@ -2129,6 +2130,9 @@ croft_register_artifact(croft aggregate
         croft_host_queue
         croft_fs
         croft_wire_runtime
+    DERIVE_REQUIRES_FROM
+        croft_host_time
+        croft_fs
 )
 
 # ── Library: Sapling ────────────────────────────────────────────────────
@@ -2290,6 +2294,7 @@ croft_link_libraries_checked(croft_editor_document_fs PUBLIC croft_editor_docume
 croft_register_artifact(croft_editor_document_fs editor
     TAGS tier8 editor document filesystem io
     DEPENDS croft_editor_document_core croft_fs
+    DERIVE_REQUIRES_FROM croft_fs
 )
 
 add_library(croft_editor_document STATIC src/editor/editor_document_aggregate.c)
@@ -2299,6 +2304,7 @@ croft_link_libraries_checked(croft_editor_document PUBLIC croft_editor_document_
 croft_register_artifact(croft_editor_document editor
     TAGS tier8 editor document compatibility aggregate
     DEPENDS croft_editor_document_core croft_editor_document_fs
+    DERIVE_REQUIRES_FROM croft_editor_document_fs
 )
 
 add_library(croft_wit_world_runtime STATIC src/runtime/wit_world_runtime.c)
@@ -2828,9 +2834,9 @@ if(CROFT_GLFW_TARGET AND CROFT_TGFX_TARGET AND CROFT_TGFX_REQUEST_OPENGL)
         target_compile_definitions(croft_render_tgfx_opengl PRIVATE GL_SILENCE_DEPRECATION)
     endif()
     croft_register_artifact(croft_render_tgfx_opengl render
-        REQUIRES_BUNDLES croft-host-window-current-machine
         TAGS tier6 render tgfx opengl
         DEPENDS croft_ui_glfw_opengl
+        DERIVE_REQUIRES_FROM croft_ui_glfw_opengl
     )
 
     add_library(croft_scene_core_tgfx_opengl STATIC
@@ -2844,6 +2850,7 @@ if(CROFT_GLFW_TARGET AND CROFT_TGFX_TARGET AND CROFT_TGFX_REQUEST_OPENGL)
     croft_register_artifact(croft_scene_core_tgfx_opengl scene
         TAGS tier7 scene tgfx opengl
         DEPENDS croft_render_tgfx_opengl
+        DERIVE_REQUIRES_FROM croft_render_tgfx_opengl
     )
 
     add_library(croft_scene_text_editor_tgfx_opengl STATIC src/scene/node_text_editor.c)
@@ -2858,6 +2865,7 @@ if(CROFT_GLFW_TARGET AND CROFT_TGFX_TARGET AND CROFT_TGFX_REQUEST_OPENGL)
     croft_register_artifact(croft_scene_text_editor_tgfx_opengl scene
         TAGS tier7 scene text-editor tgfx opengl sapling
         DEPENDS croft_scene_core_tgfx_opengl sapling_core
+        DERIVE_REQUIRES_FROM croft_scene_core_tgfx_opengl
     )
 endif()
 
@@ -2875,9 +2883,9 @@ if(APPLE AND CROFT_GLFW_TARGET AND CROFT_TGFX_TARGET AND CROFT_TGFX_REQUEST_META
             "-framework QuartzCore"
     )
     croft_register_artifact(croft_render_tgfx_metal render
-        REQUIRES_BUNDLES croft-host-window-current-machine
         TAGS tier6 render tgfx metal macos
         DEPENDS croft_ui_glfw_metal
+        DERIVE_REQUIRES_FROM croft_ui_glfw_metal
     )
 
     add_library(croft_scene_core_tgfx_metal STATIC
@@ -2891,6 +2899,7 @@ if(APPLE AND CROFT_GLFW_TARGET AND CROFT_TGFX_TARGET AND CROFT_TGFX_REQUEST_META
     croft_register_artifact(croft_scene_core_tgfx_metal scene
         TAGS tier7 scene tgfx metal macos
         DEPENDS croft_render_tgfx_metal
+        DERIVE_REQUIRES_FROM croft_render_tgfx_metal
     )
 
     add_library(croft_scene_text_editor_tgfx_metal STATIC src/scene/node_text_editor.c)
@@ -2905,6 +2914,7 @@ if(APPLE AND CROFT_GLFW_TARGET AND CROFT_TGFX_TARGET AND CROFT_TGFX_REQUEST_META
     croft_register_artifact(croft_scene_text_editor_tgfx_metal scene
         TAGS tier7 scene text-editor tgfx metal macos sapling
         DEPENDS croft_scene_core_tgfx_metal sapling_core
+        DERIVE_REQUIRES_FROM croft_scene_core_tgfx_metal
     )
 endif()
 
@@ -2974,6 +2984,7 @@ if(APPLE AND TARGET croft_ui_glfw_metal)
     croft_register_artifact(croft_scene_core_metal_native scene
         TAGS tier7 scene metal native-direct macos
         DEPENDS croft_render_metal_native
+        DERIVE_REQUIRES_FROM croft_render_metal_native
     )
 
     add_library(croft_scene_text_editor_metal_native STATIC src/scene/node_text_editor.c)
@@ -2986,9 +2997,9 @@ if(APPLE AND TARGET croft_ui_glfw_metal)
             sapling_core
     )
     croft_register_artifact(croft_scene_text_editor_metal_native scene
-        REQUIRES_BUNDLES croft-host-gpu2d-current-machine
         TAGS tier7 scene text-editor metal native-direct macos sapling
         DEPENDS croft_scene_core_metal_native sapling_core
+        DERIVE_REQUIRES_FROM croft_scene_core_metal_native
     )
 endif()
 
@@ -3120,9 +3131,11 @@ if(APPLE)
             "-framework AppKit"
     )
     croft_register_artifact(croft_editor_appkit editor
-        REQUIRES_BUNDLES croft-host-file-dialog-current-machine
         TAGS tier9 editor native appkit textkit macos cpu
         DEPENDS croft_editor_commands croft_editor_document_core croft_editor_document_fs
+        DERIVE_REQUIRES_FROM
+            croft_editor_document_fs
+            croft_file_dialog_macos
     )
 
     add_library(croft_a11y_macos STATIC src/host/mac/host_a11y.m)

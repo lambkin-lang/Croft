@@ -190,6 +190,14 @@ int main(void)
     ok &= expect_contains("xpi host editor-input helpers",
                           xpi_json,
                           "\"helper_interfaces\": [\"lambkin:host-window@0.1.0/host-window\", \"lambkin:host-menu@0.1.0/host-menu\"]");
+    ok &= expect_contains("xpi aggregate artifact", xpi_json, "\"name\": \"croft\"");
+    ok &= expect_contains("xpi aggregate artifact bundles",
+                          xpi_json,
+                          "\"requires_bundles\": [\"croft-host-clock-current-machine\", \"croft-host-fs-current-machine\"]");
+    ok &= expect_contains("xpi editor document aggregate", xpi_json, "\"name\": \"croft_editor_document\"");
+    ok &= expect_contains("xpi editor document aggregate bundles",
+                          xpi_json,
+                          "\"requires_bundles\": [\"croft-host-fs-current-machine\"]");
     ok &= expect_contains("xpi textpad entrypoint", xpi_json, "\"name\": \"example_wit_textpad_window\"");
     ok &= expect_contains("xpi textpad entrypoint kind", xpi_json, "\"kind\": \"example\"");
     ok &= expect_contains("xpi textpad required bundles",
@@ -200,19 +208,19 @@ int main(void)
                           "\"name\": \"example_editor_text_metal_native\"");
     ok &= expect_contains("xpi editor entrypoint bundles",
                           xpi_json,
-                          "\"requires_bundles\": [\"croft-host-gpu2d-current-machine\", \"croft-host-file-dialog-current-machine\", \"croft-host-window-current-machine\", \"croft-host-clock-current-machine\", \"croft-host-menu-current-machine\", \"croft-host-popup-menu-current-machine\", \"croft-host-clipboard-current-machine\", \"croft-host-editor-input-normalization\", \"croft-host-a11y-current-machine\"]");
+                          "\"requires_bundles\": [\"croft-host-gpu2d-current-machine\", \"croft-host-fs-current-machine\", \"croft-host-file-dialog-current-machine\", \"croft-host-window-current-machine\", \"croft-host-clock-current-machine\", \"croft-host-menu-current-machine\", \"croft-host-popup-menu-current-machine\", \"croft-host-clipboard-current-machine\", \"croft-host-editor-input-normalization\", \"croft-host-a11y-current-machine\"]");
     ok &= expect_contains("xpi direct editor entrypoint",
                           xpi_json,
                           "\"name\": \"example_editor_text\"");
     ok &= expect_contains("xpi direct editor bundles",
                           xpi_json,
-                          "\"requires_bundles\": [\"croft-host-window-current-machine\", \"croft-host-file-dialog-current-machine\", \"croft-host-popup-menu-current-machine\"]");
+                          "\"requires_bundles\": [\"croft-host-window-current-machine\", \"croft-host-clipboard-current-machine\", \"croft-host-fs-current-machine\", \"croft-host-file-dialog-current-machine\", \"croft-host-popup-menu-current-machine\"]");
     ok &= expect_contains("xpi zoom entrypoint",
                           xpi_json,
                           "\"name\": \"example_zoom_canvas\"");
     ok &= expect_contains("xpi zoom bundles",
                           xpi_json,
-                          "\"requires_bundles\": [\"croft-host-window-current-machine\", \"croft-host-gesture-current-machine\"]");
+                          "\"requires_bundles\": [\"croft-host-window-current-machine\", \"croft-host-clipboard-current-machine\", \"croft-host-gesture-current-machine\"]");
     ok &= expect_contains("xpi host window runtime artifact",
                           xpi_json,
                           "\"name\": \"croft_wit_host_window_runtime\"");

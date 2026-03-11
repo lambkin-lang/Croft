@@ -141,6 +141,27 @@ The more stable rule is:
 That keeps the graph informative without turning every dependency edge into an
 over-approximation of the whole lower layer.
 
+One more category turned out to matter immediately after that split: aggregate
+artifacts.
+
+Some higher-level build units are not just ordinary dependencies. `croft`,
+editor-document aggregates, and the scene/editor shells are deliberate
+packaging layers over a provider stack. For those, the honest XPI statement is
+not "inherit whatever your link dependencies require" but "this aggregate is
+meant to expose the combined capability view of these specific lower
+participants."
+
+That is a different relation again:
+
+- entrypoints derive from the full participation of the artifacts they ask for,
+- ordinary artifacts inherit only requirement bundles from their dependencies,
+- aggregate artifacts may explicitly derive from named lower providers when
+  they are intentionally packaging that combined surface as one unit.
+
+This is closer to the actual Lambkin composition story. Some nodes in the graph
+are leaves, some are providers, and some are composition layers that should be
+visible as such rather than flattened back into raw target dependencies.
+
 ## March 11, 2026: Vendoring Needs A Drift Story, Not Just A Snapshot
 
 Once WASI `0.2.9` became a first-class vendored input, another missing piece

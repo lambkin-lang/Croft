@@ -181,6 +181,11 @@ It records:
   they explicitly require, while artifact-to-artifact requirement propagation
   follows dependency `requires_bundles` rather than every capability a lower
   provider happens to participate in
+- aggregate artifacts may also derive requirements from an explicit provider
+  stack when they are intentionally packaging those lower capabilities as one
+  higher-level unit; that keeps `croft`, editor document layers, and scene/app
+  shells honest in the XPI graph without forcing ordinary dependency edges to
+  inherit every lower bundle automatically
 - shared substrates such as byte streams, descriptor tables, pollables, system random, and time-base
 - current-machine capability bundles such as CLI stdio/terminal, random, clocks/poll, and filesystem/streams
 - Croft host mix-in bundles and substrates for filesystem, clock, window, clipboard, popup-menu, menu-bar, editor-input normalization, GPU surface access, and accessibility where the current machine provides them
