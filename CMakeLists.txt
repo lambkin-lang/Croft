@@ -198,6 +198,65 @@ function(croft_collect_wit_dir_depends out_var wit_path)
     set(${out_var} ${wit_dir_inputs} PARENT_SCOPE)
 endfunction()
 
+function(croft_define_wasi_wit_schema var_prefix)
+    cmake_parse_arguments(WASI
+        "CURRENT_MACHINE"
+        "RELATIVE_PATH;COMMENT"
+        "EXTRA_DEPENDS"
+        ${ARGN})
+    if(NOT WASI_RELATIVE_PATH)
+        message(FATAL_ERROR "croft_define_wasi_wit_schema(${var_prefix}) requires RELATIVE_PATH")
+    endif()
+
+    if(WASI_CURRENT_MACHINE)
+        set(fallback_path "${CROFT_WASI_CURRENT_MACHINE_0_2_9_DIR}/${WASI_RELATIVE_PATH}")
+        set(extra_args ${CROFT_WASI_CURRENT_MACHINE_PACKAGE_ROOT_ARGS})
+    else()
+        set(fallback_path "${CROFT_WASI_VENDOR_0_2_9_PROPOSALS_DIR}/${WASI_RELATIVE_PATH}")
+        set(extra_args "")
+    endif()
+
+    croft_select_wasi_wit(wit_path "${WASI_RELATIVE_PATH}" "${fallback_path}")
+    croft_collect_wit_dir_depends(wit_depends "${wit_path}")
+    if(WASI_CURRENT_MACHINE)
+        list(APPEND wit_depends ${CROFT_WASI_VENDOR_0_2_9_WIT_INPUTS})
+    endif()
+    list(APPEND wit_depends ${WASI_EXTRA_DEPENDS})
+
+    set(header_var "${var_prefix}_WIT_GENERATED_H")
+    set(source_var "${var_prefix}_WIT_GENERATED_C")
+    set(manifest_var "${var_prefix}_WIT_GENERATED_MANIFEST")
+    set(generated_h "${${header_var}}")
+    set(generated_c "${${source_var}}")
+    set(generated_manifest "${${manifest_var}}")
+    if(NOT generated_h OR NOT generated_c OR NOT generated_manifest)
+        message(FATAL_ERROR
+            "croft_define_wasi_wit_schema(${var_prefix}) requires ${header_var}, ${source_var}, and ${manifest_var} to be set first")
+    endif()
+
+    string(TOLOWER "${var_prefix}" target_prefix)
+    set(schema_target "${target_prefix}_wit_schema_gen")
+
+    add_custom_command(
+        OUTPUT ${generated_h} ${generated_c} ${generated_manifest}
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
+        COMMAND wit_codegen --wit "${wit_path}"
+                            ${extra_args}
+                            --header "${generated_h}" --source "${generated_c}" --manifest "${generated_manifest}"
+        DEPENDS wit_codegen ${wit_depends}
+        COMMENT "${WASI_COMMENT}"
+    )
+    add_custom_target(${schema_target}
+        DEPENDS ${generated_h}
+                ${generated_c}
+                ${generated_manifest})
+
+    set(path_var "${var_prefix}_WIT_PATH")
+    set(depends_var "${var_prefix}_WIT_DEPENDS")
+    set(${path_var} "${wit_path}" PARENT_SCOPE)
+    set(${depends_var} "${wit_depends}" PARENT_SCOPE)
+endfunction()
+
 function(croft_apply_public_includes target)
     target_include_directories(${target}
         PUBLIC
@@ -592,116 +651,12 @@ file(GLOB_RECURSE CROFT_WASI_VENDOR_0_2_9_WIT_INPUTS CONFIGURE_DEPENDS
     "${CROFT_WASI_VENDOR_0_2_9_PROPOSALS_DIR}/*/wit/*.wit")
 if(CROFT_WASI_PROPOSALS_DIR)
     set(CROFT_WASI_CURRENT_MACHINE_PACKAGE_ROOT_ARGS "")
+    set(CROFT_WASI_VENDOR_REPORT_EXTERNAL_ROOT "${CROFT_WASI_PROPOSALS_DIR}")
 else()
     set(CROFT_WASI_CURRENT_MACHINE_PACKAGE_ROOT_ARGS
         --package-root "${CROFT_WASI_VENDOR_0_2_9_PROPOSALS_DIR}")
+    set(CROFT_WASI_VENDOR_REPORT_EXTERNAL_ROOT "-")
 endif()
-
-croft_select_wasi_wit(WASI_CLI_ENVIRONMENT_WIT_PATH
-    "cli/wit/environment.wit"
-    "${CROFT_WASI_CURRENT_MACHINE_0_2_9_DIR}/cli/wit/environment.wit")
-croft_collect_wit_dir_depends(WASI_CLI_ENVIRONMENT_WIT_DEPENDS "${WASI_CLI_ENVIRONMENT_WIT_PATH}")
-list(APPEND WASI_CLI_ENVIRONMENT_WIT_DEPENDS ${CROFT_WASI_VENDOR_0_2_9_WIT_INPUTS})
-
-croft_select_wasi_wit(WASI_CLI_STDIO_WIT_PATH
-    "cli/wit/stdio.wit"
-    "${CROFT_WASI_CURRENT_MACHINE_0_2_9_DIR}/cli/wit/stdio.wit")
-croft_collect_wit_dir_depends(WASI_CLI_STDIO_WIT_DEPENDS "${WASI_CLI_STDIO_WIT_PATH}")
-list(APPEND WASI_CLI_STDIO_WIT_DEPENDS ${CROFT_WASI_VENDOR_0_2_9_WIT_INPUTS})
-
-croft_select_wasi_wit(WASI_CLI_TERMINAL_WIT_PATH
-    "cli/wit/terminal.wit"
-    "${CROFT_WASI_CURRENT_MACHINE_0_2_9_DIR}/cli/wit/terminal.wit")
-croft_collect_wit_dir_depends(WASI_CLI_TERMINAL_WIT_DEPENDS "${WASI_CLI_TERMINAL_WIT_PATH}")
-list(APPEND WASI_CLI_TERMINAL_WIT_DEPENDS ${CROFT_WASI_VENDOR_0_2_9_WIT_INPUTS})
-
-croft_select_wasi_wit(WASI_CLI_RUN_WIT_PATH
-    "cli/wit/run.wit"
-    "${CROFT_WASI_CURRENT_MACHINE_0_2_9_DIR}/cli/wit/run.wit")
-croft_collect_wit_dir_depends(WASI_CLI_RUN_WIT_DEPENDS "${WASI_CLI_RUN_WIT_PATH}")
-list(APPEND WASI_CLI_RUN_WIT_DEPENDS ${CROFT_WASI_VENDOR_0_2_9_WIT_INPUTS})
-
-croft_select_wasi_wit(WASI_CLI_IMPORTS_WIT_PATH
-    "cli/wit/imports.wit"
-    "${CROFT_WASI_CURRENT_MACHINE_0_2_9_DIR}/cli/wit/imports.wit")
-croft_collect_wit_dir_depends(WASI_CLI_IMPORTS_WIT_DEPENDS "${WASI_CLI_IMPORTS_WIT_PATH}")
-list(APPEND WASI_CLI_IMPORTS_WIT_DEPENDS ${CROFT_WASI_VENDOR_0_2_9_WIT_INPUTS})
-
-croft_select_wasi_wit(WASI_CLI_COMMAND_WIT_PATH
-    "cli/wit/command.wit"
-    "${CROFT_WASI_CURRENT_MACHINE_0_2_9_DIR}/cli/wit/command.wit")
-croft_collect_wit_dir_depends(WASI_CLI_COMMAND_WIT_DEPENDS "${WASI_CLI_COMMAND_WIT_PATH}")
-list(APPEND WASI_CLI_COMMAND_WIT_DEPENDS ${CROFT_WASI_VENDOR_0_2_9_WIT_INPUTS})
-
-croft_select_wasi_wit(WASI_RANDOM_RANDOM_WIT_PATH
-    "random/wit/random.wit"
-    "${CROFT_WASI_VENDOR_0_2_9_PROPOSALS_DIR}/random/wit/random.wit")
-croft_collect_wit_dir_depends(WASI_RANDOM_RANDOM_WIT_DEPENDS "${WASI_RANDOM_RANDOM_WIT_PATH}")
-
-croft_select_wasi_wit(WASI_RANDOM_INSECURE_WIT_PATH
-    "random/wit/insecure.wit"
-    "${CROFT_WASI_VENDOR_0_2_9_PROPOSALS_DIR}/random/wit/insecure.wit")
-croft_collect_wit_dir_depends(WASI_RANDOM_INSECURE_WIT_DEPENDS "${WASI_RANDOM_INSECURE_WIT_PATH}")
-
-croft_select_wasi_wit(WASI_RANDOM_INSECURE_SEED_WIT_PATH
-    "random/wit/insecure-seed.wit"
-    "${CROFT_WASI_VENDOR_0_2_9_PROPOSALS_DIR}/random/wit/insecure-seed.wit")
-croft_collect_wit_dir_depends(WASI_RANDOM_INSECURE_SEED_WIT_DEPENDS "${WASI_RANDOM_INSECURE_SEED_WIT_PATH}")
-
-croft_select_wasi_wit(WASI_RANDOM_WORLD_WIT_PATH
-    "random/wit/world.wit"
-    "${CROFT_WASI_VENDOR_0_2_9_PROPOSALS_DIR}/random/wit/world.wit")
-croft_collect_wit_dir_depends(WASI_RANDOM_WORLD_WIT_DEPENDS "${WASI_RANDOM_WORLD_WIT_PATH}")
-
-croft_select_wasi_wit(WASI_CLOCKS_TIMEZONE_WIT_PATH
-    "clocks/wit/timezone.wit"
-    "${CROFT_WASI_VENDOR_0_2_9_PROPOSALS_DIR}/clocks/wit/timezone.wit")
-croft_collect_wit_dir_depends(WASI_CLOCKS_TIMEZONE_WIT_DEPENDS "${WASI_CLOCKS_TIMEZONE_WIT_PATH}")
-
-croft_select_wasi_wit(WASI_CLOCKS_WALL_CLOCK_WIT_PATH
-    "clocks/wit/wall-clock.wit"
-    "${CROFT_WASI_VENDOR_0_2_9_PROPOSALS_DIR}/clocks/wit/wall-clock.wit")
-croft_collect_wit_dir_depends(WASI_CLOCKS_WALL_CLOCK_WIT_DEPENDS "${WASI_CLOCKS_WALL_CLOCK_WIT_PATH}")
-
-croft_select_wasi_wit(WASI_IO_POLL_WIT_PATH
-    "io/wit/poll.wit"
-    "${CROFT_WASI_VENDOR_0_2_9_PROPOSALS_DIR}/io/wit/poll.wit")
-croft_collect_wit_dir_depends(WASI_IO_POLL_WIT_DEPENDS "${WASI_IO_POLL_WIT_PATH}")
-
-croft_select_wasi_wit(WASI_IO_STREAMS_WIT_PATH
-    "io/wit/streams.wit"
-    "${CROFT_WASI_VENDOR_0_2_9_PROPOSALS_DIR}/io/wit/streams.wit")
-croft_collect_wit_dir_depends(WASI_IO_STREAMS_WIT_DEPENDS "${WASI_IO_STREAMS_WIT_PATH}")
-
-croft_select_wasi_wit(WASI_IO_WORLD_WIT_PATH
-    "io/wit/world.wit"
-    "${CROFT_WASI_VENDOR_0_2_9_PROPOSALS_DIR}/io/wit/world.wit")
-croft_collect_wit_dir_depends(WASI_IO_WORLD_WIT_DEPENDS "${WASI_IO_WORLD_WIT_PATH}")
-
-croft_select_wasi_wit(WASI_CLOCKS_MONOTONIC_CLOCK_WIT_PATH
-    "clocks/wit/monotonic-clock.wit"
-    "${CROFT_WASI_VENDOR_0_2_9_PROPOSALS_DIR}/clocks/wit/monotonic-clock.wit")
-croft_collect_wit_dir_depends(WASI_CLOCKS_MONOTONIC_CLOCK_WIT_DEPENDS "${WASI_CLOCKS_MONOTONIC_CLOCK_WIT_PATH}")
-
-croft_select_wasi_wit(WASI_CLOCKS_WORLD_WIT_PATH
-    "clocks/wit/world.wit"
-    "${CROFT_WASI_VENDOR_0_2_9_PROPOSALS_DIR}/clocks/wit/world.wit")
-croft_collect_wit_dir_depends(WASI_CLOCKS_WORLD_WIT_DEPENDS "${WASI_CLOCKS_WORLD_WIT_PATH}")
-
-croft_select_wasi_wit(WASI_FILESYSTEM_TYPES_WIT_PATH
-    "filesystem/wit/types.wit"
-    "${CROFT_WASI_VENDOR_0_2_9_PROPOSALS_DIR}/filesystem/wit/types.wit")
-croft_collect_wit_dir_depends(WASI_FILESYSTEM_TYPES_WIT_DEPENDS "${WASI_FILESYSTEM_TYPES_WIT_PATH}")
-
-croft_select_wasi_wit(WASI_FILESYSTEM_PREOPENS_WIT_PATH
-    "filesystem/wit/preopens.wit"
-    "${CROFT_WASI_VENDOR_0_2_9_PROPOSALS_DIR}/filesystem/wit/preopens.wit")
-croft_collect_wit_dir_depends(WASI_FILESYSTEM_PREOPENS_WIT_DEPENDS "${WASI_FILESYSTEM_PREOPENS_WIT_PATH}")
-
-croft_select_wasi_wit(WASI_FILESYSTEM_WORLD_WIT_PATH
-    "filesystem/wit/world.wit"
-    "${CROFT_WASI_VENDOR_0_2_9_PROPOSALS_DIR}/filesystem/wit/world.wit")
-croft_collect_wit_dir_depends(WASI_FILESYSTEM_WORLD_WIT_DEPENDS "${WASI_FILESYSTEM_WORLD_WIT_PATH}")
 
 set(WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_schema_dbis.h")
 set(WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_schema_dbis.c")
@@ -989,303 +944,81 @@ add_custom_command(
 )
 add_custom_target(test_wit_schema_gen DEPENDS ${TEST_WIT_GENERATED_H} ${TEST_WIT_GENERATED_C} ${TEST_WIT_GENERATED_MANIFEST})
 
-# WASI CLI environment bindings
-add_custom_command(
-    OUTPUT ${WASI_CLI_ENVIRONMENT_WIT_GENERATED_H} ${WASI_CLI_ENVIRONMENT_WIT_GENERATED_C} ${WASI_CLI_ENVIRONMENT_WIT_GENERATED_MANIFEST}
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
-    COMMAND wit_codegen --wit "${WASI_CLI_ENVIRONMENT_WIT_PATH}"
-                        ${CROFT_WASI_CURRENT_MACHINE_PACKAGE_ROOT_ARGS}
-                        --header "${WASI_CLI_ENVIRONMENT_WIT_GENERATED_H}" --source "${WASI_CLI_ENVIRONMENT_WIT_GENERATED_C}" --manifest "${WASI_CLI_ENVIRONMENT_WIT_GENERATED_MANIFEST}"
-    DEPENDS wit_codegen ${WASI_CLI_ENVIRONMENT_WIT_DEPENDS}
-    COMMENT "Generating WASI CLI environment bindings..."
-)
-add_custom_target(wasi_cli_environment_wit_schema_gen
-    DEPENDS ${WASI_CLI_ENVIRONMENT_WIT_GENERATED_H}
-            ${WASI_CLI_ENVIRONMENT_WIT_GENERATED_C}
-            ${WASI_CLI_ENVIRONMENT_WIT_GENERATED_MANIFEST})
-
-# WASI CLI stdio bindings
-add_custom_command(
-    OUTPUT ${WASI_CLI_STDIO_WIT_GENERATED_H} ${WASI_CLI_STDIO_WIT_GENERATED_C} ${WASI_CLI_STDIO_WIT_GENERATED_MANIFEST}
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
-    COMMAND wit_codegen --wit "${WASI_CLI_STDIO_WIT_PATH}"
-                        ${CROFT_WASI_CURRENT_MACHINE_PACKAGE_ROOT_ARGS}
-                        --header "${WASI_CLI_STDIO_WIT_GENERATED_H}" --source "${WASI_CLI_STDIO_WIT_GENERATED_C}" --manifest "${WASI_CLI_STDIO_WIT_GENERATED_MANIFEST}"
-    DEPENDS wit_codegen ${WASI_CLI_STDIO_WIT_DEPENDS}
-    COMMENT "Generating WASI CLI stdio bindings..."
-)
-add_custom_target(wasi_cli_stdio_wit_schema_gen
-    DEPENDS ${WASI_CLI_STDIO_WIT_GENERATED_H}
-            ${WASI_CLI_STDIO_WIT_GENERATED_C}
-            ${WASI_CLI_STDIO_WIT_GENERATED_MANIFEST})
-
-# WASI CLI terminal bindings
-add_custom_command(
-    OUTPUT ${WASI_CLI_TERMINAL_WIT_GENERATED_H} ${WASI_CLI_TERMINAL_WIT_GENERATED_C} ${WASI_CLI_TERMINAL_WIT_GENERATED_MANIFEST}
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
-    COMMAND wit_codegen --wit "${WASI_CLI_TERMINAL_WIT_PATH}"
-                        ${CROFT_WASI_CURRENT_MACHINE_PACKAGE_ROOT_ARGS}
-                        --header "${WASI_CLI_TERMINAL_WIT_GENERATED_H}" --source "${WASI_CLI_TERMINAL_WIT_GENERATED_C}" --manifest "${WASI_CLI_TERMINAL_WIT_GENERATED_MANIFEST}"
-    DEPENDS wit_codegen ${WASI_CLI_TERMINAL_WIT_DEPENDS}
-    COMMENT "Generating WASI CLI terminal bindings..."
-)
-add_custom_target(wasi_cli_terminal_wit_schema_gen
-    DEPENDS ${WASI_CLI_TERMINAL_WIT_GENERATED_H}
-            ${WASI_CLI_TERMINAL_WIT_GENERATED_C}
-            ${WASI_CLI_TERMINAL_WIT_GENERATED_MANIFEST})
-
-# WASI CLI run bindings
-add_custom_command(
-    OUTPUT ${WASI_CLI_RUN_WIT_GENERATED_H} ${WASI_CLI_RUN_WIT_GENERATED_C} ${WASI_CLI_RUN_WIT_GENERATED_MANIFEST}
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
-    COMMAND wit_codegen --wit "${WASI_CLI_RUN_WIT_PATH}"
-                        ${CROFT_WASI_CURRENT_MACHINE_PACKAGE_ROOT_ARGS}
-                        --header "${WASI_CLI_RUN_WIT_GENERATED_H}" --source "${WASI_CLI_RUN_WIT_GENERATED_C}" --manifest "${WASI_CLI_RUN_WIT_GENERATED_MANIFEST}"
-    DEPENDS wit_codegen ${WASI_CLI_RUN_WIT_DEPENDS}
-    COMMENT "Generating WASI CLI run bindings..."
-)
-add_custom_target(wasi_cli_run_wit_schema_gen
-    DEPENDS ${WASI_CLI_RUN_WIT_GENERATED_H}
-            ${WASI_CLI_RUN_WIT_GENERATED_C}
-            ${WASI_CLI_RUN_WIT_GENERATED_MANIFEST})
-
-# WASI CLI imports world bindings
-add_custom_command(
-    OUTPUT ${WASI_CLI_IMPORTS_WIT_GENERATED_H} ${WASI_CLI_IMPORTS_WIT_GENERATED_C} ${WASI_CLI_IMPORTS_WIT_GENERATED_MANIFEST}
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
-    COMMAND wit_codegen --wit "${WASI_CLI_IMPORTS_WIT_PATH}"
-                        ${CROFT_WASI_CURRENT_MACHINE_PACKAGE_ROOT_ARGS}
-                        --header "${WASI_CLI_IMPORTS_WIT_GENERATED_H}" --source "${WASI_CLI_IMPORTS_WIT_GENERATED_C}" --manifest "${WASI_CLI_IMPORTS_WIT_GENERATED_MANIFEST}"
-    DEPENDS wit_codegen ${WASI_CLI_IMPORTS_WIT_DEPENDS}
-    COMMENT "Generating WASI CLI imports world bindings..."
-)
-add_custom_target(wasi_cli_imports_wit_schema_gen
-    DEPENDS ${WASI_CLI_IMPORTS_WIT_GENERATED_H}
-            ${WASI_CLI_IMPORTS_WIT_GENERATED_C}
-            ${WASI_CLI_IMPORTS_WIT_GENERATED_MANIFEST})
-
-# WASI CLI command world bindings
-add_custom_command(
-    OUTPUT ${WASI_CLI_COMMAND_WIT_GENERATED_H} ${WASI_CLI_COMMAND_WIT_GENERATED_C} ${WASI_CLI_COMMAND_WIT_GENERATED_MANIFEST}
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
-    COMMAND wit_codegen --wit "${WASI_CLI_COMMAND_WIT_PATH}"
-                        ${CROFT_WASI_CURRENT_MACHINE_PACKAGE_ROOT_ARGS}
-                        --header "${WASI_CLI_COMMAND_WIT_GENERATED_H}" --source "${WASI_CLI_COMMAND_WIT_GENERATED_C}" --manifest "${WASI_CLI_COMMAND_WIT_GENERATED_MANIFEST}"
-    DEPENDS wit_codegen ${WASI_CLI_COMMAND_WIT_DEPENDS}
-    COMMENT "Generating WASI CLI command world bindings..."
-)
-add_custom_target(wasi_cli_command_wit_schema_gen
-    DEPENDS ${WASI_CLI_COMMAND_WIT_GENERATED_H}
-            ${WASI_CLI_COMMAND_WIT_GENERATED_C}
-            ${WASI_CLI_COMMAND_WIT_GENERATED_MANIFEST})
-
-# WASI random bindings
-add_custom_command(
-    OUTPUT ${WASI_RANDOM_RANDOM_WIT_GENERATED_H} ${WASI_RANDOM_RANDOM_WIT_GENERATED_C} ${WASI_RANDOM_RANDOM_WIT_GENERATED_MANIFEST}
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
-    COMMAND wit_codegen --wit "${WASI_RANDOM_RANDOM_WIT_PATH}"
-                        --header "${WASI_RANDOM_RANDOM_WIT_GENERATED_H}" --source "${WASI_RANDOM_RANDOM_WIT_GENERATED_C}" --manifest "${WASI_RANDOM_RANDOM_WIT_GENERATED_MANIFEST}"
-    DEPENDS wit_codegen ${WASI_RANDOM_RANDOM_WIT_DEPENDS}
-    COMMENT "Generating WASI random bindings..."
-)
-add_custom_target(wasi_random_random_wit_schema_gen
-    DEPENDS ${WASI_RANDOM_RANDOM_WIT_GENERATED_H}
-            ${WASI_RANDOM_RANDOM_WIT_GENERATED_C}
-            ${WASI_RANDOM_RANDOM_WIT_GENERATED_MANIFEST})
-
-# WASI random insecure bindings
-add_custom_command(
-    OUTPUT ${WASI_RANDOM_INSECURE_WIT_GENERATED_H} ${WASI_RANDOM_INSECURE_WIT_GENERATED_C} ${WASI_RANDOM_INSECURE_WIT_GENERATED_MANIFEST}
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
-    COMMAND wit_codegen --wit "${WASI_RANDOM_INSECURE_WIT_PATH}"
-                        --header "${WASI_RANDOM_INSECURE_WIT_GENERATED_H}" --source "${WASI_RANDOM_INSECURE_WIT_GENERATED_C}" --manifest "${WASI_RANDOM_INSECURE_WIT_GENERATED_MANIFEST}"
-    DEPENDS wit_codegen ${WASI_RANDOM_INSECURE_WIT_DEPENDS}
-    COMMENT "Generating WASI random insecure bindings..."
-)
-add_custom_target(wasi_random_insecure_wit_schema_gen
-    DEPENDS ${WASI_RANDOM_INSECURE_WIT_GENERATED_H}
-            ${WASI_RANDOM_INSECURE_WIT_GENERATED_C}
-            ${WASI_RANDOM_INSECURE_WIT_GENERATED_MANIFEST})
-
-# WASI random insecure-seed bindings
-add_custom_command(
-    OUTPUT ${WASI_RANDOM_INSECURE_SEED_WIT_GENERATED_H} ${WASI_RANDOM_INSECURE_SEED_WIT_GENERATED_C} ${WASI_RANDOM_INSECURE_SEED_WIT_GENERATED_MANIFEST}
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
-    COMMAND wit_codegen --wit "${WASI_RANDOM_INSECURE_SEED_WIT_PATH}"
-                        --header "${WASI_RANDOM_INSECURE_SEED_WIT_GENERATED_H}" --source "${WASI_RANDOM_INSECURE_SEED_WIT_GENERATED_C}" --manifest "${WASI_RANDOM_INSECURE_SEED_WIT_GENERATED_MANIFEST}"
-    DEPENDS wit_codegen ${WASI_RANDOM_INSECURE_SEED_WIT_DEPENDS}
-    COMMENT "Generating WASI random insecure-seed bindings..."
-)
-add_custom_target(wasi_random_insecure_seed_wit_schema_gen
-    DEPENDS ${WASI_RANDOM_INSECURE_SEED_WIT_GENERATED_H}
-            ${WASI_RANDOM_INSECURE_SEED_WIT_GENERATED_C}
-            ${WASI_RANDOM_INSECURE_SEED_WIT_GENERATED_MANIFEST})
-
-# WASI random imports world bindings
-add_custom_command(
-    OUTPUT ${WASI_RANDOM_WORLD_WIT_GENERATED_H} ${WASI_RANDOM_WORLD_WIT_GENERATED_C} ${WASI_RANDOM_WORLD_WIT_GENERATED_MANIFEST}
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
-    COMMAND wit_codegen --wit "${WASI_RANDOM_WORLD_WIT_PATH}"
-                        --header "${WASI_RANDOM_WORLD_WIT_GENERATED_H}" --source "${WASI_RANDOM_WORLD_WIT_GENERATED_C}" --manifest "${WASI_RANDOM_WORLD_WIT_GENERATED_MANIFEST}"
-    DEPENDS wit_codegen ${WASI_RANDOM_WORLD_WIT_DEPENDS}
-    COMMENT "Generating WASI random imports world bindings..."
-)
-add_custom_target(wasi_random_world_wit_schema_gen
-    DEPENDS ${WASI_RANDOM_WORLD_WIT_GENERATED_H}
-            ${WASI_RANDOM_WORLD_WIT_GENERATED_C}
-            ${WASI_RANDOM_WORLD_WIT_GENERATED_MANIFEST})
-
-# WASI clocks timezone bindings
-add_custom_command(
-    OUTPUT ${WASI_CLOCKS_TIMEZONE_WIT_GENERATED_H} ${WASI_CLOCKS_TIMEZONE_WIT_GENERATED_C} ${WASI_CLOCKS_TIMEZONE_WIT_GENERATED_MANIFEST}
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
-    COMMAND wit_codegen --wit "${WASI_CLOCKS_TIMEZONE_WIT_PATH}"
-                        --header "${WASI_CLOCKS_TIMEZONE_WIT_GENERATED_H}" --source "${WASI_CLOCKS_TIMEZONE_WIT_GENERATED_C}" --manifest "${WASI_CLOCKS_TIMEZONE_WIT_GENERATED_MANIFEST}"
-    DEPENDS wit_codegen ${WASI_CLOCKS_TIMEZONE_WIT_DEPENDS}
-    COMMENT "Generating WASI clocks timezone bindings..."
-)
-add_custom_target(wasi_clocks_timezone_wit_schema_gen
-    DEPENDS ${WASI_CLOCKS_TIMEZONE_WIT_GENERATED_H}
-            ${WASI_CLOCKS_TIMEZONE_WIT_GENERATED_C}
-            ${WASI_CLOCKS_TIMEZONE_WIT_GENERATED_MANIFEST})
-
-# WASI clocks wall-clock bindings
-add_custom_command(
-    OUTPUT ${WASI_CLOCKS_WALL_CLOCK_WIT_GENERATED_H} ${WASI_CLOCKS_WALL_CLOCK_WIT_GENERATED_C} ${WASI_CLOCKS_WALL_CLOCK_WIT_GENERATED_MANIFEST}
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
-    COMMAND wit_codegen --wit "${WASI_CLOCKS_WALL_CLOCK_WIT_PATH}"
-                        --header "${WASI_CLOCKS_WALL_CLOCK_WIT_GENERATED_H}" --source "${WASI_CLOCKS_WALL_CLOCK_WIT_GENERATED_C}" --manifest "${WASI_CLOCKS_WALL_CLOCK_WIT_GENERATED_MANIFEST}"
-    DEPENDS wit_codegen ${WASI_CLOCKS_WALL_CLOCK_WIT_DEPENDS}
-    COMMENT "Generating WASI clocks wall-clock bindings..."
-)
-add_custom_target(wasi_clocks_wall_clock_wit_schema_gen
-    DEPENDS ${WASI_CLOCKS_WALL_CLOCK_WIT_GENERATED_H}
-            ${WASI_CLOCKS_WALL_CLOCK_WIT_GENERATED_C}
-            ${WASI_CLOCKS_WALL_CLOCK_WIT_GENERATED_MANIFEST})
-
-# WASI io/poll bindings
-add_custom_command(
-    OUTPUT ${WASI_IO_POLL_WIT_GENERATED_H} ${WASI_IO_POLL_WIT_GENERATED_C} ${WASI_IO_POLL_WIT_GENERATED_MANIFEST}
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
-    COMMAND wit_codegen --wit "${WASI_IO_POLL_WIT_PATH}"
-                        --header "${WASI_IO_POLL_WIT_GENERATED_H}" --source "${WASI_IO_POLL_WIT_GENERATED_C}" --manifest "${WASI_IO_POLL_WIT_GENERATED_MANIFEST}"
-    DEPENDS wit_codegen ${WASI_IO_POLL_WIT_DEPENDS}
-    COMMENT "Generating WASI io/poll bindings..."
-)
-add_custom_target(wasi_io_poll_wit_schema_gen
-    DEPENDS ${WASI_IO_POLL_WIT_GENERATED_H}
-            ${WASI_IO_POLL_WIT_GENERATED_C}
-            ${WASI_IO_POLL_WIT_GENERATED_MANIFEST})
-
-# WASI io/streams bindings
-add_custom_command(
-    OUTPUT ${WASI_IO_STREAMS_WIT_GENERATED_H} ${WASI_IO_STREAMS_WIT_GENERATED_C} ${WASI_IO_STREAMS_WIT_GENERATED_MANIFEST}
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
-    COMMAND wit_codegen --wit "${WASI_IO_STREAMS_WIT_PATH}"
-                        --header "${WASI_IO_STREAMS_WIT_GENERATED_H}" --source "${WASI_IO_STREAMS_WIT_GENERATED_C}" --manifest "${WASI_IO_STREAMS_WIT_GENERATED_MANIFEST}"
-    DEPENDS wit_codegen ${WASI_IO_STREAMS_WIT_DEPENDS}
-    COMMENT "Generating WASI io/streams bindings..."
-)
-add_custom_target(wasi_io_streams_wit_schema_gen
-    DEPENDS ${WASI_IO_STREAMS_WIT_GENERATED_H}
-            ${WASI_IO_STREAMS_WIT_GENERATED_C}
-            ${WASI_IO_STREAMS_WIT_GENERATED_MANIFEST})
-
-# WASI io imports world bindings
-add_custom_command(
-    OUTPUT ${WASI_IO_WORLD_WIT_GENERATED_H} ${WASI_IO_WORLD_WIT_GENERATED_C} ${WASI_IO_WORLD_WIT_GENERATED_MANIFEST}
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
-    COMMAND wit_codegen --wit "${WASI_IO_WORLD_WIT_PATH}"
-                        --header "${WASI_IO_WORLD_WIT_GENERATED_H}" --source "${WASI_IO_WORLD_WIT_GENERATED_C}" --manifest "${WASI_IO_WORLD_WIT_GENERATED_MANIFEST}"
-    DEPENDS wit_codegen ${WASI_IO_WORLD_WIT_DEPENDS}
-    COMMENT "Generating WASI io imports world bindings..."
-)
-add_custom_target(wasi_io_world_wit_schema_gen
-    DEPENDS ${WASI_IO_WORLD_WIT_GENERATED_H}
-            ${WASI_IO_WORLD_WIT_GENERATED_C}
-            ${WASI_IO_WORLD_WIT_GENERATED_MANIFEST})
-
-# WASI clocks monotonic-clock bindings
-add_custom_command(
-    OUTPUT ${WASI_CLOCKS_MONOTONIC_CLOCK_WIT_GENERATED_H} ${WASI_CLOCKS_MONOTONIC_CLOCK_WIT_GENERATED_C} ${WASI_CLOCKS_MONOTONIC_CLOCK_WIT_GENERATED_MANIFEST}
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
-    COMMAND wit_codegen --wit "${WASI_CLOCKS_MONOTONIC_CLOCK_WIT_PATH}"
-                        --header "${WASI_CLOCKS_MONOTONIC_CLOCK_WIT_GENERATED_H}" --source "${WASI_CLOCKS_MONOTONIC_CLOCK_WIT_GENERATED_C}" --manifest "${WASI_CLOCKS_MONOTONIC_CLOCK_WIT_GENERATED_MANIFEST}"
-    DEPENDS wit_codegen
-            ${WASI_CLOCKS_MONOTONIC_CLOCK_WIT_DEPENDS}
-            "${WASI_IO_POLL_WIT_PATH}"
+croft_define_wasi_wit_schema(WASI_CLI_ENVIRONMENT
+    CURRENT_MACHINE
+    RELATIVE_PATH "cli/wit/environment.wit"
+    COMMENT "Generating WASI CLI environment bindings...")
+croft_define_wasi_wit_schema(WASI_CLI_STDIO
+    CURRENT_MACHINE
+    RELATIVE_PATH "cli/wit/stdio.wit"
+    COMMENT "Generating WASI CLI stdio bindings...")
+croft_define_wasi_wit_schema(WASI_CLI_TERMINAL
+    CURRENT_MACHINE
+    RELATIVE_PATH "cli/wit/terminal.wit"
+    COMMENT "Generating WASI CLI terminal bindings...")
+croft_define_wasi_wit_schema(WASI_CLI_RUN
+    CURRENT_MACHINE
+    RELATIVE_PATH "cli/wit/run.wit"
+    COMMENT "Generating WASI CLI run bindings...")
+croft_define_wasi_wit_schema(WASI_CLI_IMPORTS
+    CURRENT_MACHINE
+    RELATIVE_PATH "cli/wit/imports.wit"
+    COMMENT "Generating WASI CLI imports world bindings...")
+croft_define_wasi_wit_schema(WASI_CLI_COMMAND
+    CURRENT_MACHINE
+    RELATIVE_PATH "cli/wit/command.wit"
+    COMMENT "Generating WASI CLI command world bindings...")
+croft_define_wasi_wit_schema(WASI_RANDOM_RANDOM
+    RELATIVE_PATH "random/wit/random.wit"
+    COMMENT "Generating WASI random bindings...")
+croft_define_wasi_wit_schema(WASI_RANDOM_INSECURE
+    RELATIVE_PATH "random/wit/insecure.wit"
+    COMMENT "Generating WASI random insecure bindings...")
+croft_define_wasi_wit_schema(WASI_RANDOM_INSECURE_SEED
+    RELATIVE_PATH "random/wit/insecure-seed.wit"
+    COMMENT "Generating WASI random insecure-seed bindings...")
+croft_define_wasi_wit_schema(WASI_RANDOM_WORLD
+    RELATIVE_PATH "random/wit/world.wit"
+    COMMENT "Generating WASI random imports world bindings...")
+croft_define_wasi_wit_schema(WASI_CLOCKS_TIMEZONE
+    RELATIVE_PATH "clocks/wit/timezone.wit"
+    COMMENT "Generating WASI clocks timezone bindings...")
+croft_define_wasi_wit_schema(WASI_CLOCKS_WALL_CLOCK
+    RELATIVE_PATH "clocks/wit/wall-clock.wit"
+    COMMENT "Generating WASI clocks wall-clock bindings...")
+croft_define_wasi_wit_schema(WASI_IO_POLL
+    RELATIVE_PATH "io/wit/poll.wit"
+    COMMENT "Generating WASI io/poll bindings...")
+croft_define_wasi_wit_schema(WASI_IO_STREAMS
+    RELATIVE_PATH "io/wit/streams.wit"
+    COMMENT "Generating WASI io/streams bindings...")
+croft_define_wasi_wit_schema(WASI_IO_WORLD
+    RELATIVE_PATH "io/wit/world.wit"
+    COMMENT "Generating WASI io imports world bindings...")
+croft_define_wasi_wit_schema(WASI_CLOCKS_MONOTONIC_CLOCK
+    RELATIVE_PATH "clocks/wit/monotonic-clock.wit"
     COMMENT "Generating WASI clocks monotonic-clock bindings..."
-)
-add_custom_target(wasi_clocks_monotonic_clock_wit_schema_gen
-    DEPENDS ${WASI_CLOCKS_MONOTONIC_CLOCK_WIT_GENERATED_H}
-            ${WASI_CLOCKS_MONOTONIC_CLOCK_WIT_GENERATED_C}
-            ${WASI_CLOCKS_MONOTONIC_CLOCK_WIT_GENERATED_MANIFEST})
-
-# WASI clocks imports world bindings
-add_custom_command(
-    OUTPUT ${WASI_CLOCKS_WORLD_WIT_GENERATED_H} ${WASI_CLOCKS_WORLD_WIT_GENERATED_C} ${WASI_CLOCKS_WORLD_WIT_GENERATED_MANIFEST}
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
-    COMMAND wit_codegen --wit "${WASI_CLOCKS_WORLD_WIT_PATH}"
-                        --header "${WASI_CLOCKS_WORLD_WIT_GENERATED_H}" --source "${WASI_CLOCKS_WORLD_WIT_GENERATED_C}" --manifest "${WASI_CLOCKS_WORLD_WIT_GENERATED_MANIFEST}"
-    DEPENDS wit_codegen
-            ${WASI_CLOCKS_WORLD_WIT_DEPENDS}
-            "${WASI_IO_POLL_WIT_PATH}"
+    EXTRA_DEPENDS "${WASI_IO_POLL_WIT_PATH}")
+croft_define_wasi_wit_schema(WASI_CLOCKS_WORLD
+    RELATIVE_PATH "clocks/wit/world.wit"
     COMMENT "Generating WASI clocks imports world bindings..."
-)
-add_custom_target(wasi_clocks_world_wit_schema_gen
-    DEPENDS ${WASI_CLOCKS_WORLD_WIT_GENERATED_H}
-            ${WASI_CLOCKS_WORLD_WIT_GENERATED_C}
-            ${WASI_CLOCKS_WORLD_WIT_GENERATED_MANIFEST})
-
-# WASI filesystem/types bindings
-add_custom_command(
-    OUTPUT ${WASI_FILESYSTEM_TYPES_WIT_GENERATED_H} ${WASI_FILESYSTEM_TYPES_WIT_GENERATED_C} ${WASI_FILESYSTEM_TYPES_WIT_GENERATED_MANIFEST}
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
-    COMMAND wit_codegen --wit "${WASI_FILESYSTEM_TYPES_WIT_PATH}"
-                        --header "${WASI_FILESYSTEM_TYPES_WIT_GENERATED_H}" --source "${WASI_FILESYSTEM_TYPES_WIT_GENERATED_C}" --manifest "${WASI_FILESYSTEM_TYPES_WIT_GENERATED_MANIFEST}"
-    DEPENDS wit_codegen
-            ${WASI_FILESYSTEM_TYPES_WIT_DEPENDS}
-            "${WASI_IO_STREAMS_WIT_PATH}"
-            "${WASI_CLOCKS_WALL_CLOCK_WIT_PATH}"
+    EXTRA_DEPENDS "${WASI_IO_POLL_WIT_PATH}")
+croft_define_wasi_wit_schema(WASI_FILESYSTEM_TYPES
+    RELATIVE_PATH "filesystem/wit/types.wit"
     COMMENT "Generating WASI filesystem/types bindings..."
-)
-add_custom_target(wasi_filesystem_types_wit_schema_gen
-    DEPENDS ${WASI_FILESYSTEM_TYPES_WIT_GENERATED_H}
-            ${WASI_FILESYSTEM_TYPES_WIT_GENERATED_C}
-            ${WASI_FILESYSTEM_TYPES_WIT_GENERATED_MANIFEST})
-
-# WASI filesystem/preopens bindings
-add_custom_command(
-    OUTPUT ${WASI_FILESYSTEM_PREOPENS_WIT_GENERATED_H} ${WASI_FILESYSTEM_PREOPENS_WIT_GENERATED_C} ${WASI_FILESYSTEM_PREOPENS_WIT_GENERATED_MANIFEST}
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
-    COMMAND wit_codegen --wit "${WASI_FILESYSTEM_PREOPENS_WIT_PATH}"
-                        --header "${WASI_FILESYSTEM_PREOPENS_WIT_GENERATED_H}" --source "${WASI_FILESYSTEM_PREOPENS_WIT_GENERATED_C}" --manifest "${WASI_FILESYSTEM_PREOPENS_WIT_GENERATED_MANIFEST}"
-    DEPENDS wit_codegen
-            ${WASI_FILESYSTEM_PREOPENS_WIT_DEPENDS}
-            "${WASI_FILESYSTEM_TYPES_WIT_PATH}"
+    EXTRA_DEPENDS
+        "${WASI_IO_STREAMS_WIT_PATH}"
+        "${WASI_CLOCKS_WALL_CLOCK_WIT_PATH}")
+croft_define_wasi_wit_schema(WASI_FILESYSTEM_PREOPENS
+    RELATIVE_PATH "filesystem/wit/preopens.wit"
     COMMENT "Generating WASI filesystem/preopens bindings..."
-)
-add_custom_target(wasi_filesystem_preopens_wit_schema_gen
-    DEPENDS ${WASI_FILESYSTEM_PREOPENS_WIT_GENERATED_H}
-            ${WASI_FILESYSTEM_PREOPENS_WIT_GENERATED_C}
-            ${WASI_FILESYSTEM_PREOPENS_WIT_GENERATED_MANIFEST})
-
-# WASI filesystem imports world bindings
-add_custom_command(
-    OUTPUT ${WASI_FILESYSTEM_WORLD_WIT_GENERATED_H} ${WASI_FILESYSTEM_WORLD_WIT_GENERATED_C} ${WASI_FILESYSTEM_WORLD_WIT_GENERATED_MANIFEST}
-    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
-    COMMAND wit_codegen --wit "${WASI_FILESYSTEM_WORLD_WIT_PATH}"
-                        --header "${WASI_FILESYSTEM_WORLD_WIT_GENERATED_H}" --source "${WASI_FILESYSTEM_WORLD_WIT_GENERATED_C}" --manifest "${WASI_FILESYSTEM_WORLD_WIT_GENERATED_MANIFEST}"
-    DEPENDS wit_codegen
-            ${WASI_FILESYSTEM_WORLD_WIT_DEPENDS}
-            "${WASI_FILESYSTEM_TYPES_WIT_PATH}"
-            "${WASI_FILESYSTEM_PREOPENS_WIT_PATH}"
+    EXTRA_DEPENDS "${WASI_FILESYSTEM_TYPES_WIT_PATH}")
+croft_define_wasi_wit_schema(WASI_FILESYSTEM_WORLD
+    RELATIVE_PATH "filesystem/wit/world.wit"
     COMMENT "Generating WASI filesystem imports world bindings..."
-)
-add_custom_target(wasi_filesystem_world_wit_schema_gen
-    DEPENDS ${WASI_FILESYSTEM_WORLD_WIT_GENERATED_H}
-            ${WASI_FILESYSTEM_WORLD_WIT_GENERATED_C}
-            ${WASI_FILESYSTEM_WORLD_WIT_GENERATED_MANIFEST})
+    EXTRA_DEPENDS
+        "${WASI_FILESYSTEM_TYPES_WIT_PATH}"
+        "${WASI_FILESYSTEM_PREOPENS_WIT_PATH}")
 
 # Scoped-name regression fixture
 add_custom_command(
@@ -3699,6 +3432,11 @@ if(CROFT_BUILD_TESTS)
                 croft_wit_wasi_random_world
             )
         endif()
+        if(test_name STREQUAL "test_wasi_vendor_report_smoke")
+            target_compile_definitions(${test_name} PRIVATE
+                CROFT_WASI_VENDOR_REPORT_TXT_PATH="${CMAKE_CURRENT_BINARY_DIR}/reports/croft-wasi-vendor-drift.txt"
+                CROFT_WASI_VENDOR_REPORT_JSON_PATH="${CMAKE_CURRENT_BINARY_DIR}/reports/croft-wasi-vendor-drift.json")
+        endif()
         target_compile_definitions(${test_name} PRIVATE SAPLING_HAMT_TESTING)
         if(test_name STREQUAL "test_wit_thatch_codegen")
             add_dependencies(${test_name} test_wit_schema_gen)
@@ -3958,8 +3696,15 @@ file(GLOB_RECURSE CROFT_DEP_AUDIT_INPUTS CONFIGURE_DEPENDS
 list(APPEND CROFT_DEP_AUDIT_INPUTS
     "${CMAKE_CURRENT_SOURCE_DIR}/CMakeLists.txt"
     "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_dependency_report.sh")
+file(GLOB_RECURSE CROFT_WASI_VENDOR_REPORT_INPUTS CONFIGURE_DEPENDS
+    "${CROFT_WASI_VENDOR_0_2_9_PROPOSALS_DIR}/*"
+    "${CROFT_WASI_CURRENT_MACHINE_0_2_9_DIR}/*")
+list(APPEND CROFT_WASI_VENDOR_REPORT_INPUTS
+    "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_wasi_vendor_report.sh")
 set(CROFT_LIBC_DEPENDENCY_REPORT_TXT "${CMAKE_CURRENT_BINARY_DIR}/reports/croft-libc-posix-usage.txt")
 set(CROFT_LIBC_DEPENDENCY_REPORT_TSV "${CMAKE_CURRENT_BINARY_DIR}/reports/croft-libc-posix-usage.tsv")
+set(CROFT_WASI_VENDOR_REPORT_TXT "${CMAKE_CURRENT_BINARY_DIR}/reports/croft-wasi-vendor-drift.txt")
+set(CROFT_WASI_VENDOR_REPORT_JSON "${CMAKE_CURRENT_BINARY_DIR}/reports/croft-wasi-vendor-drift.json")
 add_custom_command(
     OUTPUT ${CROFT_LIBC_DEPENDENCY_REPORT_TXT} ${CROFT_LIBC_DEPENDENCY_REPORT_TSV}
     COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/reports"
@@ -3970,15 +3715,33 @@ add_custom_command(
     DEPENDS ${CROFT_DEP_AUDIT_INPUTS}
     COMMENT "Generating Croft libc/POSIX dependency audit..."
 )
+add_custom_command(
+    OUTPUT ${CROFT_WASI_VENDOR_REPORT_TXT} ${CROFT_WASI_VENDOR_REPORT_JSON}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/reports"
+    COMMAND /bin/bash "${CMAKE_CURRENT_SOURCE_DIR}/tools/generate_wasi_vendor_report.sh"
+            "${CMAKE_CURRENT_SOURCE_DIR}"
+            "${CROFT_WASI_VENDOR_0_2_9_PROPOSALS_DIR}"
+            "${CROFT_WASI_CURRENT_MACHINE_0_2_9_DIR}"
+            "${CROFT_WASI_VENDOR_REPORT_TXT}"
+            "${CROFT_WASI_VENDOR_REPORT_JSON}"
+            "${CROFT_WASI_VENDOR_REPORT_EXTERNAL_ROOT}"
+    DEPENDS ${CROFT_WASI_VENDOR_REPORT_INPUTS}
+    COMMENT "Generating Croft WASI vendor drift report..."
+)
 add_custom_target(croft_dependency_report
     DEPENDS
         ${CROFT_LIBC_DEPENDENCY_REPORT_TXT}
         ${CROFT_LIBC_DEPENDENCY_REPORT_TSV}
+        ${CROFT_WASI_VENDOR_REPORT_TXT}
+        ${CROFT_WASI_VENDOR_REPORT_JSON}
         "${CMAKE_CURRENT_BINARY_DIR}/reports/croft-current-machine-targets.txt"
         "${CMAKE_CURRENT_BINARY_DIR}/reports/croft-current-machine-targets.tsv"
         "${CMAKE_CURRENT_BINARY_DIR}/reports/croft-system-links.txt"
         "${CMAKE_CURRENT_BINARY_DIR}/reports/croft-system-links.tsv"
 )
+if(TARGET test_wasi_vendor_report_smoke)
+    add_dependencies(test_wasi_vendor_report_smoke croft_dependency_report)
+endif()
 if(CROFT_INSTALL_TARGETS)
     set(CROFT_FULL_MACHINE_DEPS ${CROFT_INSTALL_TARGETS} croft_dependency_report)
     if(TARGET croft_wasm_guests)
@@ -4045,6 +3808,8 @@ install(FILES
     "${CMAKE_CURRENT_BINARY_DIR}/reports/croft-system-links.tsv"
     "${CROFT_LIBC_DEPENDENCY_REPORT_TXT}"
     "${CROFT_LIBC_DEPENDENCY_REPORT_TSV}"
+    "${CROFT_WASI_VENDOR_REPORT_TXT}"
+    "${CROFT_WASI_VENDOR_REPORT_JSON}"
     DESTINATION share/croft/reports
 )
 

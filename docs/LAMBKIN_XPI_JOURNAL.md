@@ -5,6 +5,28 @@ its aspect libraries are still co-evolving. These notes are not intended to
 freeze the design; they are meant to preserve the useful pressure points,
 surprises, and open questions that surfaced while forcing the ideas into code.
 
+## March 11, 2026: Vendoring Needs A Drift Story, Not Just A Snapshot
+
+Once WASI `0.2.9` became a first-class vendored input, another missing piece
+showed up immediately: a pinned tree without a build-visible drift report is
+too easy to trust blindly.
+
+The important distinction is:
+
+- pinning gives reproducibility,
+- but drift reporting gives maintainability.
+
+The build should therefore emit a report that states:
+
+- which upstream packages are vendored,
+- which ones are overlaid for the current machine,
+- and whether an external upstream checkout still matches the vendored tree.
+
+That is useful for solver work too. Declaration provenance, host overlays, and
+upstream drift are different facts, and keeping them explicit helps prevent the
+model from quietly collapsing "what Croft builds from" into "what upstream
+currently says".
+
 ## March 11, 2026: The Solver Needs An Explicit Bundle Graph, Not Just Tagged Artifacts
 
 The first pass at current-machine WASI metadata proved something useful by

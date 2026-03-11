@@ -177,6 +177,16 @@ It records:
 - the declared worlds versus expanded callable surfaces for those bundles
 - helper-interface couplings such as `wasi:io/error` and `wasi:filesystem/error`
 
+`build/reports/croft-wasi-vendor-drift.txt` and
+`build/reports/croft-wasi-vendor-drift.json` now complement that metadata by
+recording:
+
+- which upstream WASI packages are vendored under `vendor/wasi/0.2.9/proposals/`
+- which packages are overlaid under `schemas/wit/wasi-current-machine/0.2.9/`
+- per-package `.wit` file counts for the vendored snapshot and overlays
+- and, when `CROFT_WASI_PROPOSALS_DIR` is set, whether the vendored snapshot
+  still matches the external upstream checkout or has drifted
+
 ## Reproducibility Note On FetchContent Pins
 
 The bootstrap workflow avoids that problem by pinning immutable SHAs in
