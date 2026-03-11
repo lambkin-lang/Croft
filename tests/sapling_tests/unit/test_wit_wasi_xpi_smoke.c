@@ -177,6 +177,7 @@ int main(void)
     ok &= expect_contains("xpi substrate name", xpi_json, "\"name\": \"wasi-descriptor-table\"");
     ok &= expect_contains("xpi filesystem bundle", xpi_json, "\"name\": \"wasi-filesystem-streams-current-machine\"");
     ok &= expect_contains("xpi artifacts section", xpi_json, "\"artifacts\": [");
+    ok &= expect_contains("xpi entrypoints section", xpi_json, "\"entrypoints\": [");
     ok &= expect_contains("xpi runtime artifact", xpi_json, "\"name\": \"croft_wit_wasi_machine_runtime\"");
     ok &= expect_contains("xpi runtime bundles",
                           xpi_json,
@@ -187,6 +188,17 @@ int main(void)
     ok &= expect_contains("xpi host editor-input helpers",
                           xpi_json,
                           "\"helper_interfaces\": [\"lambkin:host-window@0.1.0/host-window\", \"lambkin:host-menu@0.1.0/host-menu\"]");
+    ok &= expect_contains("xpi textpad entrypoint", xpi_json, "\"name\": \"example_wit_textpad_window\"");
+    ok &= expect_contains("xpi textpad entrypoint kind", xpi_json, "\"kind\": \"example\"");
+    ok &= expect_contains("xpi textpad required bundles",
+                          xpi_json,
+                          "\"requires_bundles\": [\"croft-host-window-current-machine\", \"croft-host-gpu2d-current-machine\", \"croft-host-clock-current-machine\", \"croft-host-menu-current-machine\", \"croft-host-clipboard-current-machine\", \"croft-host-editor-input-normalization\"]");
+    ok &= expect_contains("xpi editor entrypoint",
+                          xpi_json,
+                          "\"name\": \"example_editor_text_metal_native\"");
+    ok &= expect_contains("xpi editor entrypoint bundles",
+                          xpi_json,
+                          "\"requires_bundles\": [\"croft-host-window-current-machine\", \"croft-host-clock-current-machine\", \"croft-host-menu-current-machine\", \"croft-host-popup-menu-current-machine\", \"croft-host-clipboard-current-machine\", \"croft-host-editor-input-normalization\", \"croft-host-a11y-current-machine\"]");
     ok &= expect_contains("xpi host window runtime artifact",
                           xpi_json,
                           "\"name\": \"croft_wit_host_window_runtime\"");

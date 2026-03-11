@@ -175,6 +175,8 @@ It records:
 - XPI-participating artifact projections, so the solver can see which build
   units realize which bundle memberships and shared substrates without joining
   a second file first
+- XPI entrypoints/examples with explicit required bundle sets, so top-level
+  editor and WIT shells show up as consumers of the same capability graph
 - shared substrates such as byte streams, descriptor tables, pollables, system random, and time-base
 - current-machine capability bundles such as CLI stdio/terminal, random, clocks/poll, and filesystem/streams
 - Croft host mix-in bundles and substrates for filesystem, clock, window, clipboard, popup-menu, menu-bar, editor-input normalization, GPU surface access, and accessibility where the current machine provides them

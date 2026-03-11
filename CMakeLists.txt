@@ -295,7 +295,7 @@ function(croft_register_artifact target kind)
     cmake_parse_arguments(ART
         ""
         "PROFILE;UPSTREAM_PACKAGE;UPSTREAM_VERSION;SUPPORT_STATUS;APPLICABILITY"
-        "TAGS;DEPENDS;CAPABILITY_BUNDLES;SHARED_SUBSTRATES;HELPER_INTERFACES;DECLARED_WORLDS;EXPANDED_SURFACES"
+        "TAGS;DEPENDS;CAPABILITY_BUNDLES;SHARED_SUBSTRATES;HELPER_INTERFACES;DECLARED_WORLDS;EXPANDED_SURFACES;REQUIRES_BUNDLES"
         ${ARGN})
     if(ART_PROFILE)
         set(profile "${ART_PROFILE}")
@@ -334,10 +334,11 @@ function(croft_register_artifact target kind)
     croft_json_array(helper_interfaces_json ${ART_HELPER_INTERFACES})
     croft_json_array(declared_worlds_json ${ART_DECLARED_WORLDS})
     croft_json_array(expanded_surfaces_json ${ART_EXPANDED_SURFACES})
-    set(entry "    {\n      \"name\": \"${target}\",\n      \"kind\": \"${kind}\",\n      \"profile\": ${profile_json},\n      \"upstream_package\": ${upstream_package_json},\n      \"upstream_version\": ${upstream_version_json},\n      \"support_status\": ${support_status_json},\n      \"applicability\": ${applicability_json},\n      \"capability_bundles\": ${capability_bundles_json},\n      \"shared_substrates\": ${shared_substrates_json},\n      \"helper_interfaces\": ${helper_interfaces_json},\n      \"declared_worlds\": ${declared_worlds_json},\n      \"expanded_surfaces\": ${expanded_surfaces_json},\n      \"tags\": ${tags_json},\n      \"depends\": ${depends_json}\n    }")
+    croft_json_array(requires_bundles_json ${ART_REQUIRES_BUNDLES})
+    set(entry "    {\n      \"name\": \"${target}\",\n      \"kind\": \"${kind}\",\n      \"profile\": ${profile_json},\n      \"upstream_package\": ${upstream_package_json},\n      \"upstream_version\": ${upstream_version_json},\n      \"support_status\": ${support_status_json},\n      \"applicability\": ${applicability_json},\n      \"capability_bundles\": ${capability_bundles_json},\n      \"shared_substrates\": ${shared_substrates_json},\n      \"helper_interfaces\": ${helper_interfaces_json},\n      \"declared_worlds\": ${declared_worlds_json},\n      \"expanded_surfaces\": ${expanded_surfaces_json},\n      \"requires_bundles\": ${requires_bundles_json},\n      \"tags\": ${tags_json},\n      \"depends\": ${depends_json}\n    }")
     set_property(GLOBAL APPEND PROPERTY CROFT_ARTIFACT_ENTRIES "${entry}")
     if(ART_CAPABILITY_BUNDLES OR ART_SHARED_SUBSTRATES OR ART_HELPER_INTERFACES
-       OR ART_DECLARED_WORLDS OR ART_EXPANDED_SURFACES)
+       OR ART_DECLARED_WORLDS OR ART_EXPANDED_SURFACES OR ART_REQUIRES_BUNDLES)
         set_property(GLOBAL APPEND PROPERTY CROFT_XPI_ARTIFACT_ENTRIES "${entry}")
     endif()
     set_property(GLOBAL APPEND PROPERTY CROFT_INSTALL_TARGETS "${target}")
@@ -544,13 +545,42 @@ function(croft_register_artifact_from_xpi_bundles target kind)
 endfunction()
 
 function(croft_register_example target)
-    cmake_parse_arguments(EXAMPLE "" "FOCUS" "TAGS;REQUIRES" ${ARGN})
+    cmake_parse_arguments(EXAMPLE "" "FOCUS" "TAGS;REQUIRES;REQUIRES_BUNDLES" ${ARGN})
     croft_json_string(focus_json "${EXAMPLE_FOCUS}")
     croft_json_array(tags_json ${EXAMPLE_TAGS})
     croft_json_array(requires_json ${EXAMPLE_REQUIRES})
-    set(entry "    {\n      \"name\": \"${target}\",\n      \"focus\": ${focus_json},\n      \"tags\": ${tags_json},\n      \"requires\": ${requires_json}\n    }")
+    croft_json_array(requires_bundles_json ${EXAMPLE_REQUIRES_BUNDLES})
+    set(entry "    {\n      \"name\": \"${target}\",\n      \"focus\": ${focus_json},\n      \"tags\": ${tags_json},\n      \"requires\": ${requires_json},\n      \"requires_bundles\": ${requires_bundles_json}\n    }")
     set_property(GLOBAL APPEND PROPERTY CROFT_EXAMPLE_ENTRIES "${entry}")
     set_property(GLOBAL APPEND PROPERTY CROFT_EXAMPLE_TARGETS "${target}")
+endfunction()
+
+function(croft_register_xpi_entrypoint name)
+    cmake_parse_arguments(XPI_ENTRY
+        ""
+        "KIND;FOCUS;APPLICABILITY"
+        "TAGS;REQUIRES;REQUIRES_BUNDLES"
+        ${ARGN})
+    if(XPI_ENTRY_KIND)
+        croft_json_string(kind_json "${XPI_ENTRY_KIND}")
+    else()
+        set(kind_json "\"entrypoint\"")
+    endif()
+    if(XPI_ENTRY_FOCUS)
+        croft_json_string(focus_json "${XPI_ENTRY_FOCUS}")
+    else()
+        set(focus_json "null")
+    endif()
+    if(XPI_ENTRY_APPLICABILITY)
+        croft_json_string(applicability_json "${XPI_ENTRY_APPLICABILITY}")
+    else()
+        set(applicability_json "null")
+    endif()
+    croft_json_array(tags_json ${XPI_ENTRY_TAGS})
+    croft_json_array(requires_json ${XPI_ENTRY_REQUIRES})
+    croft_json_array(requires_bundles_json ${XPI_ENTRY_REQUIRES_BUNDLES})
+    set(entry "    {\n      \"name\": \"${name}\",\n      \"kind\": ${kind_json},\n      \"focus\": ${focus_json},\n      \"applicability\": ${applicability_json},\n      \"tags\": ${tags_json},\n      \"requires\": ${requires_json},\n      \"requires_bundles\": ${requires_bundles_json}\n    }")
+    set_property(GLOBAL APPEND PROPERTY CROFT_XPI_ENTRYPOINT_ENTRIES "${entry}")
 endfunction()
 
 function(croft_register_wasm_guest target kind output_path)
@@ -560,7 +590,7 @@ function(croft_register_wasm_guest target kind output_path)
 endfunction()
 
 function(croft_add_example target)
-    cmake_parse_arguments(EXAMPLE "" "FOCUS" "SOURCES;LINKS;REQUIRES;TAGS;COMPILE_DEFINITIONS" ${ARGN})
+    cmake_parse_arguments(EXAMPLE "" "FOCUS;APPLICABILITY" "SOURCES;LINKS;REQUIRES;REQUIRES_BUNDLES;TAGS;COMPILE_DEFINITIONS" ${ARGN})
     add_executable(${target} EXCLUDE_FROM_ALL ${EXAMPLE_SOURCES})
     target_include_directories(${target} PRIVATE
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -576,6 +606,15 @@ function(croft_add_example target)
         FOCUS "${EXAMPLE_FOCUS}"
         TAGS ${EXAMPLE_TAGS}
         REQUIRES ${EXAMPLE_REQUIRES}
+        REQUIRES_BUNDLES ${EXAMPLE_REQUIRES_BUNDLES}
+    )
+    croft_register_xpi_entrypoint(${target}
+        KIND "example"
+        FOCUS "${EXAMPLE_FOCUS}"
+        APPLICABILITY "${EXAMPLE_APPLICABILITY}"
+        TAGS ${EXAMPLE_TAGS}
+        REQUIRES ${EXAMPLE_REQUIRES}
+        REQUIRES_BUNDLES ${EXAMPLE_REQUIRES_BUNDLES}
     )
 endfunction()
 
@@ -3229,6 +3268,7 @@ croft_add_example(example_wit_fs_read
     SOURCES examples/wit_fs_read.c
     LINKS croft_wit_host_fs_runtime
     REQUIRES croft_wit_host_fs_runtime
+    REQUIRES_BUNDLES croft-host-fs-current-machine
     TAGS wit xpi host-fs file-handles host-mix-in
     FOCUS "Host filesystem access driven through generated WIT file resource handles."
 )
@@ -3250,6 +3290,7 @@ croft_add_example(example_wit_clock_now
     SOURCES examples/wit_clock_now.c
     LINKS croft_wit_host_clock_runtime
     REQUIRES croft_wit_host_clock_runtime
+    REQUIRES_BUNDLES croft-host-clock-current-machine
     TAGS wit xpi host-clock host-mix-in
     FOCUS "Host monotonic clock access driven through generated WIT service commands."
 )
@@ -3260,6 +3301,9 @@ if(TARGET croft_wit_host_window_runtime)
         SOURCES examples/wit_window_events.c
         LINKS croft_wit_host_window_runtime croft_wit_host_clock_runtime
         REQUIRES croft_wit_host_window_runtime croft_wit_host_clock_runtime
+        REQUIRES_BUNDLES
+            croft-host-window-current-machine
+            croft-host-clock-current-machine
         TAGS wit xpi host-window host-clock host-mix-in event-queue
         FOCUS "Window lifecycle and polled UI events driven through generated WIT commands."
     )
@@ -3271,6 +3315,10 @@ if(TARGET croft_wit_host_window_runtime AND TARGET croft_wit_host_gpu2d_runtime)
         SOURCES examples/wit_gpu_canvas.c
         LINKS croft_wit_host_window_runtime croft_wit_host_gpu2d_runtime croft_wit_host_clock_runtime
         REQUIRES croft_wit_host_window_runtime croft_wit_host_gpu2d_runtime croft_wit_host_clock_runtime
+        REQUIRES_BUNDLES
+            croft-host-window-current-machine
+            croft-host-gpu2d-current-machine
+            croft-host-clock-current-machine
         TAGS wit xpi host-window host-gpu2d host-clock render metal native-direct
         FOCUS "Direct-Metal host GPU surface access driven through generated WIT window, clock, and GPU mix-ins."
     )
@@ -3290,6 +3338,10 @@ if(TARGET croft_wit_host_window_runtime AND TARGET croft_wit_host_gpu2d_runtime 
                  croft_wit_host_clock_runtime
                  croft_wit_text_program
                  croft_wit_text_runtime
+        REQUIRES_BUNDLES
+                 croft-host-window-current-machine
+                 croft-host-gpu2d-current-machine
+                 croft-host-clock-current-machine
         TAGS wit xpi common-core host-window host-gpu2d host-clock shared-logic native-window
         FOCUS "The same common-side WIT text logic rendered through native window and GPU mix-ins."
     )
@@ -3323,6 +3375,13 @@ if(TARGET croft_wit_host_window_runtime
                  croft_editor_commands
                  croft_wit_text_program
                  croft_wit_text_runtime
+        REQUIRES_BUNDLES
+                 croft-host-window-current-machine
+                 croft-host-gpu2d-current-machine
+                 croft-host-clock-current-machine
+                 croft-host-menu-current-machine
+                 croft-host-clipboard-current-machine
+                 croft-host-editor-input-normalization
         TAGS wit xpi common-core host-window host-gpu2d host-clock host-menu host-clipboard host-editor-input textpad native-window
         FOCUS "A small non-scene textpad that reuses WIT window, menu, clipboard, and editor-input mix-ins over the common text resource."
     )
@@ -3527,6 +3586,14 @@ if(TARGET croft_scene_text_editor_metal_native
                  croft_wit_host_clipboard_runtime
                  croft_wit_host_editor_input_runtime
                  croft_wit_host_a11y_runtime
+        REQUIRES_BUNDLES
+                 croft-host-window-current-machine
+                 croft-host-clock-current-machine
+                 croft-host-menu-current-machine
+                 croft-host-popup-menu-current-machine
+                 croft-host-clipboard-current-machine
+                 croft-host-editor-input-normalization
+                 croft-host-a11y-current-machine
         TAGS editor text sapling metal native-direct macos wit xpi host-window host-menu host-popup-menu host-clipboard host-editor-input host-a11y
         FOCUS "Text-editor shell built on the direct-Metal renderer while routing window, menu, popup menu, clipboard, input, and accessibility through WIT host mix-ins."
     )
@@ -3908,8 +3975,13 @@ if(NOT CROFT_XPI_ARTIFACT_ENTRIES)
     set(CROFT_XPI_ARTIFACT_ENTRIES "")
 endif()
 string(JOIN ",\n" CROFT_XPI_ARTIFACT_ENTRIES_JSON ${CROFT_XPI_ARTIFACT_ENTRIES})
+get_property(CROFT_XPI_ENTRYPOINT_ENTRIES GLOBAL PROPERTY CROFT_XPI_ENTRYPOINT_ENTRIES)
+if(NOT CROFT_XPI_ENTRYPOINT_ENTRIES)
+    set(CROFT_XPI_ENTRYPOINT_ENTRIES "")
+endif()
+string(JOIN ",\n" CROFT_XPI_ENTRYPOINT_ENTRIES_JSON ${CROFT_XPI_ENTRYPOINT_ENTRIES})
 file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/croft-xpi.json"
-    CONTENT "{\n  \"artifacts\": [\n${CROFT_XPI_ARTIFACT_ENTRIES_JSON}\n  ],\n  \"substrates\": [\n${CROFT_XPI_SUBSTRATE_ENTRIES_JSON}\n  ],\n  \"bundles\": [\n${CROFT_XPI_BUNDLE_ENTRIES_JSON}\n  ]\n}\n")
+    CONTENT "{\n  \"artifacts\": [\n${CROFT_XPI_ARTIFACT_ENTRIES_JSON}\n  ],\n  \"substrates\": [\n${CROFT_XPI_SUBSTRATE_ENTRIES_JSON}\n  ],\n  \"bundles\": [\n${CROFT_XPI_BUNDLE_ENTRIES_JSON}\n  ],\n  \"entrypoints\": [\n${CROFT_XPI_ENTRYPOINT_ENTRIES_JSON}\n  ]\n}\n")
 
 get_property(CROFT_INSTALL_TARGETS GLOBAL PROPERTY CROFT_INSTALL_TARGETS)
 if(NOT CROFT_INSTALL_TARGETS)

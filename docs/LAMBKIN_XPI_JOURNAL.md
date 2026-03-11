@@ -59,6 +59,36 @@ Treating them as explicit bundles over shared substrates does two things:
 - and it gives the solver a more realistic early model of how Croft-specific
   seams can compose, overlap, and share lower substrates just like WASI ones.
 
+## March 11, 2026: Bundle Providers Are Not Enough; The Graph Needs Consumers
+
+After projecting both WASI and Croft host mix-ins into `croft-xpi.json`, one
+more gap became obvious: the graph still mostly described providers.
+
+That is incomplete for Lambkin. The solver also needs to see which higher-level
+entrypoints actually consume those bundles. Otherwise it has to reverse-engineer
+consumption from low-level target dependencies or from hand-maintained product
+notes.
+
+The more useful model is:
+
+- bundles and substrates describe available capability seams,
+- participating artifacts describe concrete implementations,
+- and entrypoints describe bundle consumers.
+
+That matters especially for the editor family. An editor shell is not itself a
+host bundle, but it is a structured consumer of several of them:
+
+- window lifecycle,
+- clock services,
+- menu and popup actions,
+- clipboard access,
+- editor-input normalization,
+- and accessibility where present.
+
+Making those consumer edges explicit is the first point where the XPI graph
+starts to resemble the eventual weaving problem instead of just the inventory
+of ingredients.
+
 ## March 11, 2026: Vendoring Needs A Drift Story, Not Just A Snapshot
 
 Once WASI `0.2.9` became a first-class vendored input, another missing piece
