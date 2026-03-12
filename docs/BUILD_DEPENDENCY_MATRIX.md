@@ -228,35 +228,35 @@ It records:
 - the declared worlds versus expanded callable surfaces for those bundles
 - helper-interface couplings such as `wasi:io/error` and `wasi:filesystem/error`
 
-The repo also now carries a minimal solver-facing Wasm demo path:
+The repo now carries a canonical WIT orchestration path for Croft-hosted Wasm:
 
-- `build/examples/json_source_guest.manifest.json` is a structured request
-  document rather than a custom line format
-- `build/examples/json_source_guest.solution.json` is the corresponding solved
-  composition plan emitted by the build from that request plus `croft-xpi.json`
-- that manifest names a solver-facing family entrypoint, hard bundle
-  requirements, open-slot preferences, and guest/contract metadata
-- the guest export surface now carries generic `payload_pointer` /
-  `payload_length` aliases alongside the earlier `json_pointer` /
-  `json_length` names, so the plan consumer is not hard-wired to one payload
-  kind even though the current demo still uses JSON
-- `tools/solve_xpi_requirements.py` consumes that manifest and `build/croft-xpi.json`
-  to emit a composition plan with selected bundles, provider artifacts, shared
-  substrates, helper interfaces, declared worlds, and expanded surfaces
-- `src/runtime/xpi_demo_runtime.c` and `include/croft/xpi_demo_runtime.h` are
-  now the C-side consumer for that boundary: they load the manifest and solved
-  plan, execute the guest payload, and hand contract-specific interpretation
-  off to Thatch/JSON rendering
-- `example_xpi_plan_runner` is the small executable entrypoint on top of that
-  runtime, and `tests/sapling_tests/unit/test_wasm_json_demo_manifest_smoke.c`
-  now verifies the same path instead of re-implementing it inside the test
+- `schemas/wit/orchestration.wit` is the control-plane contract for
+  `builder`, `session`, `manifest`, `plan`, DB schema/table declarations,
+  mailbox topology, and worker startup payloads
+- `src/runtime/xpi_registry.c` and `include/croft/xpi_registry.h` expose a
+  compiled XPI registry derived from the same bundle/substrate/slot/artifact
+  graph that still renders `build/croft-xpi.json` for diagnostics
+- `src/runtime/orchestration_runtime.c` and
+  `include/croft/orchestration_runtime.h` are the in-process heuristic
+  resolver and session manager: they validate family/applicability, expand
+  bundle requirements, honor slot preferences, launch one shared host-owned
+  Sapling DB, and bind declared mailboxes and worker policies
+- `tests/wasm_guests/orchestration_bootstrap_toy.c` /
+  `tests/wasm_guests/orchestration_worker_toy.c` are the minimal mailbox-topology
+  demo over real host threads
+- `tests/wasm_guests/orchestration_bootstrap_json.c` /
+  `tests/wasm_guests/orchestration_worker_json.c` are the guest-local
+  JSON-to-Thatch demo, where the worker parses JSON into a local Thatch tree
+  and only writes serialized view artifacts back to the shared host DB
+- `example_orchestration_bootstrap_runner` is the small executable entrypoint
+  on top of that runtime, and the orchestration smokes now validate the same
+  path instead of reconstructing the flow from JSON manifests and solved plans
 
 That path is intentionally still heuristic, but it proves the current XPI
 graph is already sufficient for an early Lambkin-style "pick a family, satisfy
 the hard requirements, choose one bundle for each open slot, then execute"
-loop. The Python code is deliberately kept thin here: it is only temporary
-build-time solve scaffolding, while the lasting contract boundary is the JSON
-request/plan pair plus the C-side runtime/runner.
+loop. The durable boundary is now WIT plus the compiled registry/runtime path,
+while `croft-xpi.json` remains an exported diagnostic and solver artifact.
 
 `build/reports/croft-wasi-vendor-drift.txt` and
 `build/reports/croft-wasi-vendor-drift.json` now complement that metadata by

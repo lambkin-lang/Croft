@@ -1,0 +1,179 @@
+package lambkin:orchestration@0.1.0;
+
+interface control {
+  type bytes = list<u8>;
+  type string-list = list<string>;
+  type status = result<_, string>;
+
+  flags table-access {
+    read,
+    write,
+  }
+
+  enum mailbox-durability {
+    volatile,
+    durable,
+  }
+
+  enum session-phase {
+    building,
+    resolved,
+    launching,
+    running,
+    stopping,
+    stopped,
+    failed,
+  }
+
+  record slot-preference {
+    slot: string,
+    bundles: list<string>,
+  }
+
+  record payload-module-spec {
+    name: string,
+    path: string,
+  }
+
+  record table-spec {
+    name: string,
+    key-format: string,
+    value-format: string,
+    access: table-access,
+  }
+
+  record db-schema-spec {
+    name: string,
+    tables: list<table-spec>,
+  }
+
+  record mailbox-spec {
+    name: string,
+    message-format: string,
+    producers: list<string>,
+    consumers: list<string>,
+    durability: mailbox-durability,
+  }
+
+  record table-binding {
+    name: string,
+    key-format: string,
+    value-format: string,
+    access: table-access,
+  }
+
+  record mailbox-binding {
+    name: string,
+    handle: u32,
+    message-format: string,
+    durability: mailbox-durability,
+  }
+
+  record worker-startup {
+    db-handle: u32,
+    tables: list<table-binding>,
+    inboxes: list<mailbox-binding>,
+    outboxes: list<mailbox-binding>,
+    startup-format: option<string>,
+    startup-bytes: bytes,
+  }
+
+  record worker-spec {
+    name: string,
+    module: string,
+    replicas: u32,
+    allowed-tables: list<string>,
+    inboxes: list<string>,
+    outboxes: list<string>,
+    startup-format: option<string>,
+    startup-bytes: bytes,
+  }
+
+  record manifest {
+    name: string,
+    family: string,
+    applicability: string,
+    required-bundles: list<string>,
+    preferred-slots: list<slot-preference>,
+    payload-modules: list<payload-module-spec>,
+    db-schema: option<db-schema-spec>,
+    mailboxes: list<mailbox-spec>,
+    workers: list<worker-spec>,
+  }
+
+  record slot-binding {
+    slot: string,
+    bundle: string,
+  }
+
+  record resolved-worker {
+    name: string,
+    module: string,
+    replicas: u32,
+    allowed-tables: list<string>,
+    inboxes: list<string>,
+    outboxes: list<string>,
+  }
+
+  record plan {
+    manifest-name: string,
+    family: string,
+    applicability: string,
+    selected-slots: list<slot-binding>,
+    required-bundles: list<string>,
+    provider-artifacts: list<string>,
+    shared-substrates: list<string>,
+    helper-interfaces: list<string>,
+    declared-worlds: list<string>,
+    expanded-surfaces: list<string>,
+    payload-modules: list<payload-module-spec>,
+    db-schema: option<db-schema-spec>,
+    mailboxes: list<mailbox-spec>,
+    workers: list<resolved-worker>,
+    diagnostics: list<string>,
+  }
+
+  record session-status {
+    phase: session-phase,
+    worker-count: u32,
+    running-count: u32,
+    last-error: option<string>,
+  }
+
+  resource builder {
+    create: static func(name: string, family: string, applicability: string) -> result<builder, string>;
+    require-bundle: func(bundle: string) -> status;
+    prefer-slot: func(slot: string, bundle: string) -> status;
+    add-module: func(name: string, path: string) -> status;
+    set-db-schema: func(schema: db-schema-spec) -> status;
+    add-mailbox: func(mailbox: mailbox-spec) -> status;
+    add-worker: func(worker: worker-spec) -> status;
+    snapshot: func() -> manifest;
+    resolve: func() -> result<plan, string>;
+    launch: func() -> result<session, string>;
+    drop: func() -> status;
+  }
+
+  resource session {
+    manifest: func() -> manifest;
+    plan: func() -> plan;
+    status: func() -> session-status;
+    stop: func() -> status;
+    join: func() -> status;
+    drop: func() -> status;
+  }
+}
+
+world bootstrap {
+  import control;
+  export run: func() -> result<_, string>;
+}
+
+world worker {
+  import lambkin:common-core/store@0.1.0;
+  import lambkin:common-core/mailbox@0.1.0;
+  export run-worker: func(worker-name: string,
+                          replica-index: u32,
+                          startup-format: option<string>,
+                          startup-bytes: list<u8>) -> result<_, string>;
+}

@@ -5,6 +5,46 @@ its aspect libraries are still co-evolving. These notes are not intended to
 freeze the design; they are meant to preserve the useful pressure points,
 surprises, and open questions that surfaced while forcing the ideas into code.
 
+## March 12, 2026: The Control Plane Needs To Be WIT, Not JSON
+
+The earlier JSON request/plan demo was useful only as a pressure test. It was
+not the right fixed point for Croft-hosted Wasm. The real control plane is now
+the WIT package in `schemas/wit/orchestration.wit`, and that clarified several
+important design facts at once:
+
+- `manifest` and `plan` are typed snapshots of an orchestration session, not
+  the primary authoring surface
+- the primary authoring mechanism is a bootstrap Wasm module importing the
+  `control` API and constructing the session through `builder`
+- one shared, host-owned Sapling DB is the session substrate for cross-thread
+  coordination, while guest-local Thatch/text/seq values stay thread-local
+- mailbox declarations and table access lists are not incidental metadata;
+  they are the solver-visible communication topology and policy boundary
+
+That shift also exposed a better division of responsibility between Croft and
+Lambkin. Croft can now own:
+
+- compiled XPI registry tables derived from the build graph,
+- heuristic current-machine resolution over bundles, slots, and applicability,
+- session launch and policy enforcement for DB tables and mailbox directions,
+- and the native/wasm3 machinery needed to instantiate worker replicas on real
+  host threads.
+
+Lambkin does not need to reconstruct those facts from target dependencies. It
+can consume a graph whose vocabulary is already close to the eventual solve:
+
+- families and open slots for user intent,
+- bundles and substrates for capability supply,
+- DB/mailbox topology for coordination shape,
+- and typed manifest/plan/session records for execution.
+
+One concrete correction came out of this immediately: `worker-spec.startup-*`
+cannot be modeled as a seeded mailbox hack. It has to travel as part of the
+typed worker-startup contract itself. Mailboxes are then reserved for actual
+communication topology, which keeps the authored model honest and makes the
+JSON-to-Thatch demo cleaner: the JSON payload is direct worker startup data,
+while any inter-thread traffic remains explicit mailbox traffic.
+
 ## March 11, 2026: Lambkin Requirements Need To Distill Into A Small Solver Request
 
 The first useful "real solver" test is not optimization. It is whether a

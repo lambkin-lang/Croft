@@ -291,6 +291,33 @@ function(croft_json_string out_var value)
     set(${out_var} "\"${escaped}\"" PARENT_SCOPE)
 endfunction()
 
+function(croft_c_string out_var value)
+    string(REPLACE "\\" "\\\\" escaped "${value}")
+    string(REPLACE "\"" "\\\"" escaped "${escaped}")
+    string(REPLACE "\n" "\\n" escaped "${escaped}")
+    set(${out_var} "\"${escaped}\"" PARENT_SCOPE)
+endfunction()
+
+function(croft_c_nullable_string out_var value)
+    if(DEFINED value AND NOT value STREQUAL "")
+        croft_c_string(rendered "${value}")
+        set(${out_var} "${rendered}" PARENT_SCOPE)
+    else()
+        set(${out_var} "NULL" PARENT_SCOPE)
+    endif()
+endfunction()
+
+function(croft_c_joined_string out_var)
+    set(items ${ARGN})
+    if(items)
+        string(JOIN "|" joined ${items})
+        croft_c_string(rendered "${joined}")
+        set(${out_var} "${rendered}" PARENT_SCOPE)
+    else()
+        set(${out_var} "NULL" PARENT_SCOPE)
+    endif()
+endfunction()
+
 function(croft_collect_applicability_traits out_var applicability)
     set(traits "")
     if(NOT applicability)
@@ -361,6 +388,31 @@ function(croft_json_slot_bindings out_var)
     else()
         set(${out_var} "[]" PARENT_SCOPE)
     endif()
+endfunction()
+
+function(croft_c_slot_bindings out_var)
+    set(bundle_names ${ARGN})
+    if(NOT bundle_names)
+        set(${out_var} "NULL" PARENT_SCOPE)
+        return()
+    endif()
+
+    set(entries "")
+    set(seen "")
+    foreach(bundle_name IN LISTS bundle_names)
+        croft_get_xpi_bundle_field(slot_names "${bundle_name}" "SLOTS")
+        foreach(slot_name IN LISTS slot_names)
+            set(binding_key "${slot_name}::${bundle_name}")
+            if(binding_key IN_LIST seen)
+                continue()
+            endif()
+            list(APPEND seen "${binding_key}")
+            list(APPEND entries "${slot_name}=${bundle_name}")
+        endforeach()
+    endforeach()
+
+    croft_c_joined_string(rendered ${entries})
+    set(${out_var} "${rendered}" PARENT_SCOPE)
 endfunction()
 
 function(croft_get_registered_artifact_bundle_field out_var target field)
@@ -717,6 +769,15 @@ function(croft_get_xpi_slot_field out_var name field)
     set(${out_var} ${values} PARENT_SCOPE)
 endfunction()
 
+function(croft_get_xpi_entrypoint_field out_var name field)
+    string(MAKE_C_IDENTIFIER "${name}" key)
+    get_property(values GLOBAL PROPERTY "CROFT_XPI_ENTRYPOINT_${key}_${field}")
+    if(NOT values OR values MATCHES "-NOTFOUND$")
+        set(values "")
+    endif()
+    set(${out_var} ${values} PARENT_SCOPE)
+endfunction()
+
 function(croft_collect_named_xpi_bundle_field out_var field)
     set(bundle_names ${ARGN})
     if(NOT bundle_names)
@@ -795,6 +856,168 @@ function(croft_collect_xpi_slot_conflicts out_var bundle_name)
         list(REMOVE_DUPLICATES conflicts)
     endif()
     set(${out_var} ${conflicts} PARENT_SCOPE)
+endfunction()
+
+function(croft_render_xpi_registry_artifact_entry out_var target)
+    croft_get_registered_artifact_bundle_field(kind "${target}" "KIND")
+    croft_get_registered_artifact_bundle_field(profile "${target}" "PROFILE")
+    croft_get_registered_artifact_bundle_field(upstream_package "${target}" "UPSTREAM_PACKAGE")
+    croft_get_registered_artifact_bundle_field(upstream_version "${target}" "UPSTREAM_VERSION")
+    croft_get_registered_artifact_bundle_field(support_status "${target}" "SUPPORT_STATUS")
+    croft_get_registered_artifact_bundle_field(applicability "${target}" "APPLICABILITY")
+    croft_get_registered_artifact_bundle_field(tags "${target}" "TAGS")
+    croft_get_registered_artifact_bundle_field(depends "${target}" "DEPENDS")
+    croft_get_registered_artifact_bundle_field(capability_bundles "${target}" "CAPABILITY_BUNDLES")
+    croft_get_registered_artifact_bundle_field(shared_substrates "${target}" "SHARED_SUBSTRATES")
+    croft_get_registered_artifact_bundle_field(helper_interfaces "${target}" "HELPER_INTERFACES")
+    croft_get_registered_artifact_bundle_field(declared_worlds "${target}" "DECLARED_WORLDS")
+    croft_get_registered_artifact_bundle_field(expanded_surfaces "${target}" "EXPANDED_SURFACES")
+    croft_get_registered_artifact_bundle_field(requires_bundles "${target}" "REQUIRES_BUNDLES")
+    croft_get_registered_artifact_bundle_field(open_slots "${target}" "OPEN_SLOTS")
+    croft_collect_applicability_traits(applicability_traits "${applicability}")
+
+    set(selected_slot_source_bundles ${capability_bundles} ${requires_bundles})
+    if(selected_slot_source_bundles)
+        list(REMOVE_DUPLICATES selected_slot_source_bundles)
+    endif()
+
+    croft_c_string(name_c "${target}")
+    croft_c_string(kind_c "${kind}")
+    croft_c_nullable_string(profile_c "${profile}")
+    croft_c_nullable_string(upstream_package_c "${upstream_package}")
+    croft_c_nullable_string(upstream_version_c "${upstream_version}")
+    croft_c_nullable_string(support_status_c "${support_status}")
+    croft_c_nullable_string(applicability_c "${applicability}")
+    croft_c_joined_string(applicability_traits_c ${applicability_traits})
+    croft_c_joined_string(capability_bundles_c ${capability_bundles})
+    croft_c_joined_string(shared_substrates_c ${shared_substrates})
+    croft_c_joined_string(helper_interfaces_c ${helper_interfaces})
+    croft_c_joined_string(declared_worlds_c ${declared_worlds})
+    croft_c_joined_string(expanded_surfaces_c ${expanded_surfaces})
+    croft_c_joined_string(requires_bundles_c ${requires_bundles})
+    croft_c_slot_bindings(selected_slot_bindings_c ${selected_slot_source_bundles})
+    croft_c_joined_string(open_slots_c ${open_slots})
+    croft_c_joined_string(tags_c ${tags})
+    croft_c_joined_string(depends_c ${depends})
+    if(NOT selected_slot_bindings_c)
+        set(selected_slot_bindings_c "NULL")
+    endif()
+
+    set(${out_var}
+        "    { ${name_c}, ${kind_c}, ${profile_c}, ${upstream_package_c}, ${upstream_version_c}, ${support_status_c}, ${applicability_c}, ${applicability_traits_c}, ${capability_bundles_c}, ${shared_substrates_c}, ${helper_interfaces_c}, ${declared_worlds_c}, ${expanded_surfaces_c}, ${requires_bundles_c}, ${selected_slot_bindings_c}, ${open_slots_c}, ${tags_c}, ${depends_c} }"
+        PARENT_SCOPE)
+endfunction()
+
+function(croft_render_xpi_registry_substrate_entry out_var name)
+    string(MAKE_C_IDENTIFIER "${name}" key)
+    get_property(kind GLOBAL PROPERTY "CROFT_XPI_SUBSTRATE_${key}_KIND")
+    get_property(applicability GLOBAL PROPERTY "CROFT_XPI_SUBSTRATE_${key}_APPLICABILITY")
+    get_property(description GLOBAL PROPERTY "CROFT_XPI_SUBSTRATE_${key}_DESCRIPTION")
+    get_property(artifacts GLOBAL PROPERTY "CROFT_XPI_SUBSTRATE_${key}_ARTIFACTS")
+    get_property(interfaces GLOBAL PROPERTY "CROFT_XPI_SUBSTRATE_${key}_INTERFACES")
+    croft_collect_applicability_traits(applicability_traits "${applicability}")
+
+    croft_c_string(name_c "${name}")
+    croft_c_nullable_string(kind_c "${kind}")
+    croft_c_nullable_string(applicability_c "${applicability}")
+    croft_c_joined_string(applicability_traits_c ${applicability_traits})
+    croft_c_nullable_string(description_c "${description}")
+    croft_c_joined_string(artifacts_c ${artifacts})
+    croft_c_joined_string(interfaces_c ${interfaces})
+
+    set(${out_var}
+        "    { ${name_c}, ${kind_c}, ${applicability_c}, ${applicability_traits_c}, ${description_c}, ${artifacts_c}, ${interfaces_c} }"
+        PARENT_SCOPE)
+endfunction()
+
+function(croft_render_xpi_registry_slot_entry out_var name)
+    croft_get_xpi_slot_field(mode "${name}" "MODE")
+    croft_get_xpi_slot_field(applicability "${name}" "APPLICABILITY")
+    croft_get_xpi_slot_field(description "${name}" "DESCRIPTION")
+    croft_get_xpi_slot_field(bundles "${name}" "BUNDLES")
+    croft_collect_applicability_traits(applicability_traits "${applicability}")
+
+    croft_c_string(name_c "${name}")
+    croft_c_nullable_string(mode_c "${mode}")
+    croft_c_nullable_string(applicability_c "${applicability}")
+    croft_c_joined_string(applicability_traits_c ${applicability_traits})
+    croft_c_nullable_string(description_c "${description}")
+    croft_c_joined_string(bundles_c ${bundles})
+
+    set(${out_var}
+        "    { ${name_c}, ${mode_c}, ${applicability_c}, ${applicability_traits_c}, ${description_c}, ${bundles_c} }"
+        PARENT_SCOPE)
+endfunction()
+
+function(croft_render_xpi_registry_bundle_entry out_var name)
+    croft_get_xpi_bundle_field(support_status "${name}" "SUPPORT_STATUS")
+    croft_get_xpi_bundle_field(applicability "${name}" "APPLICABILITY")
+    croft_get_xpi_bundle_field(description "${name}" "DESCRIPTION")
+    croft_get_xpi_bundle_field(artifacts "${name}" "ARTIFACTS")
+    croft_get_xpi_bundle_field(substrates "${name}" "SUBSTRATES")
+    croft_get_xpi_bundle_field(declared_worlds "${name}" "DECLARED_WORLDS")
+    croft_get_xpi_bundle_field(expanded_surfaces "${name}" "EXPANDED_SURFACES")
+    croft_get_xpi_bundle_field(helper_interfaces "${name}" "HELPER_INTERFACES")
+    croft_get_xpi_bundle_field(requires_bundles "${name}" "REQUIRES_BUNDLES")
+    croft_get_xpi_bundle_field(compatible_bundles "${name}" "COMPATIBLE_BUNDLES")
+    croft_get_xpi_bundle_field(conflicts_with "${name}" "CONFLICTS_WITH")
+    croft_get_xpi_bundle_field(roles "${name}" "ROLES")
+    croft_get_xpi_bundle_field(slots "${name}" "SLOTS")
+    croft_collect_xpi_slot_conflicts(derived_slot_conflicts "${name}" ${slots})
+    set(effective_conflicts ${conflicts_with} ${derived_slot_conflicts})
+    if(effective_conflicts)
+        list(REMOVE_DUPLICATES effective_conflicts)
+    endif()
+    croft_collect_applicability_traits(applicability_traits "${applicability}")
+
+    croft_c_string(name_c "${name}")
+    croft_c_nullable_string(support_status_c "${support_status}")
+    croft_c_nullable_string(applicability_c "${applicability}")
+    croft_c_joined_string(applicability_traits_c ${applicability_traits})
+    croft_c_nullable_string(description_c "${description}")
+    croft_c_joined_string(artifacts_c ${artifacts})
+    croft_c_joined_string(substrates_c ${substrates})
+    croft_c_joined_string(declared_worlds_c ${declared_worlds})
+    croft_c_joined_string(expanded_surfaces_c ${expanded_surfaces})
+    croft_c_joined_string(helper_interfaces_c ${helper_interfaces})
+    croft_c_joined_string(requires_bundles_c ${requires_bundles})
+    croft_c_joined_string(compatible_bundles_c ${compatible_bundles})
+    croft_c_joined_string(conflicts_with_c ${effective_conflicts})
+    croft_c_joined_string(roles_c ${roles})
+    croft_c_joined_string(slots_c ${slots})
+
+    set(${out_var}
+        "    { ${name_c}, ${support_status_c}, ${applicability_c}, ${applicability_traits_c}, ${description_c}, ${artifacts_c}, ${substrates_c}, ${declared_worlds_c}, ${expanded_surfaces_c}, ${helper_interfaces_c}, ${requires_bundles_c}, ${compatible_bundles_c}, ${conflicts_with_c}, ${roles_c}, ${slots_c} }"
+        PARENT_SCOPE)
+endfunction()
+
+function(croft_render_xpi_registry_entrypoint_entry out_var name)
+    croft_get_xpi_entrypoint_field(kind "${name}" "KIND")
+    croft_get_xpi_entrypoint_field(focus "${name}" "FOCUS")
+    croft_get_xpi_entrypoint_field(applicability "${name}" "APPLICABILITY")
+    croft_get_xpi_entrypoint_field(tags "${name}" "TAGS")
+    croft_get_xpi_entrypoint_field(requires "${name}" "REQUIRES")
+    croft_get_xpi_entrypoint_field(requires_bundles "${name}" "REQUIRES_BUNDLES")
+    croft_get_xpi_entrypoint_field(open_slots "${name}" "OPEN_SLOTS")
+    croft_collect_applicability_traits(applicability_traits "${applicability}")
+
+    croft_c_string(name_c "${name}")
+    croft_c_nullable_string(kind_c "${kind}")
+    croft_c_nullable_string(focus_c "${focus}")
+    croft_c_nullable_string(applicability_c "${applicability}")
+    croft_c_joined_string(applicability_traits_c ${applicability_traits})
+    croft_c_joined_string(tags_c ${tags})
+    croft_c_joined_string(requires_c ${requires})
+    croft_c_joined_string(requires_bundles_c ${requires_bundles})
+    croft_c_slot_bindings(selected_slot_bindings_c ${requires_bundles})
+    croft_c_joined_string(open_slots_c ${open_slots})
+    if(NOT selected_slot_bindings_c)
+        set(selected_slot_bindings_c "NULL")
+    endif()
+
+    set(${out_var}
+        "    { ${name_c}, ${kind_c}, ${focus_c}, ${applicability_c}, ${applicability_traits_c}, ${tags_c}, ${requires_c}, ${requires_bundles_c}, ${selected_slot_bindings_c}, ${open_slots_c} }"
+        PARENT_SCOPE)
 endfunction()
 
 function(croft_register_artifact_from_xpi_bundles target kind)
@@ -898,6 +1121,15 @@ function(croft_register_xpi_entrypoint name)
     croft_json_array(requires_bundles_json ${effective_requires_bundles})
     croft_json_slot_bindings(selected_slot_bindings_json ${effective_requires_bundles})
     croft_json_array(open_slots_json ${XPI_ENTRY_OPEN_SLOTS})
+    string(MAKE_C_IDENTIFIER "${name}" key)
+    set_property(GLOBAL APPEND PROPERTY CROFT_DEFINED_XPI_ENTRYPOINTS "${name}")
+    set_property(GLOBAL PROPERTY "CROFT_XPI_ENTRYPOINT_${key}_KIND" "${XPI_ENTRY_KIND}")
+    set_property(GLOBAL PROPERTY "CROFT_XPI_ENTRYPOINT_${key}_FOCUS" "${XPI_ENTRY_FOCUS}")
+    set_property(GLOBAL PROPERTY "CROFT_XPI_ENTRYPOINT_${key}_APPLICABILITY" "${XPI_ENTRY_APPLICABILITY}")
+    set_property(GLOBAL PROPERTY "CROFT_XPI_ENTRYPOINT_${key}_TAGS" "${XPI_ENTRY_TAGS}")
+    set_property(GLOBAL PROPERTY "CROFT_XPI_ENTRYPOINT_${key}_REQUIRES" "${XPI_ENTRY_REQUIRES}")
+    set_property(GLOBAL PROPERTY "CROFT_XPI_ENTRYPOINT_${key}_REQUIRES_BUNDLES" "${effective_requires_bundles}")
+    set_property(GLOBAL PROPERTY "CROFT_XPI_ENTRYPOINT_${key}_OPEN_SLOTS" "${XPI_ENTRY_OPEN_SLOTS}")
     set(entry "    {\n      \"name\": \"${name}\",\n      \"kind\": ${kind_json},\n      \"focus\": ${focus_json},\n      \"applicability\": ${applicability_json},\n      \"applicability_traits\": ${applicability_traits_json},\n      \"tags\": ${tags_json},\n      \"requires\": ${requires_json},\n      \"requires_bundles\": ${requires_bundles_json},\n      \"selected_slot_bindings\": ${selected_slot_bindings_json},\n      \"open_slots\": ${open_slots_json}\n    }")
     set_property(GLOBAL APPEND PROPERTY CROFT_XPI_ENTRYPOINT_ENTRIES "${entry}")
 endfunction()
@@ -1113,7 +1345,8 @@ function(croft_add_freestanding_c_wasm_guest target)
         -fno-stack-protector)
 
     foreach(definition IN LISTS WASM_GUEST_COMPILE_DEFINITIONS)
-        list(APPEND compile_cmd "-D${definition}")
+        string(REPLACE "\"" "\\\"" definition_escaped "${definition}")
+        list(APPEND compile_cmd "-D${definition_escaped}")
     endforeach()
     foreach(option IN LISTS WASM_GUEST_COMPILE_OPTIONS)
         list(APPEND compile_cmd "${option}")
@@ -1197,180 +1430,6 @@ function(croft_add_wit_wasm_guest target)
     endif()
 endfunction()
 
-function(croft_generate_wasm_demo_manifest)
-    cmake_parse_arguments(DEMO
-        ""
-        "NAME;GUEST_TARGET;GUEST_KIND;WASM_PATH;OUTPUT_PATH;ENTRYPOINT_FAMILY;APPLICABILITY;ANNOUNCE_EXPORT;PAYLOAD_POINTER_EXPORT;PAYLOAD_LENGTH_EXPORT;JSON_POINTER_EXPORT;JSON_LENGTH_EXPORT;DATA_CONTRACT;VIEW_CONTRACT;OUT_VAR"
-        "REQUIRE_BUNDLES;EXPANDED_PATHS;PREFER_SLOT_BUNDLES"
-        ${ARGN})
-    if(NOT DEMO_NAME OR NOT DEMO_WASM_PATH OR NOT DEMO_OUTPUT_PATH)
-        message(FATAL_ERROR "croft_generate_wasm_demo_manifest requires NAME, WASM_PATH, and OUTPUT_PATH")
-    endif()
-
-    if(DEMO_GUEST_KIND)
-        set(guest_kind "${DEMO_GUEST_KIND}")
-    else()
-        set(guest_kind "unknown")
-    endif()
-
-    croft_json_string(schema_json "croft-wasm-demo-v1")
-    croft_json_string(name_json "${DEMO_NAME}")
-    croft_json_string(kind_json "wasm-demo")
-    croft_json_string(guest_kind_json "${guest_kind}")
-    croft_json_string(wasm_path_json "${DEMO_WASM_PATH}")
-    croft_json_array(require_bundles_json ${DEMO_REQUIRE_BUNDLES})
-    croft_json_array(expanded_paths_json ${DEMO_EXPANDED_PATHS})
-
-    if(DEMO_GUEST_TARGET)
-        croft_json_string(guest_target_json "${DEMO_GUEST_TARGET}")
-    else()
-        set(guest_target_json "null")
-    endif()
-    if(DEMO_ENTRYPOINT_FAMILY)
-        croft_json_string(entrypoint_family_json "${DEMO_ENTRYPOINT_FAMILY}")
-    else()
-        set(entrypoint_family_json "null")
-    endif()
-    if(DEMO_APPLICABILITY)
-        croft_json_string(applicability_json "${DEMO_APPLICABILITY}")
-    else()
-        set(applicability_json "null")
-    endif()
-    if(DEMO_ANNOUNCE_EXPORT)
-        croft_json_string(announce_export_json "${DEMO_ANNOUNCE_EXPORT}")
-    else()
-        set(announce_export_json "null")
-    endif()
-    if(DEMO_PAYLOAD_POINTER_EXPORT)
-        set(payload_pointer_export "${DEMO_PAYLOAD_POINTER_EXPORT}")
-    elseif(DEMO_JSON_POINTER_EXPORT)
-        set(payload_pointer_export "${DEMO_JSON_POINTER_EXPORT}")
-    else()
-        set(payload_pointer_export "")
-    endif()
-    if(DEMO_PAYLOAD_LENGTH_EXPORT)
-        set(payload_length_export "${DEMO_PAYLOAD_LENGTH_EXPORT}")
-    elseif(DEMO_JSON_LENGTH_EXPORT)
-        set(payload_length_export "${DEMO_JSON_LENGTH_EXPORT}")
-    else()
-        set(payload_length_export "")
-    endif()
-    if(payload_pointer_export)
-        croft_json_string(payload_pointer_export_json "${payload_pointer_export}")
-        croft_json_string(json_pointer_export_json "${payload_pointer_export}")
-    else()
-        set(payload_pointer_export_json "null")
-        set(json_pointer_export_json "null")
-    endif()
-    if(payload_length_export)
-        croft_json_string(payload_length_export_json "${payload_length_export}")
-        croft_json_string(json_length_export_json "${payload_length_export}")
-    else()
-        set(payload_length_export_json "null")
-        set(json_length_export_json "null")
-    endif()
-    if(DEMO_DATA_CONTRACT)
-        croft_json_string(data_contract_json "${DEMO_DATA_CONTRACT}")
-    else()
-        set(data_contract_json "null")
-    endif()
-    if(DEMO_VIEW_CONTRACT)
-        croft_json_string(view_contract_json "${DEMO_VIEW_CONTRACT}")
-    else()
-        set(view_contract_json "null")
-    endif()
-
-    set(slot_preference_entries "")
-    foreach(preference IN LISTS DEMO_PREFER_SLOT_BUNDLES)
-        string(FIND "${preference}" "=" eq_index)
-        if(eq_index LESS 1)
-            message(FATAL_ERROR "invalid PREFER_SLOT_BUNDLES entry '${preference}', expected slot=bundle1,bundle2")
-        endif()
-        string(SUBSTRING "${preference}" 0 ${eq_index} slot_name)
-        math(EXPR value_index "${eq_index} + 1")
-        string(SUBSTRING "${preference}" ${value_index} -1 bundle_csv)
-        string(REPLACE "," ";" slot_bundles "${bundle_csv}")
-        croft_json_string(slot_name_json "${slot_name}")
-        croft_json_array(slot_bundle_json ${slot_bundles})
-        list(APPEND slot_preference_entries "      ${slot_name_json}: ${slot_bundle_json}")
-    endforeach()
-    if(slot_preference_entries)
-        string(JOIN ",\n" joined_slot_preferences ${slot_preference_entries})
-        set(slot_preferences_json "{\n${joined_slot_preferences}\n    }")
-    else()
-        set(slot_preferences_json "{}")
-    endif()
-
-    set(content
-"{
-  \"schema\": ${schema_json},
-  \"name\": ${name_json},
-  \"kind\": ${kind_json},
-  \"applicability\": ${applicability_json},
-    \"guest\": {
-    \"kind\": ${guest_kind_json},
-    \"target\": ${guest_target_json},
-    \"wasm_path\": ${wasm_path_json},
-    \"exports\": {
-      \"announce\": ${announce_export_json},
-      \"payload_pointer\": ${payload_pointer_export_json},
-      \"payload_length\": ${payload_length_export_json},
-      \"json_pointer\": ${json_pointer_export_json},
-      \"json_length\": ${json_length_export_json}
-    }
-  },
-  \"contracts\": {
-    \"data\": ${data_contract_json},
-    \"view\": ${view_contract_json}
-  },
-  \"solver_request\": {
-    \"entrypoint_family\": ${entrypoint_family_json},
-    \"require_bundles\": ${require_bundles_json},
-    \"expanded_paths\": ${expanded_paths_json},
-    \"prefer_slot_bundles\": ${slot_preferences_json}
-  }
-}
-")
-    file(GENERATE OUTPUT "${DEMO_OUTPUT_PATH}" CONTENT "${content}")
-    if(DEMO_OUT_VAR)
-        set(${DEMO_OUT_VAR} "${DEMO_OUTPUT_PATH}" PARENT_SCOPE)
-    endif()
-endfunction()
-
-function(croft_generate_xpi_solution target)
-    cmake_parse_arguments(SOLVE
-        ""
-        "XPI_PATH;MANIFEST_PATH;OUTPUT_PATH;OUT_VAR"
-        "DEPENDS"
-        ${ARGN})
-    if(NOT SOLVE_XPI_PATH OR NOT SOLVE_MANIFEST_PATH OR NOT SOLVE_OUTPUT_PATH)
-        message(FATAL_ERROR "croft_generate_xpi_solution requires XPI_PATH, MANIFEST_PATH, and OUTPUT_PATH")
-    endif()
-    if(NOT CROFT_PYTHON3_TOOL)
-        message(FATAL_ERROR "croft_generate_xpi_solution requires CROFT_PYTHON3_TOOL")
-    endif()
-    if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tools/solve_xpi_requirements.py")
-        message(FATAL_ERROR "missing tools/solve_xpi_requirements.py")
-    endif()
-
-    add_custom_command(
-        OUTPUT "${SOLVE_OUTPUT_PATH}"
-        COMMAND "${CROFT_PYTHON3_TOOL}"
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/solve_xpi_requirements.py"
-            --xpi "${SOLVE_XPI_PATH}"
-            --manifest "${SOLVE_MANIFEST_PATH}"
-            --output "${SOLVE_OUTPUT_PATH}"
-        DEPENDS
-            "${CMAKE_CURRENT_SOURCE_DIR}/tools/solve_xpi_requirements.py"
-            ${SOLVE_DEPENDS}
-        VERBATIM)
-    add_custom_target(${target} DEPENDS "${SOLVE_OUTPUT_PATH}")
-
-    if(SOLVE_OUT_VAR)
-        set(${SOLVE_OUT_VAR} "${SOLVE_OUTPUT_PATH}" PARENT_SCOPE)
-    endif()
-endfunction()
-
 # pthreads
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
@@ -1398,6 +1457,10 @@ set(WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_schema_dbi
 set(COMMON_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_common_core.h")
 set(COMMON_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_common_core.c")
 set(COMMON_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_common_core.manifest")
+
+set(ORCHESTRATION_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_orchestration.h")
+set(ORCHESTRATION_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_orchestration.c")
+set(ORCHESTRATION_WIT_GENERATED_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_orchestration.manifest")
 
 set(HOST_FS_WIT_GENERATED_H "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_fs.h")
 set(HOST_FS_WIT_GENERATED_C "${CMAKE_CURRENT_BINARY_DIR}/generated/wit_host_fs.c")
@@ -1566,6 +1629,20 @@ add_custom_command(
     COMMENT "Generating Common-Core WIT C Layouts..."
 )
 add_custom_target(common_wit_schema_gen DEPENDS ${COMMON_WIT_GENERATED_H} ${COMMON_WIT_GENERATED_C} ${COMMON_WIT_GENERATED_MANIFEST})
+
+# Orchestration schema
+add_custom_command(
+    OUTPUT ${ORCHESTRATION_WIT_GENERATED_H} ${ORCHESTRATION_WIT_GENERATED_C} ${ORCHESTRATION_WIT_GENERATED_MANIFEST}
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/generated"
+    COMMAND wit_codegen --wit "${CMAKE_CURRENT_SOURCE_DIR}/schemas/wit/orchestration.wit"
+                        --header "${ORCHESTRATION_WIT_GENERATED_H}" --source "${ORCHESTRATION_WIT_GENERATED_C}" --manifest "${ORCHESTRATION_WIT_GENERATED_MANIFEST}"
+    DEPENDS
+        wit_codegen
+        "${CMAKE_CURRENT_SOURCE_DIR}/schemas/wit/orchestration.wit"
+        "${CMAKE_CURRENT_SOURCE_DIR}/schemas/wit/common-core.wit"
+    COMMENT "Generating orchestration WIT C Layouts..."
+)
+add_custom_target(orchestration_wit_schema_gen DEPENDS ${ORCHESTRATION_WIT_GENERATED_H} ${ORCHESTRATION_WIT_GENERATED_C} ${ORCHESTRATION_WIT_GENERATED_MANIFEST})
 
 # Host-fs schema
 add_custom_command(
@@ -2075,6 +2152,14 @@ croft_add_generated_wit_library(croft_wit_common_core
     DEPENDS croft_thatch_core
 )
 
+croft_add_generated_wit_library(croft_wit_orchestration
+    SCHEMA_TARGET orchestration_wit_schema_gen
+    GENERATED_SOURCE ${ORCHESTRATION_WIT_GENERATED_C}
+    PUBLIC_LINKS croft_thatch_core croft_wit_common_core
+    TAGS wit orchestration bootstrap session builder worker xpi
+    DEPENDS croft_thatch_core croft_wit_common_core
+)
+
 croft_add_generated_wit_library(croft_wit_host_fs
     SCHEMA_TARGET host_fs_wit_schema_gen
     GENERATED_SOURCE ${HOST_FS_WIT_GENERATED_C}
@@ -2538,6 +2623,12 @@ target_link_libraries(croft_messaging PUBLIC croft_msg_frame croft_host_queue)
 croft_register_artifact(croft_messaging messaging
     TAGS tier1 messaging queue dbi-schema
     DEPENDS croft_msg_frame croft_host_queue
+)
+
+add_library(croft_xpi_registry STATIC src/runtime/xpi_registry.c)
+croft_apply_public_includes(croft_xpi_registry)
+croft_register_artifact(croft_xpi_registry metadata
+    TAGS xpi registry solver metadata
 )
 
 add_library(croft_fs STATIC src/host/host_fs.c)
@@ -3192,20 +3283,27 @@ if(CROFT_WASM3_TARGET)
         DEPENDS croft_host_log croft_host_time croft_fs
     )
 
-    add_library(croft_xpi_demo_runtime STATIC src/runtime/xpi_demo_runtime.c)
-    croft_apply_public_includes(croft_xpi_demo_runtime)
-    target_link_libraries(croft_xpi_demo_runtime
+    add_library(croft_orchestration_runtime STATIC src/runtime/orchestration_runtime.c)
+    add_dependencies(croft_orchestration_runtime orchestration_wit_schema_gen common_wit_schema_gen)
+    croft_apply_public_includes(croft_orchestration_runtime)
+    target_link_libraries(croft_orchestration_runtime
         PUBLIC
-            sapling_core
+            croft_xpi_registry
             croft_wasm_wasm3
-            croft_host_log
-            croft_host_time
-            croft_fs
-            croft_wit_world_runtime
+            croft_wit_orchestration
+            croft_wit_store_runtime
+            croft_wit_mailbox_runtime
+            croft_host_thread
     )
-    croft_register_artifact(croft_xpi_demo_runtime demo
-        TAGS tier8 xpi solver demo manifest plan wasm3 thatch json
-        DEPENDS sapling_core croft_wasm_wasm3 croft_host_log croft_host_time croft_fs croft_wit_world_runtime
+    croft_register_artifact(croft_orchestration_runtime orchestration
+        TAGS tier8 orchestration wasm3 xpi resolver session bootstrap worker
+        DEPENDS
+            croft_xpi_registry
+            croft_wasm_wasm3
+            croft_wit_orchestration
+            croft_wit_store_runtime
+            croft_wit_mailbox_runtime
+            croft_host_thread
     )
 endif()
 
@@ -3965,6 +4063,13 @@ if(CROFT_RENDER_BACKEND_SLOT_BUNDLES)
 endif()
 
 if(CROFT_EDITOR_SHELL_SLOT_BUNDLES)
+    croft_register_xpi_entrypoint(croft_orchestration_mailbox_demo_family_current_machine
+        KIND "family"
+        FOCUS "Current-machine orchestration mailbox-demo family over one shared Sapling DB and declared mailbox topology."
+        APPLICABILITY "current-machine"
+        TAGS family orchestration mailbox thread demo solver-facing
+    )
+
     croft_register_xpi_entrypoint(croft_text_editor_family_current_machine
         KIND "family"
         FOCUS "Current-machine file-backed text-editor family leaving editor-shell selection open for Lambkin."
@@ -3989,7 +4094,6 @@ if(CROFT_EDITOR_SHELL_SLOT_BUNDLES)
 endif()
 
 # ── Shared Wasm guest tooling for examples/tests ─────────────────────
-find_program(CROFT_PYTHON3_TOOL python3 HINTS ${CMAKE_PROGRAM_PATH})
 unset(CROFT_WAT2WASM_TOOL)
 set(CROFT_WAT2WASM_DEP "")
 if(TARGET croft_wasm_wasm3)
@@ -4027,47 +4131,61 @@ if(TARGET croft_wasm_wasm3 AND CROFT_WAT2WASM_TOOL)
         OUTPUT_NAME "text_bridge_guest"
         OUT_VAR WASM_TEXT_BRIDGE_BIN
     )
-    croft_add_wat_wasm_guest(wasm_json_source_guest_gen
-        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/json_source_guest.wat"
-        OUTPUT_NAME "json_source_guest"
-        OUT_VAR WASM_JSON_SOURCE_GUEST_BIN
-    )
-    croft_generate_wasm_demo_manifest(
-        NAME "json-thatch-view-demo"
-        GUEST_TARGET "wasm_json_source_guest_gen"
-        GUEST_KIND "wat"
-        WASM_PATH "${WASM_JSON_SOURCE_GUEST_BIN}"
-        OUTPUT_PATH "${CMAKE_CURRENT_BINARY_DIR}/examples/json_source_guest.manifest.json"
-        ENTRYPOINT_FAMILY "croft_json_tree_text_view_family_current_machine"
-        APPLICABILITY "current-machine-windowed"
-        ANNOUNCE_EXPORT "json_demo_announce"
-        JSON_POINTER_EXPORT "json_demo_input_ptr"
-        JSON_LENGTH_EXPORT "json_demo_input_len"
-        DATA_CONTRACT "host-json-to-thatch-v0"
-        VIEW_CONTRACT "collapsed-json-text-v0"
-        REQUIRE_BUNDLES
-            croft-host-fs-current-machine
-            croft-host-file-dialog-current-machine
-        EXPANDED_PATHS ".features"
-        PREFER_SLOT_BUNDLES
-            "croft-editor-shell-slot-current-machine=croft-editor-appkit-current-machine,croft-editor-scene-metal-native-current-machine"
-        OUT_VAR JSON_SOURCE_GUEST_MANIFEST_PATH
-    )
-    if(CROFT_PYTHON3_TOOL AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tools/solve_xpi_requirements.py")
-        croft_generate_xpi_solution(json_source_guest_solution_gen
-            XPI_PATH "${CMAKE_CURRENT_BINARY_DIR}/croft-xpi.json"
-            MANIFEST_PATH "${JSON_SOURCE_GUEST_MANIFEST_PATH}"
-            OUTPUT_PATH "${CMAKE_CURRENT_BINARY_DIR}/examples/json_source_guest.solution.json"
-            DEPENDS
-                wasm_json_source_guest_gen
-                "${JSON_SOURCE_GUEST_MANIFEST_PATH}"
-                "${CMAKE_CURRENT_BINARY_DIR}/croft-xpi.json"
-            OUT_VAR JSON_SOURCE_GUEST_SOLUTION_PATH
-        )
-    endif()
 endif()
 
 if(TARGET croft_wasm_wasm3 AND CROFT_LLVM_CLANG_TOOL AND CROFT_WASM_LD_TOOL)
+    croft_add_wit_wasm_guest(wasm_orchestration_worker_toy_gen
+        OUTPUT_NAME "orchestration_worker_toy"
+        OUT_VAR WASM_ORCH_WORKER_TOY_BIN
+        SOURCES
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/orchestration_worker_toy.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/orchestration_guest_runtime.c"
+            "${ORCHESTRATION_WIT_GENERATED_C}"
+        DEPENDS
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/orchestration_guest_runtime.h"
+            "${ORCHESTRATION_WIT_GENERATED_H}"
+    )
+    croft_add_wit_wasm_guest(wasm_orchestration_bootstrap_toy_gen
+        OUTPUT_NAME "orchestration_bootstrap_toy"
+        OUT_VAR WASM_ORCH_BOOTSTRAP_TOY_BIN
+        SOURCES
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/orchestration_bootstrap_toy.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/orchestration_guest_runtime.c"
+            "${ORCHESTRATION_WIT_GENERATED_C}"
+        DEPENDS
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/orchestration_guest_runtime.h"
+            "${ORCHESTRATION_WIT_GENERATED_H}"
+            "${WASM_ORCH_WORKER_TOY_BIN}"
+        COMPILE_DEFINITIONS
+            CROFT_ORCH_TOY_WORKER_WASM_PATH="${WASM_ORCH_WORKER_TOY_BIN}"
+    )
+    croft_add_wit_wasm_guest(wasm_orchestration_worker_json_gen
+        OUTPUT_NAME "orchestration_worker_json"
+        OUT_VAR WASM_ORCH_WORKER_JSON_BIN
+        SOURCES
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/orchestration_worker_json.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/orchestration_guest_runtime.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/thatch_json_guest.c"
+            "${ORCHESTRATION_WIT_GENERATED_C}"
+        DEPENDS
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/orchestration_guest_runtime.h"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/thatch_json_guest.h"
+            "${ORCHESTRATION_WIT_GENERATED_H}"
+    )
+    croft_add_wit_wasm_guest(wasm_orchestration_bootstrap_json_gen
+        OUTPUT_NAME "orchestration_bootstrap_json"
+        OUT_VAR WASM_ORCH_BOOTSTRAP_JSON_BIN
+        SOURCES
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/orchestration_bootstrap_json.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/orchestration_guest_runtime.c"
+            "${ORCHESTRATION_WIT_GENERATED_C}"
+        DEPENDS
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/orchestration_guest_runtime.h"
+            "${ORCHESTRATION_WIT_GENERATED_H}"
+            "${WASM_ORCH_WORKER_JSON_BIN}"
+        COMPILE_DEFINITIONS
+            CROFT_ORCH_JSON_WORKER_WASM_PATH="${WASM_ORCH_WORKER_JSON_BIN}"
+    )
     croft_add_wit_wasm_guest(wasm_wit_world_bridge_guest_gen
         OUTPUT_NAME "wit_world_bridge_guest"
         OUT_VAR WASM_WIT_WORLD_BRIDGE_BIN
@@ -4290,20 +4408,19 @@ if(TARGET wasm_text_bridge_guest_gen)
     add_dependencies(example_wit_text_wasm_host wasm_text_bridge_guest_gen common_wit_schema_gen)
 endif()
 
-if(TARGET croft_xpi_demo_runtime)
-    croft_add_example(example_xpi_plan_runner
-        SOURCES examples/xpi_plan_runner.c
-        LINKS croft_xpi_demo_runtime
-        REQUIRES croft_xpi_demo_runtime
+if(TARGET croft_orchestration_runtime)
+    croft_add_example(example_orchestration_bootstrap_runner
+        SOURCES examples/orchestration_bootstrap_runner.c
+        LINKS croft_orchestration_runtime
+        REQUIRES croft_orchestration_runtime
         NO_DERIVE_REQUIRES
-        TAGS xpi solver demo wasm manifest plan json thatch
-        FOCUS "Runs a solved XPI Wasm demo plan, executes the guest, and renders the selected view contract."
+        TAGS orchestration wasm wasm3 bootstrap runner session
+        FOCUS "Runs a bootstrap Wasm module through the orchestration control plane and joins the resulting worker session."
     )
-    if(TARGET json_source_guest_solution_gen)
-        add_dependencies(example_xpi_plan_runner json_source_guest_solution_gen)
-        target_compile_definitions(example_xpi_plan_runner PRIVATE
-            CROFT_DEFAULT_XPI_DEMO_MANIFEST_PATH="${JSON_SOURCE_GUEST_MANIFEST_PATH}"
-            CROFT_DEFAULT_XPI_DEMO_PLAN_PATH="${JSON_SOURCE_GUEST_SOLUTION_PATH}")
+    if(TARGET wasm_orchestration_bootstrap_json_gen)
+        add_dependencies(example_orchestration_bootstrap_runner wasm_orchestration_bootstrap_json_gen)
+        target_compile_definitions(example_orchestration_bootstrap_runner PRIVATE
+            CROFT_DEFAULT_ORCHESTRATION_BOOTSTRAP_WASM_PATH="${WASM_ORCH_BOOTSTRAP_JSON_BIN}")
     endif()
 endif()
 
@@ -4626,10 +4743,15 @@ if(CROFT_BUILD_TESTS)
         "tests/sapling_tests/integration/*.c"
     )
     list(REMOVE_ITEM SAPLING_UNIT_TESTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/sapling_tests/unit/wasm_guest_example.c")
-    if(NOT TARGET croft_wasm_wasm3 OR NOT TARGET wasm_json_source_guest_gen
-            OR NOT TARGET json_source_guest_solution_gen)
+    if(NOT TARGET croft_orchestration_runtime)
         list(REMOVE_ITEM SAPLING_UNIT_TESTS
-            "${CMAKE_CURRENT_SOURCE_DIR}/tests/sapling_tests/unit/test_wasm_json_demo_manifest_smoke.c")
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/sapling_tests/unit/test_wit_orchestration_runtime_smoke.c")
+    endif()
+    if(NOT TARGET croft_orchestration_runtime
+            OR NOT TARGET wasm_orchestration_bootstrap_toy_gen
+            OR NOT TARGET wasm_orchestration_bootstrap_json_gen)
+        list(REMOVE_ITEM SAPLING_UNIT_TESTS
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/sapling_tests/unit/test_wasm_orchestration_demos_smoke.c")
     endif()
     foreach(test_src IN LISTS SAPLING_UNIT_TESTS)
         get_filename_component(test_name ${test_src} NAME_WE)
@@ -4711,9 +4833,14 @@ if(CROFT_BUILD_TESTS)
                 croft_wit_wasi_random_world
             )
         endif()
-        if(test_name STREQUAL "test_wasm_json_demo_manifest_smoke")
+        if(test_name STREQUAL "test_wit_orchestration_runtime_smoke")
             target_link_libraries(${test_name} PRIVATE
-                croft_xpi_demo_runtime
+                croft_orchestration_runtime
+            )
+        endif()
+        if(test_name STREQUAL "test_wasm_orchestration_demos_smoke")
+            target_link_libraries(${test_name} PRIVATE
+                croft_orchestration_runtime
             )
         endif()
         if(test_name STREQUAL "test_wasi_vendor_report_smoke")
@@ -4783,13 +4910,18 @@ if(CROFT_BUILD_TESTS)
             )
             target_include_directories(${test_name} PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
         endif()
-        if(test_name STREQUAL "test_wasm_json_demo_manifest_smoke")
+        if(test_name STREQUAL "test_wit_orchestration_runtime_smoke")
+            add_dependencies(${test_name} orchestration_wit_schema_gen croft_xpi_registry)
+            target_include_directories(${test_name} PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
+        endif()
+        if(test_name STREQUAL "test_wasm_orchestration_demos_smoke")
             add_dependencies(${test_name}
-                wasm_json_source_guest_gen
-                json_source_guest_solution_gen)
+                orchestration_wit_schema_gen
+                wasm_orchestration_bootstrap_toy_gen
+                wasm_orchestration_bootstrap_json_gen)
             target_compile_definitions(${test_name} PRIVATE
-                CROFT_WASM_JSON_DEMO_MANIFEST_PATH="${JSON_SOURCE_GUEST_MANIFEST_PATH}"
-                CROFT_WASM_JSON_DEMO_PLAN_PATH="${JSON_SOURCE_GUEST_SOLUTION_PATH}")
+                CROFT_ORCH_TOY_BOOTSTRAP_WASM_PATH="${WASM_ORCH_BOOTSTRAP_TOY_BIN}"
+                CROFT_ORCH_JSON_BOOTSTRAP_WASM_PATH="${WASM_ORCH_BOOTSTRAP_JSON_BIN}")
         endif()
         if(test_name STREQUAL "test_wit_scoped_names_smoke")
             add_dependencies(${test_name} scoped_names_wit_schema_gen)
@@ -4871,10 +5003,78 @@ if(NOT CROFT_XPI_ENTRYPOINT_ENTRIES)
 endif()
 string(JOIN ",\n" CROFT_XPI_ENTRYPOINT_ENTRIES_JSON ${CROFT_XPI_ENTRYPOINT_ENTRIES})
 croft_collect_applicability_traits(CROFT_CURRENT_MACHINE_TRAITS "current-machine")
+if(APPLE)
+    list(APPEND CROFT_CURRENT_MACHINE_TRAITS windowed)
+    list(REMOVE_DUPLICATES CROFT_CURRENT_MACHINE_TRAITS)
+endif()
 croft_json_array(CROFT_CURRENT_MACHINE_TRAITS_JSON ${CROFT_CURRENT_MACHINE_TRAITS})
 croft_json_string(CROFT_XPI_BUILD_SYSTEM_JSON "${CMAKE_SYSTEM_NAME}")
 file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/croft-xpi.json"
     CONTENT "{\n  \"context\": {\n    \"build_system\": ${CROFT_XPI_BUILD_SYSTEM_JSON},\n    \"current_machine_traits\": ${CROFT_CURRENT_MACHINE_TRAITS_JSON}\n  },\n  \"artifacts\": [\n${CROFT_XPI_ARTIFACT_ENTRIES_JSON}\n  ],\n  \"substrates\": [\n${CROFT_XPI_SUBSTRATE_ENTRIES_JSON}\n  ],\n  \"slots\": [\n${CROFT_XPI_SLOT_ENTRIES_JSON}\n  ],\n  \"bundles\": [\n${CROFT_XPI_BUNDLE_ENTRIES_JSON}\n  ],\n  \"entrypoints\": [\n${CROFT_XPI_ENTRYPOINT_ENTRIES_JSON}\n  ]\n}\n")
+
+get_property(CROFT_DEFINED_XPI_SUBSTRATES GLOBAL PROPERTY CROFT_DEFINED_XPI_SUBSTRATES)
+if(NOT CROFT_DEFINED_XPI_SUBSTRATES OR CROFT_DEFINED_XPI_SUBSTRATES MATCHES "-NOTFOUND$")
+    set(CROFT_DEFINED_XPI_SUBSTRATES "")
+endif()
+list(REMOVE_DUPLICATES CROFT_DEFINED_XPI_SUBSTRATES)
+
+get_property(CROFT_DEFINED_XPI_SLOTS GLOBAL PROPERTY CROFT_DEFINED_XPI_SLOTS)
+if(NOT CROFT_DEFINED_XPI_SLOTS OR CROFT_DEFINED_XPI_SLOTS MATCHES "-NOTFOUND$")
+    set(CROFT_DEFINED_XPI_SLOTS "")
+endif()
+list(REMOVE_DUPLICATES CROFT_DEFINED_XPI_SLOTS)
+
+get_property(CROFT_DEFINED_XPI_BUNDLES GLOBAL PROPERTY CROFT_DEFINED_XPI_BUNDLES)
+if(NOT CROFT_DEFINED_XPI_BUNDLES OR CROFT_DEFINED_XPI_BUNDLES MATCHES "-NOTFOUND$")
+    set(CROFT_DEFINED_XPI_BUNDLES "")
+endif()
+list(REMOVE_DUPLICATES CROFT_DEFINED_XPI_BUNDLES)
+
+get_property(CROFT_DEFINED_XPI_ENTRYPOINTS GLOBAL PROPERTY CROFT_DEFINED_XPI_ENTRYPOINTS)
+if(NOT CROFT_DEFINED_XPI_ENTRYPOINTS OR CROFT_DEFINED_XPI_ENTRYPOINTS MATCHES "-NOTFOUND$")
+    set(CROFT_DEFINED_XPI_ENTRYPOINTS "")
+endif()
+list(REMOVE_DUPLICATES CROFT_DEFINED_XPI_ENTRYPOINTS)
+
+set(CROFT_XPI_REGISTRY_ARTIFACT_C_ENTRIES "")
+foreach(target IN LISTS CROFT_REGISTERED_ARTIFACT_TARGETS)
+    croft_render_xpi_registry_artifact_entry(entry "${target}")
+    list(APPEND CROFT_XPI_REGISTRY_ARTIFACT_C_ENTRIES "${entry}")
+endforeach()
+string(JOIN ",\n" CROFT_XPI_REGISTRY_ARTIFACTS_C ${CROFT_XPI_REGISTRY_ARTIFACT_C_ENTRIES})
+
+set(CROFT_XPI_REGISTRY_SUBSTRATE_C_ENTRIES "")
+foreach(name IN LISTS CROFT_DEFINED_XPI_SUBSTRATES)
+    croft_render_xpi_registry_substrate_entry(entry "${name}")
+    list(APPEND CROFT_XPI_REGISTRY_SUBSTRATE_C_ENTRIES "${entry}")
+endforeach()
+string(JOIN ",\n" CROFT_XPI_REGISTRY_SUBSTRATES_C ${CROFT_XPI_REGISTRY_SUBSTRATE_C_ENTRIES})
+
+set(CROFT_XPI_REGISTRY_SLOT_C_ENTRIES "")
+foreach(name IN LISTS CROFT_DEFINED_XPI_SLOTS)
+    croft_render_xpi_registry_slot_entry(entry "${name}")
+    list(APPEND CROFT_XPI_REGISTRY_SLOT_C_ENTRIES "${entry}")
+endforeach()
+string(JOIN ",\n" CROFT_XPI_REGISTRY_SLOTS_C ${CROFT_XPI_REGISTRY_SLOT_C_ENTRIES})
+
+set(CROFT_XPI_REGISTRY_BUNDLE_C_ENTRIES "")
+foreach(name IN LISTS CROFT_DEFINED_XPI_BUNDLES)
+    croft_render_xpi_registry_bundle_entry(entry "${name}")
+    list(APPEND CROFT_XPI_REGISTRY_BUNDLE_C_ENTRIES "${entry}")
+endforeach()
+string(JOIN ",\n" CROFT_XPI_REGISTRY_BUNDLES_C ${CROFT_XPI_REGISTRY_BUNDLE_C_ENTRIES})
+
+set(CROFT_XPI_REGISTRY_ENTRYPOINT_C_ENTRIES "")
+foreach(name IN LISTS CROFT_DEFINED_XPI_ENTRYPOINTS)
+    croft_render_xpi_registry_entrypoint_entry(entry "${name}")
+    list(APPEND CROFT_XPI_REGISTRY_ENTRYPOINT_C_ENTRIES "${entry}")
+endforeach()
+string(JOIN ",\n" CROFT_XPI_REGISTRY_ENTRYPOINTS_C ${CROFT_XPI_REGISTRY_ENTRYPOINT_C_ENTRIES})
+
+croft_c_string(CROFT_XPI_BUILD_SYSTEM_C "${CMAKE_SYSTEM_NAME}")
+croft_c_joined_string(CROFT_XPI_CURRENT_MACHINE_TRAITS_C ${CROFT_CURRENT_MACHINE_TRAITS})
+file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/generated/croft_xpi_registry.inc"
+    CONTENT "static const CroftXpiBuildContext g_croft_xpi_build_context = {\n    ${CROFT_XPI_BUILD_SYSTEM_C},\n    ${CROFT_XPI_CURRENT_MACHINE_TRAITS_C}\n};\n\nstatic const CroftXpiArtifactDescriptor g_croft_xpi_artifacts[] = {\n${CROFT_XPI_REGISTRY_ARTIFACTS_C}\n};\n\nstatic const CroftXpiSubstrateDescriptor g_croft_xpi_substrates[] = {\n${CROFT_XPI_REGISTRY_SUBSTRATES_C}\n};\n\nstatic const CroftXpiSlotDescriptor g_croft_xpi_slots[] = {\n${CROFT_XPI_REGISTRY_SLOTS_C}\n};\n\nstatic const CroftXpiBundleDescriptor g_croft_xpi_bundles[] = {\n${CROFT_XPI_REGISTRY_BUNDLES_C}\n};\n\nstatic const CroftXpiEntrypointDescriptor g_croft_xpi_entrypoints[] = {\n${CROFT_XPI_REGISTRY_ENTRYPOINTS_C}\n};\n\nstatic const CroftXpiRegistry g_croft_xpi_registry = {\n    &g_croft_xpi_build_context,\n    g_croft_xpi_artifacts,\n    (uint32_t)(sizeof(g_croft_xpi_artifacts) / sizeof(g_croft_xpi_artifacts[0])),\n    g_croft_xpi_substrates,\n    (uint32_t)(sizeof(g_croft_xpi_substrates) / sizeof(g_croft_xpi_substrates[0])),\n    g_croft_xpi_slots,\n    (uint32_t)(sizeof(g_croft_xpi_slots) / sizeof(g_croft_xpi_slots[0])),\n    g_croft_xpi_bundles,\n    (uint32_t)(sizeof(g_croft_xpi_bundles) / sizeof(g_croft_xpi_bundles[0])),\n    g_croft_xpi_entrypoints,\n    (uint32_t)(sizeof(g_croft_xpi_entrypoints) / sizeof(g_croft_xpi_entrypoints[0]))\n};\n\nconst CroftXpiRegistry *croft_xpi_registry_current(void)\n{\n    return &g_croft_xpi_registry;\n}\n")
 
 get_property(CROFT_INSTALL_TARGETS GLOBAL PROPERTY CROFT_INSTALL_TARGETS)
 if(NOT CROFT_INSTALL_TARGETS)
@@ -4903,6 +5103,7 @@ endif()
 set(CROFT_PUBLIC_GENERATED_HEADERS
     ${WIT_GENERATED_H}
     ${COMMON_WIT_GENERATED_H}
+    ${ORCHESTRATION_WIT_GENERATED_H}
     ${HOST_FS_WIT_GENERATED_H}
     ${HOST_CLOCK_WIT_GENERATED_H}
     ${HOST_WINDOW_WIT_GENERATED_H}

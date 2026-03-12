@@ -71,3 +71,7 @@ local_logs/
 # Local dependency bootstrap output
 local_deps/
 .claude/settings.local.json
+
+# Python cache files from temporary tooling/scaffolding
+__pycache__/
+*.pyc

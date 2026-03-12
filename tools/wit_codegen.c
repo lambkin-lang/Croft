@@ -1784,6 +1784,11 @@ static int scan_source_for_package_decl(const char *src,
                                         int len,
                                         char *out,
                                         int n);
+static int file_declares_package_full(const char *path, const char *package_full);
+static int find_flat_package_wit_dir(const char *root_dir,
+                                     const char *target_package_full,
+                                     char *out,
+                                     int n);
 static int parse_wit(Scanner *s, WitRegistry *reg);
 static int resolve_use_bindings(WitRegistry *reg);
 static int resolve_world_bindings(WitRegistry *reg);
@@ -3166,6 +3171,7 @@ static int find_target_package_wit_dir(const WitRegistry *reg,
     char current_package_name[MAX_NAME];
     char target_package_name[MAX_NAME];
     char current_wit_dir[MAX_PATH_TEXT];
+    char source_wit_dir[MAX_PATH_TEXT];
     char package_dir[MAX_PATH_TEXT];
     char packages_root[MAX_PATH_TEXT];
 
@@ -3173,6 +3179,7 @@ static int find_target_package_wit_dir(const WitRegistry *reg,
         return 0;
     }
     out[0] = '\0';
+    path_dirname(reg->source_path, source_wit_dir, (int)sizeof(source_wit_dir));
 
     if (target_package_full && target_package_full[0] != '\0'
             && strcmp(target_package_full, reg->package_full) != 0) {
@@ -3201,11 +3208,36 @@ static int find_target_package_wit_dir(const WitRegistry *reg,
             snprintf(out, n, "%s", candidate);
             return 1;
         }
+        if (current_wit_dir[0] != '\0'
+                && find_flat_package_wit_dir(current_wit_dir,
+                                             target_package_full,
+                                             out,
+                                             n)) {
+            return 1;
+        }
+        if (packages_root[0] != '\0'
+                && find_flat_package_wit_dir(packages_root,
+                                             target_package_full,
+                                             out,
+                                             n)) {
+            return 1;
+        }
+        if (source_wit_dir[0] != '\0'
+                && find_flat_package_wit_dir(source_wit_dir,
+                                             target_package_full,
+                                             out,
+                                             n)) {
+            return 1;
+        }
+        for (int i = 0; i < g_package_root_count; i++) {
+            if (find_flat_package_wit_dir(g_package_roots[i], target_package_full, out, n)) {
+                return 1;
+            }
+        }
         return 0;
     }
 
-    path_dirname(reg->source_path, current_wit_dir, (int)sizeof(current_wit_dir));
-    snprintf(out, n, "%s", current_wit_dir);
+    snprintf(out, n, "%s", source_wit_dir);
     return 1;
 }
 
@@ -3298,6 +3330,111 @@ static int find_named_decl_wit_path_in_dir(const char *wit_dir,
     return 0;
 }
 
+static int find_named_decl_wit_path_in_dir_for_package(const char *wit_dir,
+                                                       const char *keyword,
+                                                       const char *decl_name,
+                                                       const char *target_package_full,
+                                                       char *out,
+                                                       int n)
+{
+    DIR *dir;
+    struct dirent *entry;
+
+    if (!wit_dir || !keyword || !decl_name || !target_package_full || !out || n <= 0) {
+        return 0;
+    }
+    out[0] = '\0';
+
+    dir = opendir(wit_dir);
+    if (!dir) {
+        return 0;
+    }
+
+    while ((entry = readdir(dir)) != NULL) {
+        char candidate[MAX_PATH_TEXT];
+
+        if (entry->d_name[0] == '.') {
+            continue;
+        }
+        if (!path_has_extension(entry->d_name, ".wit")) {
+            continue;
+        }
+        snprintf(candidate, sizeof(candidate), "%s/%s", wit_dir, entry->d_name);
+        if (!file_declares_package_full(candidate, target_package_full)) {
+            continue;
+        }
+        if (!file_declares_named_wit_item(candidate, keyword, decl_name)) {
+            continue;
+        }
+        snprintf(out, n, "%s", candidate);
+        closedir(dir);
+        return 1;
+    }
+
+    closedir(dir);
+    return 0;
+}
+
+static int file_declares_package_full(const char *path, const char *package_full)
+{
+    char *src;
+    long len = 0;
+    char raw_package[MAX_PACKAGE];
+    int found = 0;
+
+    if (!path || !package_full || package_full[0] == '\0') return 0;
+    src = read_text_file(path, &len);
+    if (!src) {
+        return 0;
+    }
+    if (scan_source_for_package_decl(src, (int)len, raw_package, (int)sizeof(raw_package))
+            && strcmp(raw_package, package_full) == 0) {
+        found = 1;
+    }
+    free(src);
+    return found;
+}
+
+static int find_flat_package_wit_dir(const char *root_dir,
+                                     const char *target_package_full,
+                                     char *out,
+                                     int n)
+{
+    DIR *dir;
+    struct dirent *entry;
+
+    if (!root_dir || !target_package_full || target_package_full[0] == '\0' || !out || n <= 0) {
+        return 0;
+    }
+    out[0] = '\0';
+
+    dir = opendir(root_dir);
+    if (!dir) {
+        return 0;
+    }
+
+    while ((entry = readdir(dir)) != NULL) {
+        char candidate[MAX_PATH_TEXT];
+
+        if (entry->d_name[0] == '.') {
+            continue;
+        }
+        if (!path_has_extension(entry->d_name, ".wit")) {
+            continue;
+        }
+        snprintf(candidate, sizeof(candidate), "%s/%s", root_dir, entry->d_name);
+        if (!file_declares_package_full(candidate, target_package_full)) {
+            continue;
+        }
+        snprintf(out, n, "%s", root_dir);
+        closedir(dir);
+        return 1;
+    }
+
+    closedir(dir);
+    return 0;
+}
+
 static int resolve_import_wit_path(const WitRegistry *reg,
                                    const char *target_package_full,
                                    const char *target_interface_name,
@@ -3314,6 +3451,16 @@ static int resolve_import_wit_path(const WitRegistry *reg,
                                      target_package_full ? target_package_full : reg->package_full,
                                      wit_dir,
                                      (int)sizeof(wit_dir))) {
+        if (target_package_full && target_package_full[0] != '\0'
+                && strcmp(target_package_full, reg->package_full) != 0) {
+            path_dirname(reg->source_path, wit_dir, (int)sizeof(wit_dir));
+            return find_named_decl_wit_path_in_dir_for_package(wit_dir,
+                                                               "interface",
+                                                               target_interface_name,
+                                                               target_package_full,
+                                                               out,
+                                                               n);
+        }
         return 0;
     }
     snprintf(out, n, "%s/%s.wit", wit_dir, target_interface_name);
@@ -3340,6 +3487,16 @@ static int resolve_import_world_wit_path(const WitRegistry *reg,
                                      target_package_full ? target_package_full : reg->package_full,
                                      wit_dir,
                                      (int)sizeof(wit_dir))) {
+        if (target_package_full && target_package_full[0] != '\0'
+                && strcmp(target_package_full, reg->package_full) != 0) {
+            path_dirname(reg->source_path, wit_dir, (int)sizeof(wit_dir));
+            return find_named_decl_wit_path_in_dir_for_package(wit_dir,
+                                                               "world",
+                                                               target_world_name,
+                                                               target_package_full,
+                                                               out,
+                                                               n);
+        }
         return 0;
     }
 
@@ -5851,6 +6008,25 @@ static int wit_world_item_matches_world(const WitWorldItem *item, const WitWorld
         && strcmp(item->world_name, world->name) == 0;
 }
 
+static int wit_world_is_primary_package(const WitRegistry *reg, const WitWorld *world)
+{
+    if (!reg || !world) return 0;
+    return strcmp(world->package_full, reg->package_full) == 0;
+}
+
+static uint32_t wit_primary_world_count(const WitRegistry *reg)
+{
+    uint32_t count = 0u;
+
+    if (!reg) return 0u;
+    for (int i = 0; i < reg->world_count; i++) {
+        if (wit_world_is_primary_package(reg, &reg->worlds[i])) {
+            count++;
+        }
+    }
+    return count;
+}
+
 static uint32_t wit_world_binding_count(const WitRegistry *reg, const WitWorld *world)
 {
     uint32_t count = 0;
@@ -6990,6 +7166,10 @@ static void emit_header(FILE *out, const WitRegistry *reg,
         char imports_type[MAX_NAME * 2];
         char exports_type[MAX_NAME * 2];
 
+        if (!wit_world_is_primary_package(reg, &reg->worlds[i])) {
+            continue;
+        }
+
         if (!collect_world_endpoints(reg,
                                      reg->worlds[i].package_full,
                                      reg->worlds[i].name,
@@ -7277,6 +7457,10 @@ static void emit_manifest(FILE *out, const WitRegistry *reg,
         char wit_name[MAX_SYMBOL];
         char metadata[MAX_METADATA];
 
+        if (!wit_world_is_primary_package(reg, &reg->worlds[i])) {
+            continue;
+        }
+
         if (reg->worlds[i].package_full[0] != '\0') {
             snprintf(wit_name, sizeof(wit_name), "%s/%s", reg->worlds[i].package_full, reg->worlds[i].name);
         } else {
@@ -7300,6 +7484,12 @@ static void emit_manifest(FILE *out, const WitRegistry *reg,
         char wit_name[MAX_SYMBOL];
         char target_name[MAX_SYMBOL];
         char metadata[MAX_METADATA];
+        const WitWorld *owner_world =
+            find_world_decl_const(reg, reg->world_items[i].package_full, reg->world_items[i].world_name);
+
+        if (!owner_world || !wit_world_is_primary_package(reg, owner_world)) {
+            continue;
+        }
 
         switch (reg->world_items[i].kind) {
         case WIT_WORLD_ITEM_INCLUDE:
@@ -8334,7 +8524,7 @@ static void emit_source(FILE *out, const WitRegistry *reg,
         fprintf(out, "    (uint32_t)(sizeof(%s) / sizeof(%s[0]));\n\n",
                 interfaces_symbol, interfaces_symbol);
     }
-    if (reg->world_count > 0) {
+    if (wit_primary_world_count(reg) > 0u) {
         uint32_t binding_offset = 0u;
 
         wit_worlds_symbol(reg, worlds_symbol, (int)sizeof(worlds_symbol));
@@ -8343,6 +8533,10 @@ static void emit_source(FILE *out, const WitRegistry *reg,
         fprintf(out, "const SapWitWorldDescriptor %s[] = {\n", worlds_symbol);
         for (int i = 0; i < reg->world_count; i++) {
             uint32_t binding_count = wit_world_binding_count(reg, &reg->worlds[i]);
+
+            if (!wit_world_is_primary_package(reg, &reg->worlds[i])) {
+                continue;
+            }
 
             fprintf(out, "    {");
             emit_c_string_literal(out, reg->worlds[i].package_full);
@@ -8362,7 +8556,7 @@ static void emit_source(FILE *out, const WitRegistry *reg,
         fprintf(out, "    (uint32_t)(sizeof(%s) / sizeof(%s[0]));\n\n",
                 worlds_symbol, worlds_symbol);
     }
-    if (reg->world_item_count > 0) {
+    if (wit_primary_world_count(reg) > 0u && reg->world_item_count > 0) {
         wit_world_bindings_symbol(reg, world_bindings_symbol, (int)sizeof(world_bindings_symbol));
         wit_world_bindings_count_symbol(reg,
                                         world_bindings_count_symbol,
@@ -8370,6 +8564,9 @@ static void emit_source(FILE *out, const WitRegistry *reg,
         fprintf(out, "/* WIT world binding metadata for package %s. */\n", reg->package_full);
         fprintf(out, "const SapWitWorldBindingDescriptor %s[] = {\n", world_bindings_symbol);
         for (int i = 0; i < reg->world_count; i++) {
+            if (!wit_world_is_primary_package(reg, &reg->worlds[i])) {
+                continue;
+            }
             for (int j = 0; j < reg->world_item_count; j++) {
                 if (!wit_world_item_matches_world(&reg->world_items[j], &reg->worlds[i])) {
                     continue;
@@ -8441,6 +8638,10 @@ static void emit_source(FILE *out, const WitRegistry *reg,
         int export_count = 0;
         char imports_type[MAX_NAME * 2];
         char exports_type[MAX_NAME * 2];
+
+        if (!wit_world_is_primary_package(reg, &reg->worlds[i])) {
+            continue;
+        }
 
         if (!collect_world_endpoints(reg,
                                      reg->worlds[i].package_full,
