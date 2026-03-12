@@ -236,20 +236,27 @@ The repo also now carries a minimal solver-facing Wasm demo path:
   composition plan emitted by the build from that request plus `croft-xpi.json`
 - that manifest names a solver-facing family entrypoint, hard bundle
   requirements, open-slot preferences, and guest/contract metadata
+- the guest export surface now carries generic `payload_pointer` /
+  `payload_length` aliases alongside the earlier `json_pointer` /
+  `json_length` names, so the plan consumer is not hard-wired to one payload
+  kind even though the current demo still uses JSON
 - `tools/solve_xpi_requirements.py` consumes that manifest and `build/croft-xpi.json`
   to emit a composition plan with selected bundles, provider artifacts, shared
   substrates, helper interfaces, declared worlds, and expanded surfaces
-- `tests/sapling_tests/unit/test_wasm_json_demo_manifest_smoke.c` then uses the
-  manifest to validate the request shape and the solved plan to load a minimal
-  Wasm guest, read JSON from guest memory, parse it into Thatch, and render a
-  collapsed text view
+- `src/runtime/xpi_demo_runtime.c` and `include/croft/xpi_demo_runtime.h` are
+  now the C-side consumer for that boundary: they load the manifest and solved
+  plan, execute the guest payload, and hand contract-specific interpretation
+  off to Thatch/JSON rendering
+- `example_xpi_plan_runner` is the small executable entrypoint on top of that
+  runtime, and `tests/sapling_tests/unit/test_wasm_json_demo_manifest_smoke.c`
+  now verifies the same path instead of re-implementing it inside the test
 
 That path is intentionally still heuristic, but it proves the current XPI
 graph is already sufficient for an early Lambkin-style "pick a family, satisfy
 the hard requirements, choose one bundle for each open slot, then execute"
 loop. The Python code is deliberately kept thin here: it is only temporary
 build-time solve scaffolding, while the lasting contract boundary is the JSON
-request/plan pair plus the C-side consumer.
+request/plan pair plus the C-side runtime/runner.
 
 `build/reports/croft-wasi-vendor-drift.txt` and
 `build/reports/croft-wasi-vendor-drift.json` now complement that metadata by

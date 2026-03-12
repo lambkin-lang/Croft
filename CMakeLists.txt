@@ -1200,7 +1200,7 @@ endfunction()
 function(croft_generate_wasm_demo_manifest)
     cmake_parse_arguments(DEMO
         ""
-        "NAME;GUEST_TARGET;GUEST_KIND;WASM_PATH;OUTPUT_PATH;ENTRYPOINT_FAMILY;APPLICABILITY;ANNOUNCE_EXPORT;JSON_POINTER_EXPORT;JSON_LENGTH_EXPORT;DATA_CONTRACT;VIEW_CONTRACT;OUT_VAR"
+        "NAME;GUEST_TARGET;GUEST_KIND;WASM_PATH;OUTPUT_PATH;ENTRYPOINT_FAMILY;APPLICABILITY;ANNOUNCE_EXPORT;PAYLOAD_POINTER_EXPORT;PAYLOAD_LENGTH_EXPORT;JSON_POINTER_EXPORT;JSON_LENGTH_EXPORT;DATA_CONTRACT;VIEW_CONTRACT;OUT_VAR"
         "REQUIRE_BUNDLES;EXPANDED_PATHS;PREFER_SLOT_BUNDLES"
         ${ARGN})
     if(NOT DEMO_NAME OR NOT DEMO_WASM_PATH OR NOT DEMO_OUTPUT_PATH)
@@ -1241,14 +1241,32 @@ function(croft_generate_wasm_demo_manifest)
     else()
         set(announce_export_json "null")
     endif()
-    if(DEMO_JSON_POINTER_EXPORT)
-        croft_json_string(json_pointer_export_json "${DEMO_JSON_POINTER_EXPORT}")
+    if(DEMO_PAYLOAD_POINTER_EXPORT)
+        set(payload_pointer_export "${DEMO_PAYLOAD_POINTER_EXPORT}")
+    elseif(DEMO_JSON_POINTER_EXPORT)
+        set(payload_pointer_export "${DEMO_JSON_POINTER_EXPORT}")
     else()
+        set(payload_pointer_export "")
+    endif()
+    if(DEMO_PAYLOAD_LENGTH_EXPORT)
+        set(payload_length_export "${DEMO_PAYLOAD_LENGTH_EXPORT}")
+    elseif(DEMO_JSON_LENGTH_EXPORT)
+        set(payload_length_export "${DEMO_JSON_LENGTH_EXPORT}")
+    else()
+        set(payload_length_export "")
+    endif()
+    if(payload_pointer_export)
+        croft_json_string(payload_pointer_export_json "${payload_pointer_export}")
+        croft_json_string(json_pointer_export_json "${payload_pointer_export}")
+    else()
+        set(payload_pointer_export_json "null")
         set(json_pointer_export_json "null")
     endif()
-    if(DEMO_JSON_LENGTH_EXPORT)
-        croft_json_string(json_length_export_json "${DEMO_JSON_LENGTH_EXPORT}")
+    if(payload_length_export)
+        croft_json_string(payload_length_export_json "${payload_length_export}")
+        croft_json_string(json_length_export_json "${payload_length_export}")
     else()
+        set(payload_length_export_json "null")
         set(json_length_export_json "null")
     endif()
     if(DEMO_DATA_CONTRACT)
@@ -1289,12 +1307,14 @@ function(croft_generate_wasm_demo_manifest)
   \"name\": ${name_json},
   \"kind\": ${kind_json},
   \"applicability\": ${applicability_json},
-  \"guest\": {
+    \"guest\": {
     \"kind\": ${guest_kind_json},
     \"target\": ${guest_target_json},
     \"wasm_path\": ${wasm_path_json},
     \"exports\": {
       \"announce\": ${announce_export_json},
+      \"payload_pointer\": ${payload_pointer_export_json},
+      \"payload_length\": ${payload_length_export_json},
       \"json_pointer\": ${json_pointer_export_json},
       \"json_length\": ${json_length_export_json}
     }
@@ -3171,6 +3191,22 @@ if(CROFT_WASM3_TARGET)
         TAGS tier4 wasm wasm3 host
         DEPENDS croft_host_log croft_host_time croft_fs
     )
+
+    add_library(croft_xpi_demo_runtime STATIC src/runtime/xpi_demo_runtime.c)
+    croft_apply_public_includes(croft_xpi_demo_runtime)
+    target_link_libraries(croft_xpi_demo_runtime
+        PUBLIC
+            sapling_core
+            croft_wasm_wasm3
+            croft_host_log
+            croft_host_time
+            croft_fs
+            croft_wit_world_runtime
+    )
+    croft_register_artifact(croft_xpi_demo_runtime demo
+        TAGS tier8 xpi solver demo manifest plan wasm3 thatch json
+        DEPENDS sapling_core croft_wasm_wasm3 croft_host_log croft_host_time croft_fs croft_wit_world_runtime
+    )
 endif()
 
 if(CROFT_MINIAUDIO_INCLUDE_DIR)
@@ -4254,6 +4290,23 @@ if(TARGET wasm_text_bridge_guest_gen)
     add_dependencies(example_wit_text_wasm_host wasm_text_bridge_guest_gen common_wit_schema_gen)
 endif()
 
+if(TARGET croft_xpi_demo_runtime)
+    croft_add_example(example_xpi_plan_runner
+        SOURCES examples/xpi_plan_runner.c
+        LINKS croft_xpi_demo_runtime
+        REQUIRES croft_xpi_demo_runtime
+        NO_DERIVE_REQUIRES
+        TAGS xpi solver demo wasm manifest plan json thatch
+        FOCUS "Runs a solved XPI Wasm demo plan, executes the guest, and renders the selected view contract."
+    )
+    if(TARGET json_source_guest_solution_gen)
+        add_dependencies(example_xpi_plan_runner json_source_guest_solution_gen)
+        target_compile_definitions(example_xpi_plan_runner PRIVATE
+            CROFT_DEFAULT_XPI_DEMO_MANIFEST_PATH="${JSON_SOURCE_GUEST_MANIFEST_PATH}"
+            CROFT_DEFAULT_XPI_DEMO_PLAN_PATH="${JSON_SOURCE_GUEST_SOLUTION_PATH}")
+    endif()
+endif()
+
 if(TARGET croft_ui_glfw_opengl)
     croft_add_example(example_ui_window_opengl
         SOURCES examples/ui_window.c
@@ -4660,11 +4713,7 @@ if(CROFT_BUILD_TESTS)
         endif()
         if(test_name STREQUAL "test_wasm_json_demo_manifest_smoke")
             target_link_libraries(${test_name} PRIVATE
-                croft_wasm_wasm3
-                croft_host_log
-                croft_host_time
-                croft_fs
-                croft_wit_world_runtime
+                croft_xpi_demo_runtime
             )
         endif()
         if(test_name STREQUAL "test_wasi_vendor_report_smoke")

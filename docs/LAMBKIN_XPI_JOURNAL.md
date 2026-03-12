@@ -60,6 +60,31 @@ That keeps the eventual handoff to Lambkin cleaner. Replacing the temporary
 solver does not require changing the request or execution contracts; it only
 changes who produces the solved plan.
 
+One more refinement became obvious as soon as that C-side consumer stopped
+living inside a test file: the execution boundary should talk about payloads,
+not about JSON specifically. The current demo still uses JSON and renders a
+collapsed text view through Thatch, but the manifest/runtime boundary now wants
+to treat:
+
+- payload location exports,
+- data contracts,
+- and view contracts
+
+as the stable concepts, while JSON is just one contract implementation. That is
+why the manifest now carries generic `payload_pointer` / `payload_length`
+aliases next to the older JSON-named exports. The point is not cosmetic
+renaming; it is to stop the current demo vocabulary from quietly hardening into
+the permanent abstraction.
+
+The same pressure also showed up in slot handling. Once the solved-plan
+consumer was factored into a reusable runtime, it no longer made sense to model
+"the selected slot" as one special-case editor-shell field. The stable concept
+is a list of slot bindings and slot preferences, because any serious family
+solve will eventually need more than one choice point. That is another sign the
+graph is converging on the right nouns: slots, bundles, substrates, contracts,
+and solved bindings are carrying more of the work, while demo-specific field
+names are carrying less.
+
 ## March 11, 2026: Applicability Needs Traits, Not Opaque Strings
 
 Once the solver prototype started choosing real bundles, another weakness
