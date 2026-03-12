@@ -199,8 +199,12 @@ It records:
   window-only demos from accidentally looking clipboard-aware just because the
   shared GLFW provider also exposes clipboard support
 - higher-level render and editor-shell alternatives are now modeled as their
-  own bundles with `roles` and `conflicts_with`, so solver-visible conflicts
-  are grounded in real competing backends rather than placeholder metadata
+  own bundles with explicit slot membership and derived `conflicts_with`, so
+  solver-visible conflicts are grounded in real competing backends rather than
+  placeholder metadata
+- those alternatives are now also projected into explicit XPI `slots`, so the
+  graph can say "pick one render backend" or "pick one editor shell" directly
+  instead of reconstructing that family from repeated pairwise conflicts
 - shared substrates such as byte streams, descriptor tables, pollables, system random, and time-base
 - current-machine capability bundles such as CLI stdio/terminal, random, clocks/poll, and filesystem/streams
 - Croft host mix-in bundles and substrates for filesystem, clock, window, clipboard, popup-menu, menu-bar, editor-input normalization, GPU surface access, and accessibility where the current machine provides them

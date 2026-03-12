@@ -206,9 +206,14 @@ of hypothetical: true alternatives.
 
 Render backends and editor shells are not just loose collections of lower host
 capabilities. They are competing composition choices. Modeling them as bundles
-with explicit `roles` and `conflicts_with` turns the XPI graph from "what is in
-this build" into "which compositions are mutually exclusive inside one solved
-product."
+with explicit slot membership and derived `conflicts_with` turns the XPI graph
+from "what is in this build" into "which compositions are mutually exclusive
+inside one solved product."
+
+That slot layer matters because pairwise conflicts are a lossy projection. A
+solver wants to know that "render backend" and "editor shell" are exclusive
+families, not just that a handful of current bundles happen to disagree with
+each other today.
 
 ## March 11, 2026: Vendoring Needs A Drift Story, Not Just A Snapshot
 

@@ -431,11 +431,37 @@ function(croft_register_xpi_substrate name)
     set_property(GLOBAL APPEND PROPERTY CROFT_XPI_SUBSTRATE_ENTRIES "${entry}")
 endfunction()
 
+function(croft_register_xpi_slot name)
+    cmake_parse_arguments(XPI
+        ""
+        "MODE;APPLICABILITY;DESCRIPTION"
+        "BUNDLES"
+        ${ARGN})
+    if(XPI_MODE)
+        croft_json_string(mode_json "${XPI_MODE}")
+    else()
+        set(mode_json "null")
+    endif()
+    if(XPI_APPLICABILITY)
+        croft_json_string(applicability_json "${XPI_APPLICABILITY}")
+    else()
+        set(applicability_json "null")
+    endif()
+    if(XPI_DESCRIPTION)
+        croft_json_string(description_json "${XPI_DESCRIPTION}")
+    else()
+        set(description_json "null")
+    endif()
+    croft_json_array(bundles_json ${XPI_BUNDLES})
+    set(entry "    {\n      \"name\": \"${name}\",\n      \"mode\": ${mode_json},\n      \"applicability\": ${applicability_json},\n      \"description\": ${description_json},\n      \"bundles\": ${bundles_json}\n    }")
+    set_property(GLOBAL APPEND PROPERTY CROFT_XPI_SLOT_ENTRIES "${entry}")
+endfunction()
+
 function(croft_register_xpi_bundle name)
     cmake_parse_arguments(XPI
         ""
         "SUPPORT_STATUS;APPLICABILITY;DESCRIPTION"
-        "ARTIFACTS;SUBSTRATES;DECLARED_WORLDS;EXPANDED_SURFACES;HELPER_INTERFACES;REQUIRES_BUNDLES;COMPATIBLE_BUNDLES;CONFLICTS_WITH;ROLES"
+        "ARTIFACTS;SUBSTRATES;DECLARED_WORLDS;EXPANDED_SURFACES;HELPER_INTERFACES;REQUIRES_BUNDLES;COMPATIBLE_BUNDLES;CONFLICTS_WITH;ROLES;SLOTS"
         ${ARGN})
     if(XPI_SUPPORT_STATUS)
         croft_json_string(support_status_json "${XPI_SUPPORT_STATUS}")
@@ -452,6 +478,11 @@ function(croft_register_xpi_bundle name)
     else()
         set(description_json "null")
     endif()
+    croft_collect_xpi_slot_conflicts(derived_slot_conflicts "${name}" ${XPI_SLOTS})
+    set(effective_conflicts ${XPI_CONFLICTS_WITH} ${derived_slot_conflicts})
+    if(effective_conflicts)
+        list(REMOVE_DUPLICATES effective_conflicts)
+    endif()
     croft_json_array(artifacts_json ${XPI_ARTIFACTS})
     croft_json_array(substrates_json ${XPI_SUBSTRATES})
     croft_json_array(declared_worlds_json ${XPI_DECLARED_WORLDS})
@@ -459,9 +490,10 @@ function(croft_register_xpi_bundle name)
     croft_json_array(helper_interfaces_json ${XPI_HELPER_INTERFACES})
     croft_json_array(requires_bundles_json ${XPI_REQUIRES_BUNDLES})
     croft_json_array(compatible_bundles_json ${XPI_COMPATIBLE_BUNDLES})
-    croft_json_array(conflicts_with_json ${XPI_CONFLICTS_WITH})
+    croft_json_array(conflicts_with_json ${effective_conflicts})
     croft_json_array(roles_json ${XPI_ROLES})
-    set(entry "    {\n      \"name\": \"${name}\",\n      \"support_status\": ${support_status_json},\n      \"applicability\": ${applicability_json},\n      \"description\": ${description_json},\n      \"artifacts\": ${artifacts_json},\n      \"substrates\": ${substrates_json},\n      \"declared_worlds\": ${declared_worlds_json},\n      \"expanded_surfaces\": ${expanded_surfaces_json},\n      \"helper_interfaces\": ${helper_interfaces_json},\n      \"requires_bundles\": ${requires_bundles_json},\n      \"compatible_bundles\": ${compatible_bundles_json},\n      \"conflicts_with\": ${conflicts_with_json},\n      \"roles\": ${roles_json}\n    }")
+    croft_json_array(slots_json ${XPI_SLOTS})
+    set(entry "    {\n      \"name\": \"${name}\",\n      \"support_status\": ${support_status_json},\n      \"applicability\": ${applicability_json},\n      \"description\": ${description_json},\n      \"artifacts\": ${artifacts_json},\n      \"substrates\": ${substrates_json},\n      \"declared_worlds\": ${declared_worlds_json},\n      \"expanded_surfaces\": ${expanded_surfaces_json},\n      \"helper_interfaces\": ${helper_interfaces_json},\n      \"requires_bundles\": ${requires_bundles_json},\n      \"compatible_bundles\": ${compatible_bundles_json},\n      \"conflicts_with\": ${conflicts_with_json},\n      \"roles\": ${roles_json},\n      \"slots\": ${slots_json}\n    }")
     set_property(GLOBAL APPEND PROPERTY CROFT_XPI_BUNDLE_ENTRIES "${entry}")
 endfunction()
 
@@ -487,11 +519,31 @@ function(croft_define_xpi_substrate_spec name)
     )
 endfunction()
 
+function(croft_define_xpi_slot_spec name)
+    cmake_parse_arguments(XPI
+        ""
+        "MODE;APPLICABILITY;DESCRIPTION"
+        "BUNDLES"
+        ${ARGN})
+    string(MAKE_C_IDENTIFIER "${name}" key)
+    set_property(GLOBAL APPEND PROPERTY CROFT_DEFINED_XPI_SLOTS "${name}")
+    set_property(GLOBAL PROPERTY "CROFT_XPI_SLOT_${key}_MODE" "${XPI_MODE}")
+    set_property(GLOBAL PROPERTY "CROFT_XPI_SLOT_${key}_APPLICABILITY" "${XPI_APPLICABILITY}")
+    set_property(GLOBAL PROPERTY "CROFT_XPI_SLOT_${key}_DESCRIPTION" "${XPI_DESCRIPTION}")
+    set_property(GLOBAL PROPERTY "CROFT_XPI_SLOT_${key}_BUNDLES" "${XPI_BUNDLES}")
+    croft_register_xpi_slot(${name}
+        MODE "${XPI_MODE}"
+        APPLICABILITY "${XPI_APPLICABILITY}"
+        DESCRIPTION "${XPI_DESCRIPTION}"
+        BUNDLES ${XPI_BUNDLES}
+    )
+endfunction()
+
 function(croft_define_xpi_bundle_spec name)
     cmake_parse_arguments(XPI
         ""
         "SUPPORT_STATUS;APPLICABILITY;DESCRIPTION"
-        "ARTIFACTS;SUBSTRATES;DECLARED_WORLDS;EXPANDED_SURFACES;HELPER_INTERFACES;REQUIRES_BUNDLES;COMPATIBLE_BUNDLES;CONFLICTS_WITH;ROLES"
+        "ARTIFACTS;SUBSTRATES;DECLARED_WORLDS;EXPANDED_SURFACES;HELPER_INTERFACES;REQUIRES_BUNDLES;COMPATIBLE_BUNDLES;CONFLICTS_WITH;ROLES;SLOTS"
         ${ARGN})
     string(MAKE_C_IDENTIFIER "${name}" key)
     set_property(GLOBAL APPEND PROPERTY CROFT_DEFINED_XPI_BUNDLES "${name}")
@@ -507,6 +559,7 @@ function(croft_define_xpi_bundle_spec name)
     set_property(GLOBAL PROPERTY "CROFT_XPI_BUNDLE_${key}_COMPATIBLE_BUNDLES" "${XPI_COMPATIBLE_BUNDLES}")
     set_property(GLOBAL PROPERTY "CROFT_XPI_BUNDLE_${key}_CONFLICTS_WITH" "${XPI_CONFLICTS_WITH}")
     set_property(GLOBAL PROPERTY "CROFT_XPI_BUNDLE_${key}_ROLES" "${XPI_ROLES}")
+    set_property(GLOBAL PROPERTY "CROFT_XPI_BUNDLE_${key}_SLOTS" "${XPI_SLOTS}")
     croft_register_xpi_bundle(${name}
         SUPPORT_STATUS "${XPI_SUPPORT_STATUS}"
         APPLICABILITY "${XPI_APPLICABILITY}"
@@ -520,12 +573,22 @@ function(croft_define_xpi_bundle_spec name)
         COMPATIBLE_BUNDLES ${XPI_COMPATIBLE_BUNDLES}
         CONFLICTS_WITH ${XPI_CONFLICTS_WITH}
         ROLES ${XPI_ROLES}
+        SLOTS ${XPI_SLOTS}
     )
 endfunction()
 
 function(croft_get_xpi_bundle_field out_var name field)
     string(MAKE_C_IDENTIFIER "${name}" key)
     get_property(values GLOBAL PROPERTY "CROFT_XPI_BUNDLE_${key}_${field}")
+    if(NOT values OR values MATCHES "-NOTFOUND$")
+        set(values "")
+    endif()
+    set(${out_var} ${values} PARENT_SCOPE)
+endfunction()
+
+function(croft_get_xpi_slot_field out_var name field)
+    string(MAKE_C_IDENTIFIER "${name}" key)
+    get_property(values GLOBAL PROPERTY "CROFT_XPI_SLOT_${key}_${field}")
     if(NOT values OR values MATCHES "-NOTFOUND$")
         set(values "")
     endif()
@@ -587,6 +650,29 @@ function(croft_collect_transitive_xpi_bundle_requirements out_var)
         list(REMOVE_DUPLICATES result)
     endif()
     set(${out_var} ${result} PARENT_SCOPE)
+endfunction()
+
+function(croft_collect_xpi_slot_conflicts out_var bundle_name)
+    set(slot_names ${ARGN})
+    set(conflicts "")
+
+    foreach(slot_name IN LISTS slot_names)
+        croft_get_xpi_slot_field(slot_mode "${slot_name}" "MODE")
+        if(NOT slot_mode STREQUAL "exclusive")
+            continue()
+        endif()
+        croft_get_xpi_slot_field(slot_bundles "${slot_name}" "BUNDLES")
+        foreach(peer_bundle IN LISTS slot_bundles)
+            if(NOT peer_bundle STREQUAL "${bundle_name}")
+                list(APPEND conflicts "${peer_bundle}")
+            endif()
+        endforeach()
+    endforeach()
+
+    if(conflicts)
+        list(REMOVE_DUPLICATES conflicts)
+    endif()
+    set(${out_var} ${conflicts} PARENT_SCOPE)
 endfunction()
 
 function(croft_register_artifact_from_xpi_bundles target kind)
@@ -2748,6 +2834,26 @@ croft_register_artifact_from_xpi_bundles(croft_wit_host_editor_input_runtime wit
     DEPENDS croft_wit_host_editor_input
 )
 
+croft_define_xpi_slot_spec(croft-render-backend-slot-current-machine
+    MODE "exclusive"
+    APPLICABILITY "current-machine-windowed"
+    DESCRIPTION "Exclusive composition slot for the current-machine render backend."
+    BUNDLES
+        croft-render-tgfx-opengl-current-machine
+        croft-render-tgfx-metal-current-machine
+        croft-render-metal-native-current-machine
+)
+croft_define_xpi_slot_spec(croft-editor-shell-slot-current-machine
+    MODE "exclusive"
+    APPLICABILITY "current-machine-windowed"
+    DESCRIPTION "Exclusive composition slot for the current-machine editor shell implementation."
+    BUNDLES
+        croft-editor-scene-tgfx-opengl-current-machine
+        croft-editor-scene-tgfx-metal-current-machine
+        croft-editor-scene-metal-native-current-machine
+        croft-editor-appkit-current-machine
+)
+
 # ── Optional Croft artifacts ───────────────────────────────────────────
 if(CROFT_WASM3_TARGET)
     add_library(croft_wasm_wasm3 STATIC src/host/host_wasm.c)
@@ -2926,10 +3032,7 @@ if(CROFT_GLFW_TARGET AND CROFT_TGFX_TARGET AND CROFT_TGFX_REQUEST_OPENGL)
         ARTIFACTS croft_render_tgfx_opengl
         SUBSTRATES croft-window-system
         REQUIRES_BUNDLES croft-host-window-current-machine
-        CONFLICTS_WITH
-            croft-render-tgfx-metal-current-machine
-            croft-render-metal-native-current-machine
-        ROLES croft-render-backend-current-machine
+        SLOTS croft-render-backend-slot-current-machine
     )
 
     add_library(croft_scene_core_tgfx_opengl STATIC
@@ -2967,11 +3070,7 @@ if(CROFT_GLFW_TARGET AND CROFT_TGFX_TARGET AND CROFT_TGFX_REQUEST_OPENGL)
         DESCRIPTION "Scene-based editor shell bundle over the TGFX/OpenGL render backend."
         ARTIFACTS croft_scene_text_editor_tgfx_opengl
         REQUIRES_BUNDLES croft-render-tgfx-opengl-current-machine
-        CONFLICTS_WITH
-            croft-editor-scene-tgfx-metal-current-machine
-            croft-editor-scene-metal-native-current-machine
-            croft-editor-appkit-current-machine
-        ROLES croft-editor-shell-current-machine
+        SLOTS croft-editor-shell-slot-current-machine
     )
 endif()
 
@@ -3001,10 +3100,7 @@ if(APPLE AND CROFT_GLFW_TARGET AND CROFT_TGFX_TARGET AND CROFT_TGFX_REQUEST_META
         ARTIFACTS croft_render_tgfx_metal
         SUBSTRATES croft-window-system
         REQUIRES_BUNDLES croft-host-window-current-machine
-        CONFLICTS_WITH
-            croft-render-tgfx-opengl-current-machine
-            croft-render-metal-native-current-machine
-        ROLES croft-render-backend-current-machine
+        SLOTS croft-render-backend-slot-current-machine
     )
 
     add_library(croft_scene_core_tgfx_metal STATIC
@@ -3042,11 +3138,7 @@ if(APPLE AND CROFT_GLFW_TARGET AND CROFT_TGFX_TARGET AND CROFT_TGFX_REQUEST_META
         DESCRIPTION "Scene-based editor shell bundle over the TGFX/Metal render backend."
         ARTIFACTS croft_scene_text_editor_tgfx_metal
         REQUIRES_BUNDLES croft-render-tgfx-metal-current-machine
-        CONFLICTS_WITH
-            croft-editor-scene-tgfx-opengl-current-machine
-            croft-editor-scene-metal-native-current-machine
-            croft-editor-appkit-current-machine
-        ROLES croft-editor-shell-current-machine
+        SLOTS croft-editor-shell-slot-current-machine
     )
 endif()
 
@@ -3110,10 +3202,7 @@ if(APPLE AND TARGET croft_ui_glfw_metal)
         REQUIRES_BUNDLES
             croft-host-window-current-machine
             croft-host-gpu2d-current-machine
-        CONFLICTS_WITH
-            croft-render-tgfx-opengl-current-machine
-            croft-render-tgfx-metal-current-machine
-        ROLES croft-render-backend-current-machine
+        SLOTS croft-render-backend-slot-current-machine
     )
 
     add_library(croft_wit_host_gpu2d_runtime STATIC src/runtime/wit_host_gpu2d_runtime.c)
@@ -3164,11 +3253,7 @@ if(APPLE AND TARGET croft_ui_glfw_metal)
         DESCRIPTION "Scene-based editor shell bundle over the direct-Metal render backend."
         ARTIFACTS croft_scene_text_editor_metal_native
         REQUIRES_BUNDLES croft-render-metal-native-current-machine
-        CONFLICTS_WITH
-            croft-editor-scene-tgfx-opengl-current-machine
-            croft-editor-scene-tgfx-metal-current-machine
-            croft-editor-appkit-current-machine
-        ROLES croft-editor-shell-current-machine
+        SLOTS croft-editor-shell-slot-current-machine
     )
 endif()
 
@@ -3319,11 +3404,7 @@ if(APPLE)
         REQUIRES_BUNDLES
             croft-host-fs-current-machine
             croft-host-file-dialog-current-machine
-        CONFLICTS_WITH
-            croft-editor-scene-tgfx-opengl-current-machine
-            croft-editor-scene-tgfx-metal-current-machine
-            croft-editor-scene-metal-native-current-machine
-        ROLES croft-editor-shell-current-machine
+        SLOTS croft-editor-shell-slot-current-machine
     )
 
     add_library(croft_a11y_macos STATIC src/host/mac/host_a11y.m)
@@ -4305,7 +4386,11 @@ if(NOT CROFT_XPI_SUBSTRATE_ENTRIES)
     set(CROFT_XPI_SUBSTRATE_ENTRIES "")
 endif()
 string(JOIN ",\n" CROFT_XPI_SUBSTRATE_ENTRIES_JSON ${CROFT_XPI_SUBSTRATE_ENTRIES})
-
+get_property(CROFT_XPI_SLOT_ENTRIES GLOBAL PROPERTY CROFT_XPI_SLOT_ENTRIES)
+if(NOT CROFT_XPI_SLOT_ENTRIES)
+    set(CROFT_XPI_SLOT_ENTRIES "")
+endif()
+string(JOIN ",\n" CROFT_XPI_SLOT_ENTRIES_JSON ${CROFT_XPI_SLOT_ENTRIES})
 get_property(CROFT_XPI_BUNDLE_ENTRIES GLOBAL PROPERTY CROFT_XPI_BUNDLE_ENTRIES)
 if(NOT CROFT_XPI_BUNDLE_ENTRIES)
     set(CROFT_XPI_BUNDLE_ENTRIES "")
@@ -4322,7 +4407,7 @@ if(NOT CROFT_XPI_ENTRYPOINT_ENTRIES)
 endif()
 string(JOIN ",\n" CROFT_XPI_ENTRYPOINT_ENTRIES_JSON ${CROFT_XPI_ENTRYPOINT_ENTRIES})
 file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/croft-xpi.json"
-    CONTENT "{\n  \"artifacts\": [\n${CROFT_XPI_ARTIFACT_ENTRIES_JSON}\n  ],\n  \"substrates\": [\n${CROFT_XPI_SUBSTRATE_ENTRIES_JSON}\n  ],\n  \"bundles\": [\n${CROFT_XPI_BUNDLE_ENTRIES_JSON}\n  ],\n  \"entrypoints\": [\n${CROFT_XPI_ENTRYPOINT_ENTRIES_JSON}\n  ]\n}\n")
+    CONTENT "{\n  \"artifacts\": [\n${CROFT_XPI_ARTIFACT_ENTRIES_JSON}\n  ],\n  \"substrates\": [\n${CROFT_XPI_SUBSTRATE_ENTRIES_JSON}\n  ],\n  \"slots\": [\n${CROFT_XPI_SLOT_ENTRIES_JSON}\n  ],\n  \"bundles\": [\n${CROFT_XPI_BUNDLE_ENTRIES_JSON}\n  ],\n  \"entrypoints\": [\n${CROFT_XPI_ENTRYPOINT_ENTRIES_JSON}\n  ]\n}\n")
 
 get_property(CROFT_INSTALL_TARGETS GLOBAL PROPERTY CROFT_INSTALL_TARGETS)
 if(NOT CROFT_INSTALL_TARGETS)

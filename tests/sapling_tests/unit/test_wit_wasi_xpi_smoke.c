@@ -184,6 +184,7 @@ int main(void)
                           "\"compatible_bundles\": [\"wasi-filesystem-streams-current-machine\"]");
     ok &= expect_contains("xpi artifacts section", xpi_json, "\"artifacts\": [");
     ok &= expect_contains("xpi entrypoints section", xpi_json, "\"entrypoints\": [");
+    ok &= expect_contains("xpi slots section", xpi_json, "\"slots\": [");
     ok &= expect_contains("xpi runtime artifact", xpi_json, "\"name\": \"croft_wit_wasi_machine_runtime\"");
     ok &= expect_contains("xpi runtime bundles",
                           xpi_json,
@@ -191,16 +192,21 @@ int main(void)
     ok &= expect_contains("xpi host window substrate", xpi_json, "\"name\": \"croft-window-system\"");
     ok &= expect_contains("xpi host window bundle", xpi_json, "\"name\": \"croft-host-window-current-machine\"");
     ok &= expect_contains("xpi render backend bundle", xpi_json, "\"name\": \"croft-render-tgfx-metal-current-machine\"");
+    ok &= expect_contains("xpi render backend slot", xpi_json, "\"name\": \"croft-render-backend-slot-current-machine\"");
+    ok &= expect_contains("xpi render backend slot mode", xpi_json, "\"mode\": \"exclusive\"");
     ok &= expect_contains("xpi render backend conflicts",
                           xpi_json,
                           "\"conflicts_with\": [\"croft-render-tgfx-opengl-current-machine\", \"croft-render-metal-native-current-machine\"]");
-    ok &= expect_contains("xpi render backend role",
+    ok &= expect_contains("xpi render backend slot membership",
                           xpi_json,
-                          "\"roles\": [\"croft-render-backend-current-machine\"]");
+                          "\"slots\": [\"croft-render-backend-slot-current-machine\"]");
     ok &= expect_contains("xpi editor shell bundle", xpi_json, "\"name\": \"croft-editor-appkit-current-machine\"");
-    ok &= expect_contains("xpi editor shell role",
+    ok &= expect_contains("xpi editor shell slot",
                           xpi_json,
-                          "\"roles\": [\"croft-editor-shell-current-machine\"]");
+                          "\"name\": \"croft-editor-shell-slot-current-machine\"");
+    ok &= expect_contains("xpi editor shell slot membership",
+                          xpi_json,
+                          "\"slots\": [\"croft-editor-shell-slot-current-machine\"]");
     ok &= expect_contains("xpi file dialog bundle", xpi_json, "\"name\": \"croft-host-file-dialog-current-machine\"");
     ok &= expect_contains("xpi gesture bundle", xpi_json, "\"name\": \"croft-host-gesture-current-machine\"");
     ok &= expect_contains("xpi host editor-input bundle", xpi_json, "\"name\": \"croft-host-editor-input-normalization\"");
