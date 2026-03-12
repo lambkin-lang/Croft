@@ -46,6 +46,20 @@ Whenever another solver feature is needed, the right question is not "what
 extra knob would help?" but "is the missing fact really a new category, or was
 it supposed to be derivable from the graph we already emit?"
 
+The next tightening after that is also important: the solve itself should not
+become a long-lived Python subsystem inside Croft. In the current demo, Python
+is only temporary build-time scaffolding that materializes a solved JSON plan.
+The durable boundary is:
+
+- request manifest JSON,
+- XPI graph JSON,
+- solved plan JSON,
+- and a C-side consumer that executes from that plan.
+
+That keeps the eventual handoff to Lambkin cleaner. Replacing the temporary
+solver does not require changing the request or execution contracts; it only
+changes who produces the solved plan.
+
 ## March 11, 2026: Applicability Needs Traits, Not Opaque Strings
 
 Once the solver prototype started choosing real bundles, another weakness

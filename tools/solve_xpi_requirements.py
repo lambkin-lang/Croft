@@ -23,57 +23,25 @@ import sys
 from pathlib import Path
 
 
-def parse_legacy_manifest(path: Path) -> dict:
-    manifest: dict[str, object] = {
-        "require_bundle": [],
-        "expanded_path": [],
-        "prefer_slot_bundle": {},
-    }
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "=" not in line:
-            raise ValueError(f"invalid manifest line: {raw_line!r}")
-        key, value = line.split("=", 1)
-        if key == "require-bundle":
-            manifest["require_bundle"].append(value)
-        elif key == "expanded-path":
-            manifest["expanded_path"].append(value)
-        elif key == "prefer-slot-bundle":
-            if "=" not in value:
-                raise ValueError(f"invalid prefer-slot-bundle value: {value!r}")
-            slot_name, bundle_csv = value.split("=", 1)
-            manifest["prefer_slot_bundle"][slot_name] = [
-                item for item in bundle_csv.split(",") if item
-            ]
-        else:
-            manifest[key.replace("-", "_")] = value
-    return manifest
-
-
 def parse_manifest(path: Path) -> dict:
-    raw = path.read_text(encoding="utf-8")
-    if raw.lstrip().startswith("{"):
-        doc = json.loads(raw)
-        solver_request = doc.get("solver_request") or {}
-        return {
-            "schema": doc.get("schema"),
-            "name": doc.get("name"),
-            "kind": doc.get("kind"),
-            "applicability": doc.get("applicability"),
-            "guest": doc.get("guest") or {},
-            "contracts": doc.get("contracts") or {},
-            "solver_request": solver_request,
-            "entrypoint_family": solver_request.get("entrypoint_family"),
-            "require_bundle": list(solver_request.get("require_bundles") or []),
-            "expanded_path": list(solver_request.get("expanded_paths") or []),
-            "prefer_slot_bundle": {
-                key: list(value or [])
-                for key, value in (solver_request.get("prefer_slot_bundles") or {}).items()
-            },
-        }
-    return parse_legacy_manifest(path)
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    solver_request = doc.get("solver_request") or {}
+    return {
+        "schema": doc.get("schema"),
+        "name": doc.get("name"),
+        "kind": doc.get("kind"),
+        "applicability": doc.get("applicability"),
+        "guest": doc.get("guest") or {},
+        "contracts": doc.get("contracts") or {},
+        "solver_request": solver_request,
+        "entrypoint_family": solver_request.get("entrypoint_family"),
+        "require_bundle": list(solver_request.get("require_bundles") or []),
+        "expanded_path": list(solver_request.get("expanded_paths") or []),
+        "prefer_slot_bundle": {
+            key: list(value or [])
+            for key, value in (solver_request.get("prefer_slot_bundles") or {}).items()
+        },
+    }
 
 
 def collect_recursive_bundle_requires(bundle_name: str, bundles: dict[str, dict], out: set[str]) -> None:

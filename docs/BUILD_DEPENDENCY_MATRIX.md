@@ -232,19 +232,24 @@ The repo also now carries a minimal solver-facing Wasm demo path:
 
 - `build/examples/json_source_guest.manifest.json` is a structured request
   document rather than a custom line format
+- `build/examples/json_source_guest.solution.json` is the corresponding solved
+  composition plan emitted by the build from that request plus `croft-xpi.json`
 - that manifest names a solver-facing family entrypoint, hard bundle
   requirements, open-slot preferences, and guest/contract metadata
 - `tools/solve_xpi_requirements.py` consumes that manifest and `build/croft-xpi.json`
   to emit a composition plan with selected bundles, provider artifacts, shared
   substrates, helper interfaces, declared worlds, and expanded surfaces
 - `tests/sapling_tests/unit/test_wasm_json_demo_manifest_smoke.c` then uses the
-  same manifest to load a minimal Wasm guest, read JSON from guest memory,
-  parse it into Thatch, and render a collapsed text view
+  manifest to validate the request shape and the solved plan to load a minimal
+  Wasm guest, read JSON from guest memory, parse it into Thatch, and render a
+  collapsed text view
 
 That path is intentionally still heuristic, but it proves the current XPI
 graph is already sufficient for an early Lambkin-style "pick a family, satisfy
 the hard requirements, choose one bundle for each open slot, then execute"
-loop.
+loop. The Python code is deliberately kept thin here: it is only temporary
+build-time solve scaffolding, while the lasting contract boundary is the JSON
+request/plan pair plus the C-side consumer.
 
 `build/reports/croft-wasi-vendor-drift.txt` and
 `build/reports/croft-wasi-vendor-drift.json` now complement that metadata by

@@ -1317,6 +1317,40 @@ function(croft_generate_wasm_demo_manifest)
     endif()
 endfunction()
 
+function(croft_generate_xpi_solution target)
+    cmake_parse_arguments(SOLVE
+        ""
+        "XPI_PATH;MANIFEST_PATH;OUTPUT_PATH;OUT_VAR"
+        "DEPENDS"
+        ${ARGN})
+    if(NOT SOLVE_XPI_PATH OR NOT SOLVE_MANIFEST_PATH OR NOT SOLVE_OUTPUT_PATH)
+        message(FATAL_ERROR "croft_generate_xpi_solution requires XPI_PATH, MANIFEST_PATH, and OUTPUT_PATH")
+    endif()
+    if(NOT CROFT_PYTHON3_TOOL)
+        message(FATAL_ERROR "croft_generate_xpi_solution requires CROFT_PYTHON3_TOOL")
+    endif()
+    if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tools/solve_xpi_requirements.py")
+        message(FATAL_ERROR "missing tools/solve_xpi_requirements.py")
+    endif()
+
+    add_custom_command(
+        OUTPUT "${SOLVE_OUTPUT_PATH}"
+        COMMAND "${CROFT_PYTHON3_TOOL}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/solve_xpi_requirements.py"
+            --xpi "${SOLVE_XPI_PATH}"
+            --manifest "${SOLVE_MANIFEST_PATH}"
+            --output "${SOLVE_OUTPUT_PATH}"
+        DEPENDS
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/solve_xpi_requirements.py"
+            ${SOLVE_DEPENDS}
+        VERBATIM)
+    add_custom_target(${target} DEPENDS "${SOLVE_OUTPUT_PATH}")
+
+    if(SOLVE_OUT_VAR)
+        set(${SOLVE_OUT_VAR} "${SOLVE_OUTPUT_PATH}" PARENT_SCOPE)
+    endif()
+endfunction()
+
 # pthreads
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)
@@ -3919,6 +3953,7 @@ if(CROFT_EDITOR_SHELL_SLOT_BUNDLES)
 endif()
 
 # ── Shared Wasm guest tooling for examples/tests ─────────────────────
+find_program(CROFT_PYTHON3_TOOL python3 HINTS ${CMAKE_PROGRAM_PATH})
 unset(CROFT_WAT2WASM_TOOL)
 set(CROFT_WAT2WASM_DEP "")
 if(TARGET croft_wasm_wasm3)
@@ -3982,6 +4017,18 @@ if(TARGET croft_wasm_wasm3 AND CROFT_WAT2WASM_TOOL)
             "croft-editor-shell-slot-current-machine=croft-editor-appkit-current-machine,croft-editor-scene-metal-native-current-machine"
         OUT_VAR JSON_SOURCE_GUEST_MANIFEST_PATH
     )
+    if(CROFT_PYTHON3_TOOL AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tools/solve_xpi_requirements.py")
+        croft_generate_xpi_solution(json_source_guest_solution_gen
+            XPI_PATH "${CMAKE_CURRENT_BINARY_DIR}/croft-xpi.json"
+            MANIFEST_PATH "${JSON_SOURCE_GUEST_MANIFEST_PATH}"
+            OUTPUT_PATH "${CMAKE_CURRENT_BINARY_DIR}/examples/json_source_guest.solution.json"
+            DEPENDS
+                wasm_json_source_guest_gen
+                "${JSON_SOURCE_GUEST_MANIFEST_PATH}"
+                "${CMAKE_CURRENT_BINARY_DIR}/croft-xpi.json"
+            OUT_VAR JSON_SOURCE_GUEST_SOLUTION_PATH
+        )
+    endif()
 endif()
 
 if(TARGET croft_wasm_wasm3 AND CROFT_LLVM_CLANG_TOOL AND CROFT_WASM_LD_TOOL)
@@ -4402,7 +4449,6 @@ endif()
 # ── Tests ───────────────────────────────────────────────────────────────
 if(CROFT_BUILD_TESTS)
     enable_testing()
-    find_program(CROFT_PYTHON3_TOOL python3 HINTS ${CMAKE_PROGRAM_PATH})
 
     add_executable(test_croft tests/test_main.c tests/test_queue.c tests/host_tests/test_fs.c tests/test_editor_text_model.c tests/test_editor_syntax.c tests/test_editor_brackets.c tests/test_editor_folding.c tests/test_editor_whitespace.c tests/test_editor_search.c tests/test_editor_status.c tests/test_editor_document.c tests/test_editor_commands.c tests/test_editor_scene_runtime.c tests/test_wit_resource_codegen.c tests/test_wit_text_runtime.c tests/test_wit_text_program.c tests/test_wit_store_runtime.c tests/test_wit_mailbox_runtime.c tests/test_wit_host_fs_runtime.c tests/test_wit_host_clock_runtime.c tests/test_wit_host_editor_input_runtime.c tests/test_wit_host_popup_menu_runtime.c)
     target_include_directories(test_croft PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
@@ -4527,7 +4573,8 @@ if(CROFT_BUILD_TESTS)
         "tests/sapling_tests/integration/*.c"
     )
     list(REMOVE_ITEM SAPLING_UNIT_TESTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/sapling_tests/unit/wasm_guest_example.c")
-    if(NOT TARGET croft_wasm_wasm3 OR NOT TARGET wasm_json_source_guest_gen)
+    if(NOT TARGET croft_wasm_wasm3 OR NOT TARGET wasm_json_source_guest_gen
+            OR NOT TARGET json_source_guest_solution_gen)
         list(REMOVE_ITEM SAPLING_UNIT_TESTS
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/sapling_tests/unit/test_wasm_json_demo_manifest_smoke.c")
     endif()
@@ -4688,9 +4735,12 @@ if(CROFT_BUILD_TESTS)
             target_include_directories(${test_name} PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
         endif()
         if(test_name STREQUAL "test_wasm_json_demo_manifest_smoke")
-            add_dependencies(${test_name} wasm_json_source_guest_gen)
+            add_dependencies(${test_name}
+                wasm_json_source_guest_gen
+                json_source_guest_solution_gen)
             target_compile_definitions(${test_name} PRIVATE
-                CROFT_WASM_JSON_DEMO_MANIFEST_PATH="${JSON_SOURCE_GUEST_MANIFEST_PATH}")
+                CROFT_WASM_JSON_DEMO_MANIFEST_PATH="${JSON_SOURCE_GUEST_MANIFEST_PATH}"
+                CROFT_WASM_JSON_DEMO_PLAN_PATH="${JSON_SOURCE_GUEST_SOLUTION_PATH}")
         endif()
         if(test_name STREQUAL "test_wit_scoped_names_smoke")
             add_dependencies(${test_name} scoped_names_wit_schema_gen)
@@ -4718,20 +4768,6 @@ if(CROFT_BUILD_TESTS)
         set_tests_properties(sapling_${test_name} PROPERTIES LABELS "${test_labels}")
     endforeach()
 
-    if(CROFT_PYTHON3_TOOL AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tools/solve_xpi_requirements.py"
-            AND TARGET wasm_json_source_guest_gen)
-        add_test(NAME sapling_xpi_solver_json_demo
-            COMMAND ${CROFT_PYTHON3_TOOL}
-                "${CMAKE_CURRENT_SOURCE_DIR}/tools/solve_xpi_requirements.py"
-                --xpi "${CMAKE_CURRENT_BINARY_DIR}/croft-xpi.json"
-                --manifest "${JSON_SOURCE_GUEST_MANIFEST_PATH}"
-                --expect-family "croft_json_tree_text_view_family_current_machine"
-                --expect-slot "croft-editor-shell-slot-current-machine=croft-editor-appkit-current-machine"
-                --expect-bundle "croft-host-fs-current-machine"
-                --expect-bundle "croft-host-file-dialog-current-machine"
-                --expect-artifact "croft_editor_appkit")
-        set_tests_properties(sapling_xpi_solver_json_demo PROPERTIES LABELS "sapling-xpi")
-    endif()
 endif()
 
 # ── Packaging & artifact manifest ──────────────────────────────────────

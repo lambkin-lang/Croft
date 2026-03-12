@@ -14,6 +14,10 @@
 #error "CROFT_WASM_JSON_DEMO_MANIFEST_PATH must be defined"
 #endif
 
+#ifndef CROFT_WASM_JSON_DEMO_PLAN_PATH
+#error "CROFT_WASM_JSON_DEMO_PLAN_PATH must be defined"
+#endif
+
 #define CHECK(expr)                                                                             \
     do {                                                                                        \
         if (!(expr)) {                                                                          \
@@ -21,6 +25,11 @@
             return 1;                                                                           \
         }                                                                                       \
     } while (0)
+
+typedef struct {
+    char expanded_paths[8][128];
+    uint32_t expanded_path_count;
+} JsonExpandedPaths;
 
 typedef struct {
     char schema[64];
@@ -44,6 +53,26 @@ typedef struct {
     char preferred_slot_bundles[8][128];
     uint32_t preferred_slot_bundle_count;
 } JsonDemoManifest;
+
+typedef struct {
+    char schema[64];
+    char family[128];
+    char manifest_name[128];
+    char applicability[128];
+    char guest_kind[64];
+    char wasm_path[1024];
+    char announce_export[64];
+    char json_pointer_export[64];
+    char json_length_export[64];
+    char data_contract[128];
+    char view_contract[128];
+    char selected_slot[128];
+    char selected_bundle[128];
+    char provider_artifacts[8][128];
+    uint32_t provider_artifact_count;
+    char expanded_paths[8][128];
+    uint32_t expanded_path_count;
+} JsonDemoPlan;
 
 static char *read_file(const char *path)
 {
@@ -303,15 +332,84 @@ static int parse_manifest(SapTxnCtx *txn, const char *path, JsonDemoManifest *ma
     return 0;
 }
 
-static int path_is_expanded(const JsonDemoManifest *manifest, const char *path)
+static int parse_plan(SapTxnCtx *txn, const char *path, JsonDemoPlan *plan)
+{
+    char *raw = NULL;
+    ThatchRegion *region = NULL;
+    ThatchVal root = {0};
+    uint32_t err_pos = 0u;
+
+    if (!txn || !path || !plan) {
+        return 1;
+    }
+    memset(plan, 0, sizeof(*plan));
+
+    raw = read_file(path);
+    if (!raw) {
+        return 1;
+    }
+    if (tj_parse(txn, raw, (uint32_t)strlen(raw), &region, &root, &err_pos) != ERR_OK) {
+        free(raw);
+        return 1;
+    }
+
+    if (json_copy_string_path(root, ".schema", plan->schema, sizeof(plan->schema)) != 0
+        || json_copy_string_path(root, ".family", plan->family, sizeof(plan->family)) != 0
+        || json_copy_string_path(root, ".manifest", plan->manifest_name, sizeof(plan->manifest_name)) != 0
+        || json_copy_string_path(root, ".applicability", plan->applicability, sizeof(plan->applicability)) != 0
+        || json_copy_string_path(root, ".guest.kind", plan->guest_kind, sizeof(plan->guest_kind)) != 0
+        || json_copy_string_path(root, ".guest.wasm_path", plan->wasm_path, sizeof(plan->wasm_path)) != 0
+        || json_copy_string_path(root, ".guest.exports.announce", plan->announce_export, sizeof(plan->announce_export)) != 0
+        || json_copy_string_path(root, ".guest.exports.json_pointer", plan->json_pointer_export, sizeof(plan->json_pointer_export)) != 0
+        || json_copy_string_path(root, ".guest.exports.json_length", plan->json_length_export, sizeof(plan->json_length_export)) != 0
+        || json_copy_string_path(root, ".data_contract", plan->data_contract, sizeof(plan->data_contract)) != 0
+        || json_copy_string_path(root, ".view_contract", plan->view_contract, sizeof(plan->view_contract)) != 0
+        || json_copy_string_path(root, ".selected_slot_bindings[0].slot", plan->selected_slot, sizeof(plan->selected_slot)) != 0
+        || json_copy_string_path(root, ".selected_slot_bindings[0].bundle", plan->selected_bundle, sizeof(plan->selected_bundle)) != 0
+        || json_copy_string_array_path(root,
+                                       ".provider_artifacts",
+                                       plan->provider_artifacts,
+                                       (uint32_t)(sizeof(plan->provider_artifacts) / sizeof(plan->provider_artifacts[0])),
+                                       &plan->provider_artifact_count)
+               != 0
+        || json_copy_string_array_path(root,
+                                       ".expanded_paths",
+                                       plan->expanded_paths,
+                                       (uint32_t)(sizeof(plan->expanded_paths) / sizeof(plan->expanded_paths[0])),
+                                       &plan->expanded_path_count)
+               != 0) {
+        free(raw);
+        return 1;
+    }
+
+    free(raw);
+    return 0;
+}
+
+static int string_array_contains(const char items[][128], uint32_t count, const char *expected)
 {
     uint32_t i;
 
-    if (!manifest || !path) {
+    if (!expected) {
         return 0;
     }
-    for (i = 0u; i < manifest->expanded_path_count; i++) {
-        if (strcmp(manifest->expanded_paths[i], path) == 0) {
+    for (i = 0u; i < count; i++) {
+        if (strcmp(items[i], expected) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int path_is_expanded(const JsonExpandedPaths *expanded, const char *path)
+{
+    uint32_t i;
+
+    if (!expanded || !path) {
+        return 0;
+    }
+    for (i = 0u; i < expanded->expanded_path_count; i++) {
+        if (strcmp(expanded->expanded_paths[i], path) == 0) {
             return 1;
         }
     }
@@ -342,7 +440,7 @@ static int append_text(char *buf, size_t cap, size_t *used, const char *fmt, ...
 }
 
 static int render_value_summary(ThatchVal value,
-                                const JsonDemoManifest *manifest,
+                                const JsonExpandedPaths *expanded,
                                 const char *path,
                                 uint32_t indent,
                                 char *buf,
@@ -350,7 +448,7 @@ static int render_value_summary(ThatchVal value,
                                 size_t *used);
 
 static int render_container_children(ThatchVal value,
-                                     const JsonDemoManifest *manifest,
+                                     const JsonExpandedPaths *expanded,
                                      const char *path,
                                      uint32_t indent,
                                      char *buf,
@@ -380,7 +478,7 @@ static int render_container_children(ThatchVal value,
         if (append_text(buf, cap, used, "%*s%.*s: ", (int)indent, "", (int)key_len, key) != 0) {
             return 1;
         }
-        if (render_value_summary(child, manifest, child_path, indent + 2u, buf, cap, used) != 0) {
+        if (render_value_summary(child, expanded, child_path, indent + 2u, buf, cap, used) != 0) {
             return 1;
         }
     }
@@ -388,7 +486,7 @@ static int render_container_children(ThatchVal value,
 }
 
 static int render_value_summary(ThatchVal value,
-                                const JsonDemoManifest *manifest,
+                                const JsonExpandedPaths *expanded,
                                 const char *path,
                                 uint32_t indent,
                                 char *buf,
@@ -433,8 +531,8 @@ static int render_value_summary(ThatchVal value,
             if (append_text(buf, cap, used, "{%u keys}\n", len) != 0) {
                 return 1;
             }
-            if (path_is_expanded(manifest, path)) {
-                return render_container_children(value, manifest, path, indent, buf, cap, used);
+            if (path_is_expanded(expanded, path)) {
+                return render_container_children(value, expanded, path, indent, buf, cap, used);
             }
             return 0;
         default:
@@ -443,7 +541,7 @@ static int render_value_summary(ThatchVal value,
 }
 
 static int render_collapsed_json_view(ThatchVal root,
-                                      const JsonDemoManifest *manifest,
+                                      const JsonExpandedPaths *expanded,
                                       char *buf,
                                       size_t cap)
 {
@@ -452,12 +550,14 @@ static int render_collapsed_json_view(ThatchVal root,
     if (!tj_is_object(root)) {
         return 1;
     }
-    return render_container_children(root, manifest, "", 0u, buf, cap, &used);
+    return render_container_children(root, expanded, "", 0u, buf, cap, &used);
 }
 
 int main(void)
 {
     JsonDemoManifest manifest;
+    JsonDemoPlan plan;
+    JsonExpandedPaths expanded = {0};
     uint8_t *wasm_bytes = NULL;
     uint32_t wasm_len = 0u;
     host_wasm_ctx_t *ctx = NULL;
@@ -487,6 +587,7 @@ int main(void)
     CHECK(txn != NULL);
 
     CHECK(parse_manifest(txn, CROFT_WASM_JSON_DEMO_MANIFEST_PATH, &manifest) == 0);
+    CHECK(parse_plan(txn, CROFT_WASM_JSON_DEMO_PLAN_PATH, &plan) == 0);
     CHECK(strcmp(manifest.schema, "croft-wasm-demo-v1") == 0);
     CHECK(strcmp(manifest.kind, "wasm-demo") == 0);
     CHECK(strcmp(manifest.entrypoint_family, "croft_json_tree_text_view_family_current_machine") == 0);
@@ -505,15 +606,41 @@ int main(void)
     CHECK(strcmp(manifest.preferred_slot_bundles[0], "croft-editor-appkit-current-machine") == 0);
     CHECK(strcmp(manifest.preferred_slot_bundles[1], "croft-editor-scene-metal-native-current-machine") == 0);
 
-    wasm_bytes = read_binary_file(manifest.wasm_path, &wasm_len);
+    CHECK(strcmp(plan.schema, manifest.schema) == 0);
+    CHECK(strcmp(plan.family, manifest.entrypoint_family) == 0);
+    CHECK(strcmp(plan.manifest_name, manifest.name) == 0);
+    CHECK(strcmp(plan.applicability, manifest.applicability) == 0);
+    CHECK(strcmp(plan.guest_kind, manifest.guest_kind) == 0);
+    CHECK(strcmp(plan.wasm_path, manifest.wasm_path) == 0);
+    CHECK(strcmp(plan.announce_export, manifest.announce_export) == 0);
+    CHECK(strcmp(plan.json_pointer_export, manifest.json_pointer_export) == 0);
+    CHECK(strcmp(plan.json_length_export, manifest.json_length_export) == 0);
+    CHECK(strcmp(plan.data_contract, manifest.data_contract) == 0);
+    CHECK(strcmp(plan.view_contract, manifest.view_contract) == 0);
+    CHECK(strcmp(plan.selected_slot, manifest.preferred_slot) == 0);
+    CHECK(strcmp(plan.selected_bundle, manifest.preferred_slot_bundles[0]) == 0);
+    CHECK(plan.expanded_path_count == manifest.expanded_path_count);
+    CHECK(strcmp(plan.expanded_paths[0], manifest.expanded_paths[0]) == 0);
+    CHECK(plan.provider_artifact_count >= 1u);
+    CHECK(string_array_contains(plan.provider_artifacts,
+                                plan.provider_artifact_count,
+                                "croft_editor_appkit"));
+    CHECK(string_array_contains(plan.provider_artifacts,
+                                plan.provider_artifact_count,
+                                "croft_fs"));
+
+    expanded.expanded_path_count = plan.expanded_path_count;
+    memcpy(expanded.expanded_paths, plan.expanded_paths, sizeof(expanded.expanded_paths));
+
+    wasm_bytes = read_binary_file(plan.wasm_path, &wasm_len);
     CHECK(wasm_bytes != NULL);
 
     ctx = host_wasm_create(wasm_bytes, wasm_len, 64u * 1024u);
     CHECK(ctx != NULL);
-    rc = host_wasm_call(ctx, manifest.announce_export, 0, NULL);
+    rc = host_wasm_call(ctx, plan.announce_export, 0, NULL);
     CHECK(rc == 0);
-    json_ptr = host_wasm_call(ctx, manifest.json_pointer_export, 0, NULL);
-    json_len = host_wasm_call(ctx, manifest.json_length_export, 0, NULL);
+    json_ptr = host_wasm_call(ctx, plan.json_pointer_export, 0, NULL);
+    json_len = host_wasm_call(ctx, plan.json_length_export, 0, NULL);
     CHECK(json_ptr > 0);
     CHECK(json_len > 0);
 
@@ -528,7 +655,7 @@ int main(void)
                    &root,
                    &err_pos)
           == ERR_OK);
-    CHECK(render_collapsed_json_view(root, &manifest, collapsed, sizeof(collapsed)) == 0);
+    CHECK(render_collapsed_json_view(root, &expanded, collapsed, sizeof(collapsed)) == 0);
 
     CHECK(strstr(collapsed, "project: \"Croft\"\n") != NULL);
     CHECK(strstr(collapsed, "features: {2 keys}\n") != NULL);
