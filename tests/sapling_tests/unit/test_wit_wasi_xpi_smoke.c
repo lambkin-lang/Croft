@@ -196,17 +196,38 @@ int main(void)
     ok &= expect_contains("xpi render backend slot mode", xpi_json, "\"mode\": \"exclusive\"");
     ok &= expect_contains("xpi render backend conflicts",
                           xpi_json,
-                          "\"conflicts_with\": [\"croft-render-tgfx-opengl-current-machine\", \"croft-render-metal-native-current-machine\"]");
+                          "\"conflicts_with\": [\"croft-render-metal-native-current-machine\"]");
     ok &= expect_contains("xpi render backend slot membership",
                           xpi_json,
                           "\"slots\": [\"croft-render-backend-slot-current-machine\"]");
+    ok &= expect_contains("xpi render family entrypoint",
+                          xpi_json,
+                          "\"name\": \"croft_render_canvas_family_current_machine\"");
+    ok &= expect_contains("xpi render family kind",
+                          xpi_json,
+                          "\"kind\": \"family\"");
+    ok &= expect_contains("xpi render family open slot",
+                          xpi_json,
+                          "\"open_slots\": [\"croft-render-backend-slot-current-machine\"]");
     ok &= expect_contains("xpi editor shell bundle", xpi_json, "\"name\": \"croft-editor-appkit-current-machine\"");
     ok &= expect_contains("xpi editor shell slot",
                           xpi_json,
                           "\"name\": \"croft-editor-shell-slot-current-machine\"");
+    ok &= expect_contains("xpi editor shell conflicts",
+                          xpi_json,
+                          "\"conflicts_with\": [\"croft-editor-scene-tgfx-metal-current-machine\", \"croft-editor-scene-metal-native-current-machine\"]");
     ok &= expect_contains("xpi editor shell slot membership",
                           xpi_json,
                           "\"slots\": [\"croft-editor-shell-slot-current-machine\"]");
+    ok &= expect_contains("xpi editor family entrypoint",
+                          xpi_json,
+                          "\"name\": \"croft_text_editor_family_current_machine\"");
+    ok &= expect_contains("xpi editor family bundles",
+                          xpi_json,
+                          "\"requires_bundles\": [\"croft-host-fs-current-machine\", \"croft-host-file-dialog-current-machine\"]");
+    ok &= expect_contains("xpi editor family open slot",
+                          xpi_json,
+                          "\"open_slots\": [\"croft-editor-shell-slot-current-machine\"]");
     ok &= expect_contains("xpi file dialog bundle", xpi_json, "\"name\": \"croft-host-file-dialog-current-machine\"");
     ok &= expect_contains("xpi gesture bundle", xpi_json, "\"name\": \"croft-host-gesture-current-machine\"");
     ok &= expect_contains("xpi host editor-input bundle", xpi_json, "\"name\": \"croft-host-editor-input-normalization\"");
@@ -244,6 +265,12 @@ int main(void)
     ok &= expect_contains("xpi direct editor bundles",
                           xpi_json,
                           "\"requires_bundles\": [\"croft-host-clipboard-current-machine\", \"croft-editor-scene-tgfx-metal-current-machine\", \"croft-host-window-current-machine\", \"croft-render-tgfx-metal-current-machine\", \"croft-host-fs-current-machine\", \"croft-host-file-dialog-current-machine\", \"croft-host-popup-menu-current-machine\"]");
+    ok &= expect_contains("xpi direct editor slot binding",
+                          xpi_json,
+                          "{ \"slot\": \"croft-editor-shell-slot-current-machine\", \"bundle\": \"croft-editor-scene-tgfx-metal-current-machine\" }");
+    ok &= expect_contains("xpi direct appkit editor slot binding",
+                          xpi_json,
+                          "{ \"slot\": \"croft-editor-shell-slot-current-machine\", \"bundle\": \"croft-editor-appkit-current-machine\" }");
     ok &= expect_contains("xpi zoom entrypoint",
                           xpi_json,
                           "\"name\": \"example_zoom_canvas\"");
@@ -256,6 +283,12 @@ int main(void)
     ok &= expect_contains("xpi ui window bundles",
                           xpi_json,
                           "\"requires_bundles\": [\"croft-host-window-current-machine\"]");
+    ok &= expect_contains("xpi render example slot binding",
+                          xpi_json,
+                          "{ \"slot\": \"croft-render-backend-slot-current-machine\", \"bundle\": \"croft-render-tgfx-metal-current-machine\" }");
+    ok &= expect_contains("xpi direct metal editor render slot binding",
+                          xpi_json,
+                          "{ \"slot\": \"croft-render-backend-slot-current-machine\", \"bundle\": \"croft-render-metal-native-current-machine\" }");
     ok &= expect_contains("xpi host window runtime artifact",
                           xpi_json,
                           "\"name\": \"croft_wit_host_window_runtime\"");
@@ -282,6 +315,9 @@ int main(void)
     ok &= expect_contains("artifact render backend requires bundles",
                           artifact_json,
                           "\"requires_bundles\": [\"croft-host-window-current-machine\"]");
+    ok &= expect_contains("artifact render backend selected slot",
+                          artifact_json,
+                          "\"selected_slot_bindings\": [{ \"slot\": \"croft-render-backend-slot-current-machine\", \"bundle\": \"croft-render-tgfx-metal-current-machine\" }]");
     ok &= expect_contains("artifact host window substrate",
                           artifact_json,
                           "\"shared_substrates\": [\"croft-window-system\"]");

@@ -205,6 +205,15 @@ It records:
 - those alternatives are now also projected into explicit XPI `slots`, so the
   graph can say "pick one render backend" or "pick one editor shell" directly
   instead of reconstructing that family from repeated pairwise conflicts
+- XPI artifacts and entrypoints now distinguish concrete slot selections from
+  unsolved choice sites: `selected_slot_bindings` records which slot-bearing
+  bundles a concrete build artifact or example already chose, while
+  `open_slots` records slot families that an aggregate or solver-facing
+  entrypoint intentionally leaves open for Lambkin to fill
+- solver-facing family entrypoints can now appear beside concrete examples in
+  the same graph, for example a current-machine render-canvas family that
+  leaves the render-backend slot open and a file-backed text-editor family
+  that leaves the editor-shell slot open
 - shared substrates such as byte streams, descriptor tables, pollables, system random, and time-base
 - current-machine capability bundles such as CLI stdio/terminal, random, clocks/poll, and filesystem/streams
 - Croft host mix-in bundles and substrates for filesystem, clock, window, clipboard, popup-menu, menu-bar, editor-input normalization, GPU surface access, and accessibility where the current machine provides them

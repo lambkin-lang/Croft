@@ -5,6 +5,35 @@ its aspect libraries are still co-evolving. These notes are not intended to
 freeze the design; they are meant to preserve the useful pressure points,
 surprises, and open questions that surfaced while forcing the ideas into code.
 
+## March 11, 2026: Slots Need Both Chosen Bindings And Open Choice Sites
+
+Once slots became first-class in `croft-xpi.json`, one more distinction became
+important.
+
+Not every XPI node plays the same role:
+
+- some are concrete artifacts or examples that already chose a render backend
+  or editor shell,
+- while others are intentional families that leave one of those choices open
+  for Lambkin to solve later.
+
+If both are flattened into a plain bundle list, the graph loses the difference
+between:
+
+- "this product already selected the Metal renderer",
+- and "this product still needs one member of the render-backend family."
+
+The more useful model is:
+
+- `selected_slot_bindings` records concrete slot-bearing bundles that a node
+  already chose,
+- `open_slots` records the exclusive families that remain unsolved,
+- and both can appear in one graph beside ordinary hard requirements such as
+  filesystem or file-dialog support.
+
+That is closer to the eventual weaving problem. Lambkin is not only choosing
+providers; it is also deciding where a composition is intentionally still open.
+
 ## March 11, 2026: The Solver Should Not Have To Reconstruct Artifact Participation
 
 The earlier split between `croft-artifacts.json` and `croft-xpi.json` was

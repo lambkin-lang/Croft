@@ -291,6 +291,37 @@ function(croft_json_string out_var value)
     set(${out_var} "\"${escaped}\"" PARENT_SCOPE)
 endfunction()
 
+function(croft_json_slot_bindings out_var)
+    set(bundle_names ${ARGN})
+    if(NOT bundle_names)
+        set(${out_var} "[]" PARENT_SCOPE)
+        return()
+    endif()
+
+    set(entries "")
+    set(seen "")
+    foreach(bundle_name IN LISTS bundle_names)
+        croft_get_xpi_bundle_field(slot_names "${bundle_name}" "SLOTS")
+        foreach(slot_name IN LISTS slot_names)
+            set(binding_key "${slot_name}::${bundle_name}")
+            if(binding_key IN_LIST seen)
+                continue()
+            endif()
+            list(APPEND seen "${binding_key}")
+            croft_json_string(slot_json "${slot_name}")
+            croft_json_string(bundle_json "${bundle_name}")
+            list(APPEND entries "{ \"slot\": ${slot_json}, \"bundle\": ${bundle_json} }")
+        endforeach()
+    endforeach()
+
+    if(entries)
+        string(JOIN ", " joined ${entries})
+        set(${out_var} "[${joined}]" PARENT_SCOPE)
+    else()
+        set(${out_var} "[]" PARENT_SCOPE)
+    endif()
+endfunction()
+
 function(croft_get_registered_artifact_bundle_field out_var target field)
     string(MAKE_C_IDENTIFIER "${target}" key)
     get_property(values GLOBAL PROPERTY "CROFT_REGISTERED_ARTIFACT_${key}_${field}")
@@ -298,6 +329,77 @@ function(croft_get_registered_artifact_bundle_field out_var target field)
         set(values "")
     endif()
     set(${out_var} ${values} PARENT_SCOPE)
+endfunction()
+
+function(croft_set_registered_artifact_field target field)
+    string(MAKE_C_IDENTIFIER "${target}" key)
+    set_property(GLOBAL PROPERTY "CROFT_REGISTERED_ARTIFACT_${key}_${field}" "${ARGN}")
+endfunction()
+
+function(croft_render_registered_artifact_entry out_var target)
+    croft_get_registered_artifact_bundle_field(kind "${target}" "KIND")
+    croft_get_registered_artifact_bundle_field(profile "${target}" "PROFILE")
+    croft_get_registered_artifact_bundle_field(upstream_package "${target}" "UPSTREAM_PACKAGE")
+    croft_get_registered_artifact_bundle_field(upstream_version "${target}" "UPSTREAM_VERSION")
+    croft_get_registered_artifact_bundle_field(support_status "${target}" "SUPPORT_STATUS")
+    croft_get_registered_artifact_bundle_field(applicability "${target}" "APPLICABILITY")
+    croft_get_registered_artifact_bundle_field(tags "${target}" "TAGS")
+    croft_get_registered_artifact_bundle_field(depends "${target}" "DEPENDS")
+    croft_get_registered_artifact_bundle_field(capability_bundles "${target}" "CAPABILITY_BUNDLES")
+    croft_get_registered_artifact_bundle_field(shared_substrates "${target}" "SHARED_SUBSTRATES")
+    croft_get_registered_artifact_bundle_field(helper_interfaces "${target}" "HELPER_INTERFACES")
+    croft_get_registered_artifact_bundle_field(declared_worlds "${target}" "DECLARED_WORLDS")
+    croft_get_registered_artifact_bundle_field(expanded_surfaces "${target}" "EXPANDED_SURFACES")
+    croft_get_registered_artifact_bundle_field(requires_bundles "${target}" "REQUIRES_BUNDLES")
+    croft_get_registered_artifact_bundle_field(open_slots "${target}" "OPEN_SLOTS")
+
+    if(NOT kind)
+        message(FATAL_ERROR "registered artifact '${target}' is missing KIND metadata")
+    endif()
+
+    if(profile)
+        croft_json_string(profile_json "${profile}")
+    else()
+        set(profile_json "null")
+    endif()
+    if(upstream_package)
+        croft_json_string(upstream_package_json "${upstream_package}")
+    else()
+        set(upstream_package_json "null")
+    endif()
+    if(upstream_version)
+        croft_json_string(upstream_version_json "${upstream_version}")
+    else()
+        set(upstream_version_json "null")
+    endif()
+    if(support_status)
+        croft_json_string(support_status_json "${support_status}")
+    else()
+        set(support_status_json "null")
+    endif()
+    if(applicability)
+        croft_json_string(applicability_json "${applicability}")
+    else()
+        set(applicability_json "null")
+    endif()
+
+    croft_json_array(tags_json ${tags})
+    croft_json_array(depends_json ${depends})
+    croft_json_array(capability_bundles_json ${capability_bundles})
+    croft_json_array(shared_substrates_json ${shared_substrates})
+    croft_json_array(helper_interfaces_json ${helper_interfaces})
+    croft_json_array(declared_worlds_json ${declared_worlds})
+    croft_json_array(expanded_surfaces_json ${expanded_surfaces})
+    croft_json_array(requires_bundles_json ${requires_bundles})
+    set(selected_slot_source_bundles ${capability_bundles} ${requires_bundles})
+    if(selected_slot_source_bundles)
+        list(REMOVE_DUPLICATES selected_slot_source_bundles)
+    endif()
+    croft_json_slot_bindings(selected_slot_bindings_json ${selected_slot_source_bundles})
+    croft_json_array(open_slots_json ${open_slots})
+
+    set(entry "    {\n      \"name\": \"${target}\",\n      \"kind\": \"${kind}\",\n      \"profile\": ${profile_json},\n      \"upstream_package\": ${upstream_package_json},\n      \"upstream_version\": ${upstream_version_json},\n      \"support_status\": ${support_status_json},\n      \"applicability\": ${applicability_json},\n      \"capability_bundles\": ${capability_bundles_json},\n      \"shared_substrates\": ${shared_substrates_json},\n      \"helper_interfaces\": ${helper_interfaces_json},\n      \"declared_worlds\": ${declared_worlds_json},\n      \"expanded_surfaces\": ${expanded_surfaces_json},\n      \"requires_bundles\": ${requires_bundles_json},\n      \"selected_slot_bindings\": ${selected_slot_bindings_json},\n      \"open_slots\": ${open_slots_json},\n      \"tags\": ${tags_json},\n      \"depends\": ${depends_json}\n    }")
+    set(${out_var} "${entry}" PARENT_SCOPE)
 endfunction()
 
 function(croft_collect_registered_artifact_requirement_bundles out_var)
@@ -341,7 +443,7 @@ function(croft_register_artifact target kind)
     cmake_parse_arguments(ART
         ""
         "PROFILE;UPSTREAM_PACKAGE;UPSTREAM_VERSION;SUPPORT_STATUS;APPLICABILITY"
-        "TAGS;DEPENDS;CAPABILITY_BUNDLES;SHARED_SUBSTRATES;HELPER_INTERFACES;DECLARED_WORLDS;EXPANDED_SURFACES;REQUIRES_BUNDLES;DERIVE_REQUIRES_FROM"
+        "TAGS;DEPENDS;CAPABILITY_BUNDLES;SHARED_SUBSTRATES;HELPER_INTERFACES;DECLARED_WORLDS;EXPANDED_SURFACES;REQUIRES_BUNDLES;DERIVE_REQUIRES_FROM;OPEN_SLOTS"
         ${ARGN})
     croft_collect_registered_artifact_requirement_bundles(derived_requires_bundles ${ART_DEPENDS})
     croft_collect_registered_artifact_participation_bundles(derived_provider_bundles ${ART_DERIVE_REQUIRES_FROM})
@@ -359,48 +461,23 @@ function(croft_register_artifact target kind)
     else()
         croft_get_target_profile(profile ${target})
     endif()
-    if(profile)
-        croft_json_string(profile_json "${profile}")
-    else()
-        set(profile_json "null")
-    endif()
-    if(ART_UPSTREAM_PACKAGE)
-        croft_json_string(upstream_package_json "${ART_UPSTREAM_PACKAGE}")
-    else()
-        set(upstream_package_json "null")
-    endif()
-    if(ART_UPSTREAM_VERSION)
-        croft_json_string(upstream_version_json "${ART_UPSTREAM_VERSION}")
-    else()
-        set(upstream_version_json "null")
-    endif()
-    if(ART_SUPPORT_STATUS)
-        croft_json_string(support_status_json "${ART_SUPPORT_STATUS}")
-    else()
-        set(support_status_json "null")
-    endif()
-    if(ART_APPLICABILITY)
-        croft_json_string(applicability_json "${ART_APPLICABILITY}")
-    else()
-        set(applicability_json "null")
-    endif()
-    croft_json_array(tags_json ${ART_TAGS})
-    croft_json_array(depends_json ${ART_DEPENDS})
-    croft_json_array(capability_bundles_json ${ART_CAPABILITY_BUNDLES})
-    croft_json_array(shared_substrates_json ${ART_SHARED_SUBSTRATES})
-    croft_json_array(helper_interfaces_json ${ART_HELPER_INTERFACES})
-    croft_json_array(declared_worlds_json ${ART_DECLARED_WORLDS})
-    croft_json_array(expanded_surfaces_json ${ART_EXPANDED_SURFACES})
-    croft_json_array(requires_bundles_json ${effective_requires_bundles})
-    set(entry "    {\n      \"name\": \"${target}\",\n      \"kind\": \"${kind}\",\n      \"profile\": ${profile_json},\n      \"upstream_package\": ${upstream_package_json},\n      \"upstream_version\": ${upstream_version_json},\n      \"support_status\": ${support_status_json},\n      \"applicability\": ${applicability_json},\n      \"capability_bundles\": ${capability_bundles_json},\n      \"shared_substrates\": ${shared_substrates_json},\n      \"helper_interfaces\": ${helper_interfaces_json},\n      \"declared_worlds\": ${declared_worlds_json},\n      \"expanded_surfaces\": ${expanded_surfaces_json},\n      \"requires_bundles\": ${requires_bundles_json},\n      \"tags\": ${tags_json},\n      \"depends\": ${depends_json}\n    }")
-    set_property(GLOBAL APPEND PROPERTY CROFT_ARTIFACT_ENTRIES "${entry}")
-    if(ART_CAPABILITY_BUNDLES OR ART_SHARED_SUBSTRATES OR ART_HELPER_INTERFACES
-       OR ART_DECLARED_WORLDS OR ART_EXPANDED_SURFACES OR effective_requires_bundles)
-        set_property(GLOBAL APPEND PROPERTY CROFT_XPI_ARTIFACT_ENTRIES "${entry}")
-    endif()
-    string(MAKE_C_IDENTIFIER "${target}" key)
-    set_property(GLOBAL PROPERTY "CROFT_REGISTERED_ARTIFACT_${key}_CAPABILITY_BUNDLES" "${ART_CAPABILITY_BUNDLES}")
-    set_property(GLOBAL PROPERTY "CROFT_REGISTERED_ARTIFACT_${key}_REQUIRES_BUNDLES" "${effective_requires_bundles}")
+
+    croft_set_registered_artifact_field(${target} "KIND" "${kind}")
+    croft_set_registered_artifact_field(${target} "PROFILE" "${profile}")
+    croft_set_registered_artifact_field(${target} "UPSTREAM_PACKAGE" "${ART_UPSTREAM_PACKAGE}")
+    croft_set_registered_artifact_field(${target} "UPSTREAM_VERSION" "${ART_UPSTREAM_VERSION}")
+    croft_set_registered_artifact_field(${target} "SUPPORT_STATUS" "${ART_SUPPORT_STATUS}")
+    croft_set_registered_artifact_field(${target} "APPLICABILITY" "${ART_APPLICABILITY}")
+    croft_set_registered_artifact_field(${target} "TAGS" "${ART_TAGS}")
+    croft_set_registered_artifact_field(${target} "DEPENDS" "${ART_DEPENDS}")
+    croft_set_registered_artifact_field(${target} "CAPABILITY_BUNDLES" "${ART_CAPABILITY_BUNDLES}")
+    croft_set_registered_artifact_field(${target} "SHARED_SUBSTRATES" "${ART_SHARED_SUBSTRATES}")
+    croft_set_registered_artifact_field(${target} "HELPER_INTERFACES" "${ART_HELPER_INTERFACES}")
+    croft_set_registered_artifact_field(${target} "DECLARED_WORLDS" "${ART_DECLARED_WORLDS}")
+    croft_set_registered_artifact_field(${target} "EXPANDED_SURFACES" "${ART_EXPANDED_SURFACES}")
+    croft_set_registered_artifact_field(${target} "REQUIRES_BUNDLES" "${effective_requires_bundles}")
+    croft_set_registered_artifact_field(${target} "OPEN_SLOTS" "${ART_OPEN_SLOTS}")
+    set_property(GLOBAL APPEND PROPERTY CROFT_REGISTERED_ARTIFACT_TARGETS "${target}")
     set_property(GLOBAL APPEND PROPERTY CROFT_INSTALL_TARGETS "${target}")
 endfunction()
 
@@ -748,7 +825,7 @@ function(croft_register_xpi_entrypoint name)
     cmake_parse_arguments(XPI_ENTRY
         ""
         "KIND;FOCUS;APPLICABILITY"
-        "TAGS;REQUIRES;REQUIRES_BUNDLES"
+        "TAGS;REQUIRES;REQUIRES_BUNDLES;OPEN_SLOTS"
         ${ARGN})
     if(XPI_ENTRY_KIND)
         croft_json_string(kind_json "${XPI_ENTRY_KIND}")
@@ -773,7 +850,9 @@ function(croft_register_xpi_entrypoint name)
     croft_json_array(tags_json ${XPI_ENTRY_TAGS})
     croft_json_array(requires_json ${XPI_ENTRY_REQUIRES})
     croft_json_array(requires_bundles_json ${effective_requires_bundles})
-    set(entry "    {\n      \"name\": \"${name}\",\n      \"kind\": ${kind_json},\n      \"focus\": ${focus_json},\n      \"applicability\": ${applicability_json},\n      \"tags\": ${tags_json},\n      \"requires\": ${requires_json},\n      \"requires_bundles\": ${requires_bundles_json}\n    }")
+    croft_json_slot_bindings(selected_slot_bindings_json ${effective_requires_bundles})
+    croft_json_array(open_slots_json ${XPI_ENTRY_OPEN_SLOTS})
+    set(entry "    {\n      \"name\": \"${name}\",\n      \"kind\": ${kind_json},\n      \"focus\": ${focus_json},\n      \"applicability\": ${applicability_json},\n      \"tags\": ${tags_json},\n      \"requires\": ${requires_json},\n      \"requires_bundles\": ${requires_bundles_json},\n      \"selected_slot_bindings\": ${selected_slot_bindings_json},\n      \"open_slots\": ${open_slots_json}\n    }")
     set_property(GLOBAL APPEND PROPERTY CROFT_XPI_ENTRYPOINT_ENTRIES "${entry}")
 endfunction()
 
@@ -784,7 +863,7 @@ function(croft_register_wasm_guest target kind output_path)
 endfunction()
 
 function(croft_add_example target)
-    cmake_parse_arguments(EXAMPLE "NO_DERIVE_REQUIRES" "FOCUS;APPLICABILITY" "SOURCES;LINKS;REQUIRES;DERIVE_REQUIRES_FROM;REQUIRES_BUNDLES;TAGS;COMPILE_DEFINITIONS" ${ARGN})
+    cmake_parse_arguments(EXAMPLE "NO_DERIVE_REQUIRES" "FOCUS;APPLICABILITY" "SOURCES;LINKS;REQUIRES;DERIVE_REQUIRES_FROM;REQUIRES_BUNDLES;OPEN_SLOTS;TAGS;COMPILE_DEFINITIONS" ${ARGN})
     if(EXAMPLE_NO_DERIVE_REQUIRES)
         set(derive_requires_from ${EXAMPLE_DERIVE_REQUIRES_FROM})
     elseif(EXAMPLE_DERIVE_REQUIRES_FROM)
@@ -823,6 +902,7 @@ function(croft_add_example target)
         TAGS ${EXAMPLE_TAGS}
         REQUIRES ${EXAMPLE_REQUIRES}
         REQUIRES_BUNDLES ${effective_requires_bundles}
+        OPEN_SLOTS ${EXAMPLE_OPEN_SLOTS}
     )
 endfunction()
 
@@ -2834,25 +2914,46 @@ croft_register_artifact_from_xpi_bundles(croft_wit_host_editor_input_runtime wit
     DEPENDS croft_wit_host_editor_input
 )
 
-croft_define_xpi_slot_spec(croft-render-backend-slot-current-machine
-    MODE "exclusive"
-    APPLICABILITY "current-machine-windowed"
-    DESCRIPTION "Exclusive composition slot for the current-machine render backend."
-    BUNDLES
-        croft-render-tgfx-opengl-current-machine
-        croft-render-tgfx-metal-current-machine
-        croft-render-metal-native-current-machine
-)
-croft_define_xpi_slot_spec(croft-editor-shell-slot-current-machine
-    MODE "exclusive"
-    APPLICABILITY "current-machine-windowed"
-    DESCRIPTION "Exclusive composition slot for the current-machine editor shell implementation."
-    BUNDLES
-        croft-editor-scene-tgfx-opengl-current-machine
-        croft-editor-scene-tgfx-metal-current-machine
-        croft-editor-scene-metal-native-current-machine
-        croft-editor-appkit-current-machine
-)
+set(CROFT_RENDER_BACKEND_SLOT_BUNDLES "")
+if(CROFT_GLFW_TARGET AND CROFT_TGFX_TARGET AND CROFT_TGFX_REQUEST_OPENGL)
+    list(APPEND CROFT_RENDER_BACKEND_SLOT_BUNDLES croft-render-tgfx-opengl-current-machine)
+endif()
+if(APPLE AND CROFT_GLFW_TARGET AND CROFT_TGFX_TARGET AND CROFT_TGFX_REQUEST_METAL)
+    list(APPEND CROFT_RENDER_BACKEND_SLOT_BUNDLES croft-render-tgfx-metal-current-machine)
+endif()
+if(APPLE AND CROFT_GLFW_TARGET)
+    list(APPEND CROFT_RENDER_BACKEND_SLOT_BUNDLES croft-render-metal-native-current-machine)
+endif()
+if(CROFT_RENDER_BACKEND_SLOT_BUNDLES)
+    croft_define_xpi_slot_spec(croft-render-backend-slot-current-machine
+        MODE "exclusive"
+        APPLICABILITY "current-machine-windowed"
+        DESCRIPTION "Exclusive composition slot for the current-machine render backend."
+        BUNDLES ${CROFT_RENDER_BACKEND_SLOT_BUNDLES}
+    )
+endif()
+
+set(CROFT_EDITOR_SHELL_SLOT_BUNDLES "")
+if(CROFT_GLFW_TARGET AND CROFT_TGFX_TARGET AND CROFT_TGFX_REQUEST_OPENGL)
+    list(APPEND CROFT_EDITOR_SHELL_SLOT_BUNDLES croft-editor-scene-tgfx-opengl-current-machine)
+endif()
+if(APPLE AND CROFT_GLFW_TARGET AND CROFT_TGFX_TARGET AND CROFT_TGFX_REQUEST_METAL)
+    list(APPEND CROFT_EDITOR_SHELL_SLOT_BUNDLES croft-editor-scene-tgfx-metal-current-machine)
+endif()
+if(APPLE AND CROFT_GLFW_TARGET)
+    list(APPEND CROFT_EDITOR_SHELL_SLOT_BUNDLES croft-editor-scene-metal-native-current-machine)
+endif()
+if(APPLE)
+    list(APPEND CROFT_EDITOR_SHELL_SLOT_BUNDLES croft-editor-appkit-current-machine)
+endif()
+if(CROFT_EDITOR_SHELL_SLOT_BUNDLES)
+    croft_define_xpi_slot_spec(croft-editor-shell-slot-current-machine
+        MODE "exclusive"
+        APPLICABILITY "current-machine-windowed"
+        DESCRIPTION "Exclusive composition slot for the current-machine editor shell implementation."
+        BUNDLES ${CROFT_EDITOR_SHELL_SLOT_BUNDLES}
+    )
+endif()
 
 # ── Optional Croft artifacts ───────────────────────────────────────────
 if(CROFT_WASM3_TARGET)
@@ -3616,6 +3717,30 @@ elseif(TARGET croft_gesture_macos)
     set(CROFT_EXAMPLE_GESTURE_TARGET croft_gesture_macos)
 endif()
 
+# ── Solver-facing XPI families ───────────────────────────────────────
+if(CROFT_RENDER_BACKEND_SLOT_BUNDLES)
+    croft_register_xpi_entrypoint(croft_render_canvas_family_current_machine
+        KIND "family"
+        FOCUS "Current-machine render-canvas family leaving render backend selection open for Lambkin."
+        APPLICABILITY "current-machine-windowed"
+        TAGS family render canvas slot-open solver-facing
+        OPEN_SLOTS croft-render-backend-slot-current-machine
+    )
+endif()
+
+if(CROFT_EDITOR_SHELL_SLOT_BUNDLES)
+    croft_register_xpi_entrypoint(croft_text_editor_family_current_machine
+        KIND "family"
+        FOCUS "Current-machine file-backed text-editor family leaving editor-shell selection open for Lambkin."
+        APPLICABILITY "current-machine-windowed"
+        TAGS family editor text slot-open solver-facing
+        REQUIRES_BUNDLES
+            croft-host-fs-current-machine
+            croft-host-file-dialog-current-machine
+        OPEN_SLOTS croft-editor-shell-slot-current-machine
+    )
+endif()
+
 # ── Shared Wasm guest tooling for examples/tests ─────────────────────
 unset(CROFT_WAT2WASM_TOOL)
 set(CROFT_WAT2WASM_DEP "")
@@ -4373,10 +4498,31 @@ if(CROFT_BUILD_TESTS)
 endif()
 
 # ── Packaging & artifact manifest ──────────────────────────────────────
-get_property(CROFT_ARTIFACT_ENTRIES GLOBAL PROPERTY CROFT_ARTIFACT_ENTRIES)
-if(NOT CROFT_ARTIFACT_ENTRIES)
-    set(CROFT_ARTIFACT_ENTRIES "")
+get_property(CROFT_REGISTERED_ARTIFACT_TARGETS GLOBAL PROPERTY CROFT_REGISTERED_ARTIFACT_TARGETS)
+if(NOT CROFT_REGISTERED_ARTIFACT_TARGETS)
+    set(CROFT_REGISTERED_ARTIFACT_TARGETS "")
 endif()
+list(REMOVE_DUPLICATES CROFT_REGISTERED_ARTIFACT_TARGETS)
+
+set(CROFT_ARTIFACT_ENTRIES "")
+set(CROFT_XPI_ARTIFACT_ENTRIES "")
+foreach(target IN LISTS CROFT_REGISTERED_ARTIFACT_TARGETS)
+    croft_render_registered_artifact_entry(entry "${target}")
+    list(APPEND CROFT_ARTIFACT_ENTRIES "${entry}")
+
+    croft_get_registered_artifact_bundle_field(capability_bundles "${target}" "CAPABILITY_BUNDLES")
+    croft_get_registered_artifact_bundle_field(shared_substrates "${target}" "SHARED_SUBSTRATES")
+    croft_get_registered_artifact_bundle_field(helper_interfaces "${target}" "HELPER_INTERFACES")
+    croft_get_registered_artifact_bundle_field(declared_worlds "${target}" "DECLARED_WORLDS")
+    croft_get_registered_artifact_bundle_field(expanded_surfaces "${target}" "EXPANDED_SURFACES")
+    croft_get_registered_artifact_bundle_field(requires_bundles "${target}" "REQUIRES_BUNDLES")
+    croft_get_registered_artifact_bundle_field(open_slots "${target}" "OPEN_SLOTS")
+    if(capability_bundles OR shared_substrates OR helper_interfaces
+       OR declared_worlds OR expanded_surfaces OR requires_bundles OR open_slots)
+        list(APPEND CROFT_XPI_ARTIFACT_ENTRIES "${entry}")
+    endif()
+endforeach()
+
 string(JOIN ",\n" CROFT_ARTIFACT_ENTRIES_JSON ${CROFT_ARTIFACT_ENTRIES})
 file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/croft-artifacts.json"
     CONTENT "{\n  \"artifacts\": [\n${CROFT_ARTIFACT_ENTRIES_JSON}\n  ]\n}\n")
@@ -4396,10 +4542,6 @@ if(NOT CROFT_XPI_BUNDLE_ENTRIES)
     set(CROFT_XPI_BUNDLE_ENTRIES "")
 endif()
 string(JOIN ",\n" CROFT_XPI_BUNDLE_ENTRIES_JSON ${CROFT_XPI_BUNDLE_ENTRIES})
-get_property(CROFT_XPI_ARTIFACT_ENTRIES GLOBAL PROPERTY CROFT_XPI_ARTIFACT_ENTRIES)
-if(NOT CROFT_XPI_ARTIFACT_ENTRIES)
-    set(CROFT_XPI_ARTIFACT_ENTRIES "")
-endif()
 string(JOIN ",\n" CROFT_XPI_ARTIFACT_ENTRIES_JSON ${CROFT_XPI_ARTIFACT_ENTRIES})
 get_property(CROFT_XPI_ENTRYPOINT_ENTRIES GLOBAL PROPERTY CROFT_XPI_ENTRYPOINT_ENTRIES)
 if(NOT CROFT_XPI_ENTRYPOINT_ENTRIES)
