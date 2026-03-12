@@ -5,6 +5,71 @@ its aspect libraries are still co-evolving. These notes are not intended to
 freeze the design; they are meant to preserve the useful pressure points,
 surprises, and open questions that surfaced while forcing the ideas into code.
 
+## March 11, 2026: Lambkin Requirements Need To Distill Into A Small Solver Request
+
+The first useful "real solver" test is not optimization. It is whether a
+Lambkin-side user request can be distilled into a small, explicit document
+without inventing more architecture while the solve is happening.
+
+The current JSON/Thatch Wasm demo now exercises that shape directly. Its demo
+manifest carries:
+
+- a family entrypoint, not a concrete product,
+- hard bundle requirements such as filesystem and file-dialog access,
+- open-slot preferences for still-unsolved families such as the editor shell,
+- data/view contracts for the guest/host boundary,
+- and guest execution details such as the Wasm path and required exports.
+
+That is the right direction because it keeps "what the user wants" separate
+from "which concrete providers Croft chooses." The heuristic solver can now
+consume `croft-xpi.json`, pick bundles for the open slots, and project a
+composition plan that already includes:
+
+- selected bundles,
+- provider artifacts,
+- shared substrates,
+- helper interfaces,
+- declared worlds,
+- and expanded callable surfaces.
+
+That is enough structure to say something stronger than "the graph looks
+reasonable." It shows that the current XPI vocabulary is at least sufficient
+for a real early solve:
+
+- user intent is represented by families, hard requirements, preferences, and
+  contracts,
+- Croft supply is represented by bundles, substrates, artifacts, and slots,
+- and the solve result is a composition plan rather than a bag of tags.
+
+The important constraint is that this request format should stay small.
+Whenever another solver feature is needed, the right question is not "what
+extra knob would help?" but "is the missing fact really a new category, or was
+it supposed to be derivable from the graph we already emit?"
+
+## March 11, 2026: Applicability Needs Traits, Not Opaque Strings
+
+Once the solver prototype started choosing real bundles, another weakness
+showed up immediately: `applicability` as a single string is too weak for
+selection logic.
+
+Strings such as `current-machine`, `current-machine-windowed`, and
+`current-machine-macos` are useful labels, but a solver needs a more explicit
+view of compatibility. It needs to know that:
+
+- this build is currently on Darwin/macOS,
+- that implies Unix traits too,
+- a windowed family is asking for one more capability axis,
+- and a bundle that only says `current-machine-macos` is still compatible with
+  that environment.
+
+The better model is to keep the human-facing applicability string, but also
+emit derived `applicability_traits` plus a top-level XPI context describing
+the current build machine traits.
+
+That turns the question from brittle string comparison into a compatibility
+check over explicit traits, which is much closer to the eventual Lambkin
+solver/refinement story.
+
 ## March 11, 2026: Slots Need Both Chosen Bindings And Open Choice Sites
 
 Once slots became first-class in `croft-xpi.json`, one more distinction became

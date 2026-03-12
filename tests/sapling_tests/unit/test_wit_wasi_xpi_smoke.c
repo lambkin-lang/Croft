@@ -185,6 +185,10 @@ int main(void)
     ok &= expect_contains("xpi artifacts section", xpi_json, "\"artifacts\": [");
     ok &= expect_contains("xpi entrypoints section", xpi_json, "\"entrypoints\": [");
     ok &= expect_contains("xpi slots section", xpi_json, "\"slots\": [");
+    ok &= expect_contains("xpi context section", xpi_json, "\"context\": {");
+    ok &= expect_contains("xpi current machine traits",
+                          xpi_json,
+                          "\"current_machine_traits\": [\"current-machine\", \"macos\", \"unix\"]");
     ok &= expect_contains("xpi runtime artifact", xpi_json, "\"name\": \"croft_wit_wasi_machine_runtime\"");
     ok &= expect_contains("xpi runtime bundles",
                           xpi_json,
@@ -222,6 +226,12 @@ int main(void)
     ok &= expect_contains("xpi editor family entrypoint",
                           xpi_json,
                           "\"name\": \"croft_text_editor_family_current_machine\"");
+    ok &= expect_contains("xpi json family entrypoint",
+                          xpi_json,
+                          "\"name\": \"croft_json_tree_text_view_family_current_machine\"");
+    ok &= expect_contains("xpi json family applicability traits",
+                          xpi_json,
+                          "\"applicability_traits\": [\"current-machine\", \"macos\", \"unix\", \"windowed\"]");
     ok &= expect_contains("xpi editor family bundles",
                           xpi_json,
                           "\"requires_bundles\": [\"croft-host-fs-current-machine\", \"croft-host-file-dialog-current-machine\"]");

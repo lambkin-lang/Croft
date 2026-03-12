@@ -291,6 +291,47 @@ function(croft_json_string out_var value)
     set(${out_var} "\"${escaped}\"" PARENT_SCOPE)
 endfunction()
 
+function(croft_collect_applicability_traits out_var applicability)
+    set(traits "")
+    if(NOT applicability)
+        set(${out_var} "" PARENT_SCOPE)
+        return()
+    endif()
+
+    if(applicability STREQUAL "host-neutral")
+        list(APPEND traits host-neutral)
+    elseif(applicability MATCHES "^current-machine")
+        list(APPEND traits current-machine)
+        if(APPLE)
+            list(APPEND traits macos unix)
+        elseif(UNIX)
+            list(APPEND traits unix)
+        endif()
+        if(applicability MATCHES "(^|-)macos($|-)")
+            list(APPEND traits macos unix)
+        endif()
+        if(applicability MATCHES "(^|-)unix($|-)")
+            list(APPEND traits unix)
+        endif()
+        if(applicability MATCHES "(^|-)windowed($|-)")
+            list(APPEND traits windowed)
+        endif()
+    else()
+        list(APPEND traits "${applicability}")
+    endif()
+
+    if(traits)
+        list(REMOVE_DUPLICATES traits)
+    endif()
+    set(${out_var} ${traits} PARENT_SCOPE)
+endfunction()
+
+function(croft_json_applicability_traits out_var applicability)
+    croft_collect_applicability_traits(traits "${applicability}")
+    croft_json_array(json ${traits})
+    set(${out_var} "${json}" PARENT_SCOPE)
+endfunction()
+
 function(croft_json_slot_bindings out_var)
     set(bundle_names ${ARGN})
     if(NOT bundle_names)
@@ -382,6 +423,7 @@ function(croft_render_registered_artifact_entry out_var target)
     else()
         set(applicability_json "null")
     endif()
+    croft_json_applicability_traits(applicability_traits_json "${applicability}")
 
     croft_json_array(tags_json ${tags})
     croft_json_array(depends_json ${depends})
@@ -398,7 +440,7 @@ function(croft_render_registered_artifact_entry out_var target)
     croft_json_slot_bindings(selected_slot_bindings_json ${selected_slot_source_bundles})
     croft_json_array(open_slots_json ${open_slots})
 
-    set(entry "    {\n      \"name\": \"${target}\",\n      \"kind\": \"${kind}\",\n      \"profile\": ${profile_json},\n      \"upstream_package\": ${upstream_package_json},\n      \"upstream_version\": ${upstream_version_json},\n      \"support_status\": ${support_status_json},\n      \"applicability\": ${applicability_json},\n      \"capability_bundles\": ${capability_bundles_json},\n      \"shared_substrates\": ${shared_substrates_json},\n      \"helper_interfaces\": ${helper_interfaces_json},\n      \"declared_worlds\": ${declared_worlds_json},\n      \"expanded_surfaces\": ${expanded_surfaces_json},\n      \"requires_bundles\": ${requires_bundles_json},\n      \"selected_slot_bindings\": ${selected_slot_bindings_json},\n      \"open_slots\": ${open_slots_json},\n      \"tags\": ${tags_json},\n      \"depends\": ${depends_json}\n    }")
+    set(entry "    {\n      \"name\": \"${target}\",\n      \"kind\": \"${kind}\",\n      \"profile\": ${profile_json},\n      \"upstream_package\": ${upstream_package_json},\n      \"upstream_version\": ${upstream_version_json},\n      \"support_status\": ${support_status_json},\n      \"applicability\": ${applicability_json},\n      \"applicability_traits\": ${applicability_traits_json},\n      \"capability_bundles\": ${capability_bundles_json},\n      \"shared_substrates\": ${shared_substrates_json},\n      \"helper_interfaces\": ${helper_interfaces_json},\n      \"declared_worlds\": ${declared_worlds_json},\n      \"expanded_surfaces\": ${expanded_surfaces_json},\n      \"requires_bundles\": ${requires_bundles_json},\n      \"selected_slot_bindings\": ${selected_slot_bindings_json},\n      \"open_slots\": ${open_slots_json},\n      \"tags\": ${tags_json},\n      \"depends\": ${depends_json}\n    }")
     set(${out_var} "${entry}" PARENT_SCOPE)
 endfunction()
 
@@ -497,6 +539,7 @@ function(croft_register_xpi_substrate name)
     else()
         set(applicability_json "null")
     endif()
+    croft_json_applicability_traits(applicability_traits_json "${XPI_APPLICABILITY}")
     if(XPI_DESCRIPTION)
         croft_json_string(description_json "${XPI_DESCRIPTION}")
     else()
@@ -504,7 +547,7 @@ function(croft_register_xpi_substrate name)
     endif()
     croft_json_array(artifacts_json ${XPI_ARTIFACTS})
     croft_json_array(interfaces_json ${XPI_INTERFACES})
-    set(entry "    {\n      \"name\": \"${name}\",\n      \"kind\": ${kind_json},\n      \"applicability\": ${applicability_json},\n      \"description\": ${description_json},\n      \"artifacts\": ${artifacts_json},\n      \"interfaces\": ${interfaces_json}\n    }")
+    set(entry "    {\n      \"name\": \"${name}\",\n      \"kind\": ${kind_json},\n      \"applicability\": ${applicability_json},\n      \"applicability_traits\": ${applicability_traits_json},\n      \"description\": ${description_json},\n      \"artifacts\": ${artifacts_json},\n      \"interfaces\": ${interfaces_json}\n    }")
     set_property(GLOBAL APPEND PROPERTY CROFT_XPI_SUBSTRATE_ENTRIES "${entry}")
 endfunction()
 
@@ -524,13 +567,14 @@ function(croft_register_xpi_slot name)
     else()
         set(applicability_json "null")
     endif()
+    croft_json_applicability_traits(applicability_traits_json "${XPI_APPLICABILITY}")
     if(XPI_DESCRIPTION)
         croft_json_string(description_json "${XPI_DESCRIPTION}")
     else()
         set(description_json "null")
     endif()
     croft_json_array(bundles_json ${XPI_BUNDLES})
-    set(entry "    {\n      \"name\": \"${name}\",\n      \"mode\": ${mode_json},\n      \"applicability\": ${applicability_json},\n      \"description\": ${description_json},\n      \"bundles\": ${bundles_json}\n    }")
+    set(entry "    {\n      \"name\": \"${name}\",\n      \"mode\": ${mode_json},\n      \"applicability\": ${applicability_json},\n      \"applicability_traits\": ${applicability_traits_json},\n      \"description\": ${description_json},\n      \"bundles\": ${bundles_json}\n    }")
     set_property(GLOBAL APPEND PROPERTY CROFT_XPI_SLOT_ENTRIES "${entry}")
 endfunction()
 
@@ -550,6 +594,7 @@ function(croft_register_xpi_bundle name)
     else()
         set(applicability_json "null")
     endif()
+    croft_json_applicability_traits(applicability_traits_json "${XPI_APPLICABILITY}")
     if(XPI_DESCRIPTION)
         croft_json_string(description_json "${XPI_DESCRIPTION}")
     else()
@@ -570,7 +615,7 @@ function(croft_register_xpi_bundle name)
     croft_json_array(conflicts_with_json ${effective_conflicts})
     croft_json_array(roles_json ${XPI_ROLES})
     croft_json_array(slots_json ${XPI_SLOTS})
-    set(entry "    {\n      \"name\": \"${name}\",\n      \"support_status\": ${support_status_json},\n      \"applicability\": ${applicability_json},\n      \"description\": ${description_json},\n      \"artifacts\": ${artifacts_json},\n      \"substrates\": ${substrates_json},\n      \"declared_worlds\": ${declared_worlds_json},\n      \"expanded_surfaces\": ${expanded_surfaces_json},\n      \"helper_interfaces\": ${helper_interfaces_json},\n      \"requires_bundles\": ${requires_bundles_json},\n      \"compatible_bundles\": ${compatible_bundles_json},\n      \"conflicts_with\": ${conflicts_with_json},\n      \"roles\": ${roles_json},\n      \"slots\": ${slots_json}\n    }")
+    set(entry "    {\n      \"name\": \"${name}\",\n      \"support_status\": ${support_status_json},\n      \"applicability\": ${applicability_json},\n      \"applicability_traits\": ${applicability_traits_json},\n      \"description\": ${description_json},\n      \"artifacts\": ${artifacts_json},\n      \"substrates\": ${substrates_json},\n      \"declared_worlds\": ${declared_worlds_json},\n      \"expanded_surfaces\": ${expanded_surfaces_json},\n      \"helper_interfaces\": ${helper_interfaces_json},\n      \"requires_bundles\": ${requires_bundles_json},\n      \"compatible_bundles\": ${compatible_bundles_json},\n      \"conflicts_with\": ${conflicts_with_json},\n      \"roles\": ${roles_json},\n      \"slots\": ${slots_json}\n    }")
     set_property(GLOBAL APPEND PROPERTY CROFT_XPI_BUNDLE_ENTRIES "${entry}")
 endfunction()
 
@@ -842,6 +887,7 @@ function(croft_register_xpi_entrypoint name)
     else()
         set(applicability_json "null")
     endif()
+    croft_json_applicability_traits(applicability_traits_json "${XPI_ENTRY_APPLICABILITY}")
     croft_collect_transitive_xpi_bundle_requirements(transitive_requires_bundles ${XPI_ENTRY_REQUIRES_BUNDLES})
     set(effective_requires_bundles ${XPI_ENTRY_REQUIRES_BUNDLES} ${transitive_requires_bundles})
     if(effective_requires_bundles)
@@ -852,7 +898,7 @@ function(croft_register_xpi_entrypoint name)
     croft_json_array(requires_bundles_json ${effective_requires_bundles})
     croft_json_slot_bindings(selected_slot_bindings_json ${effective_requires_bundles})
     croft_json_array(open_slots_json ${XPI_ENTRY_OPEN_SLOTS})
-    set(entry "    {\n      \"name\": \"${name}\",\n      \"kind\": ${kind_json},\n      \"focus\": ${focus_json},\n      \"applicability\": ${applicability_json},\n      \"tags\": ${tags_json},\n      \"requires\": ${requires_json},\n      \"requires_bundles\": ${requires_bundles_json},\n      \"selected_slot_bindings\": ${selected_slot_bindings_json},\n      \"open_slots\": ${open_slots_json}\n    }")
+    set(entry "    {\n      \"name\": \"${name}\",\n      \"kind\": ${kind_json},\n      \"focus\": ${focus_json},\n      \"applicability\": ${applicability_json},\n      \"applicability_traits\": ${applicability_traits_json},\n      \"tags\": ${tags_json},\n      \"requires\": ${requires_json},\n      \"requires_bundles\": ${requires_bundles_json},\n      \"selected_slot_bindings\": ${selected_slot_bindings_json},\n      \"open_slots\": ${open_slots_json}\n    }")
     set_property(GLOBAL APPEND PROPERTY CROFT_XPI_ENTRYPOINT_ENTRIES "${entry}")
 endfunction()
 
@@ -1148,6 +1194,126 @@ function(croft_add_wit_wasm_guest target)
 
     if(WIT_GUEST_OUT_VAR)
         set(${WIT_GUEST_OUT_VAR} "${_croft_wit_guest_output_path}" PARENT_SCOPE)
+    endif()
+endfunction()
+
+function(croft_generate_wasm_demo_manifest)
+    cmake_parse_arguments(DEMO
+        ""
+        "NAME;GUEST_TARGET;GUEST_KIND;WASM_PATH;OUTPUT_PATH;ENTRYPOINT_FAMILY;APPLICABILITY;ANNOUNCE_EXPORT;JSON_POINTER_EXPORT;JSON_LENGTH_EXPORT;DATA_CONTRACT;VIEW_CONTRACT;OUT_VAR"
+        "REQUIRE_BUNDLES;EXPANDED_PATHS;PREFER_SLOT_BUNDLES"
+        ${ARGN})
+    if(NOT DEMO_NAME OR NOT DEMO_WASM_PATH OR NOT DEMO_OUTPUT_PATH)
+        message(FATAL_ERROR "croft_generate_wasm_demo_manifest requires NAME, WASM_PATH, and OUTPUT_PATH")
+    endif()
+
+    if(DEMO_GUEST_KIND)
+        set(guest_kind "${DEMO_GUEST_KIND}")
+    else()
+        set(guest_kind "unknown")
+    endif()
+
+    croft_json_string(schema_json "croft-wasm-demo-v1")
+    croft_json_string(name_json "${DEMO_NAME}")
+    croft_json_string(kind_json "wasm-demo")
+    croft_json_string(guest_kind_json "${guest_kind}")
+    croft_json_string(wasm_path_json "${DEMO_WASM_PATH}")
+    croft_json_array(require_bundles_json ${DEMO_REQUIRE_BUNDLES})
+    croft_json_array(expanded_paths_json ${DEMO_EXPANDED_PATHS})
+
+    if(DEMO_GUEST_TARGET)
+        croft_json_string(guest_target_json "${DEMO_GUEST_TARGET}")
+    else()
+        set(guest_target_json "null")
+    endif()
+    if(DEMO_ENTRYPOINT_FAMILY)
+        croft_json_string(entrypoint_family_json "${DEMO_ENTRYPOINT_FAMILY}")
+    else()
+        set(entrypoint_family_json "null")
+    endif()
+    if(DEMO_APPLICABILITY)
+        croft_json_string(applicability_json "${DEMO_APPLICABILITY}")
+    else()
+        set(applicability_json "null")
+    endif()
+    if(DEMO_ANNOUNCE_EXPORT)
+        croft_json_string(announce_export_json "${DEMO_ANNOUNCE_EXPORT}")
+    else()
+        set(announce_export_json "null")
+    endif()
+    if(DEMO_JSON_POINTER_EXPORT)
+        croft_json_string(json_pointer_export_json "${DEMO_JSON_POINTER_EXPORT}")
+    else()
+        set(json_pointer_export_json "null")
+    endif()
+    if(DEMO_JSON_LENGTH_EXPORT)
+        croft_json_string(json_length_export_json "${DEMO_JSON_LENGTH_EXPORT}")
+    else()
+        set(json_length_export_json "null")
+    endif()
+    if(DEMO_DATA_CONTRACT)
+        croft_json_string(data_contract_json "${DEMO_DATA_CONTRACT}")
+    else()
+        set(data_contract_json "null")
+    endif()
+    if(DEMO_VIEW_CONTRACT)
+        croft_json_string(view_contract_json "${DEMO_VIEW_CONTRACT}")
+    else()
+        set(view_contract_json "null")
+    endif()
+
+    set(slot_preference_entries "")
+    foreach(preference IN LISTS DEMO_PREFER_SLOT_BUNDLES)
+        string(FIND "${preference}" "=" eq_index)
+        if(eq_index LESS 1)
+            message(FATAL_ERROR "invalid PREFER_SLOT_BUNDLES entry '${preference}', expected slot=bundle1,bundle2")
+        endif()
+        string(SUBSTRING "${preference}" 0 ${eq_index} slot_name)
+        math(EXPR value_index "${eq_index} + 1")
+        string(SUBSTRING "${preference}" ${value_index} -1 bundle_csv)
+        string(REPLACE "," ";" slot_bundles "${bundle_csv}")
+        croft_json_string(slot_name_json "${slot_name}")
+        croft_json_array(slot_bundle_json ${slot_bundles})
+        list(APPEND slot_preference_entries "      ${slot_name_json}: ${slot_bundle_json}")
+    endforeach()
+    if(slot_preference_entries)
+        string(JOIN ",\n" joined_slot_preferences ${slot_preference_entries})
+        set(slot_preferences_json "{\n${joined_slot_preferences}\n    }")
+    else()
+        set(slot_preferences_json "{}")
+    endif()
+
+    set(content
+"{
+  \"schema\": ${schema_json},
+  \"name\": ${name_json},
+  \"kind\": ${kind_json},
+  \"applicability\": ${applicability_json},
+  \"guest\": {
+    \"kind\": ${guest_kind_json},
+    \"target\": ${guest_target_json},
+    \"wasm_path\": ${wasm_path_json},
+    \"exports\": {
+      \"announce\": ${announce_export_json},
+      \"json_pointer\": ${json_pointer_export_json},
+      \"json_length\": ${json_length_export_json}
+    }
+  },
+  \"contracts\": {
+    \"data\": ${data_contract_json},
+    \"view\": ${view_contract_json}
+  },
+  \"solver_request\": {
+    \"entrypoint_family\": ${entrypoint_family_json},
+    \"require_bundles\": ${require_bundles_json},
+    \"expanded_paths\": ${expanded_paths_json},
+    \"prefer_slot_bundles\": ${slot_preferences_json}
+  }
+}
+")
+    file(GENERATE OUTPUT "${DEMO_OUTPUT_PATH}" CONTENT "${content}")
+    if(DEMO_OUT_VAR)
+        set(${DEMO_OUT_VAR} "${DEMO_OUTPUT_PATH}" PARENT_SCOPE)
     endif()
 endfunction()
 
@@ -3739,6 +3905,17 @@ if(CROFT_EDITOR_SHELL_SLOT_BUNDLES)
             croft-host-file-dialog-current-machine
         OPEN_SLOTS croft-editor-shell-slot-current-machine
     )
+
+    croft_register_xpi_entrypoint(croft_json_tree_text_view_family_current_machine
+        KIND "family"
+        FOCUS "Current-machine JSON tree text-view family over Thatch-backed packed data, leaving editor-shell selection open for Lambkin."
+        APPLICABILITY "current-machine-windowed"
+        TAGS family json thatch text-view slot-open solver-facing
+        REQUIRES_BUNDLES
+            croft-host-fs-current-machine
+            croft-host-file-dialog-current-machine
+        OPEN_SLOTS croft-editor-shell-slot-current-machine
+    )
 endif()
 
 # ── Shared Wasm guest tooling for examples/tests ─────────────────────
@@ -3778,6 +3955,32 @@ if(TARGET croft_wasm_wasm3 AND CROFT_WAT2WASM_TOOL)
         SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/text_bridge_guest.wat"
         OUTPUT_NAME "text_bridge_guest"
         OUT_VAR WASM_TEXT_BRIDGE_BIN
+    )
+    croft_add_wat_wasm_guest(wasm_json_source_guest_gen
+        SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/json_source_guest.wat"
+        OUTPUT_NAME "json_source_guest"
+        OUT_VAR WASM_JSON_SOURCE_GUEST_BIN
+    )
+    croft_generate_wasm_demo_manifest(
+        NAME "json-thatch-view-demo"
+        GUEST_TARGET "wasm_json_source_guest_gen"
+        GUEST_KIND "wat"
+        WASM_PATH "${WASM_JSON_SOURCE_GUEST_BIN}"
+        OUTPUT_PATH "${CMAKE_CURRENT_BINARY_DIR}/examples/json_source_guest.manifest.json"
+        ENTRYPOINT_FAMILY "croft_json_tree_text_view_family_current_machine"
+        APPLICABILITY "current-machine-windowed"
+        ANNOUNCE_EXPORT "json_demo_announce"
+        JSON_POINTER_EXPORT "json_demo_input_ptr"
+        JSON_LENGTH_EXPORT "json_demo_input_len"
+        DATA_CONTRACT "host-json-to-thatch-v0"
+        VIEW_CONTRACT "collapsed-json-text-v0"
+        REQUIRE_BUNDLES
+            croft-host-fs-current-machine
+            croft-host-file-dialog-current-machine
+        EXPANDED_PATHS ".features"
+        PREFER_SLOT_BUNDLES
+            "croft-editor-shell-slot-current-machine=croft-editor-appkit-current-machine,croft-editor-scene-metal-native-current-machine"
+        OUT_VAR JSON_SOURCE_GUEST_MANIFEST_PATH
     )
 endif()
 
@@ -4199,6 +4402,7 @@ endif()
 # ── Tests ───────────────────────────────────────────────────────────────
 if(CROFT_BUILD_TESTS)
     enable_testing()
+    find_program(CROFT_PYTHON3_TOOL python3 HINTS ${CMAKE_PROGRAM_PATH})
 
     add_executable(test_croft tests/test_main.c tests/test_queue.c tests/host_tests/test_fs.c tests/test_editor_text_model.c tests/test_editor_syntax.c tests/test_editor_brackets.c tests/test_editor_folding.c tests/test_editor_whitespace.c tests/test_editor_search.c tests/test_editor_status.c tests/test_editor_document.c tests/test_editor_commands.c tests/test_editor_scene_runtime.c tests/test_wit_resource_codegen.c tests/test_wit_text_runtime.c tests/test_wit_text_program.c tests/test_wit_store_runtime.c tests/test_wit_mailbox_runtime.c tests/test_wit_host_fs_runtime.c tests/test_wit_host_clock_runtime.c tests/test_wit_host_editor_input_runtime.c tests/test_wit_host_popup_menu_runtime.c)
     target_include_directories(test_croft PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
@@ -4323,6 +4527,10 @@ if(CROFT_BUILD_TESTS)
         "tests/sapling_tests/integration/*.c"
     )
     list(REMOVE_ITEM SAPLING_UNIT_TESTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/sapling_tests/unit/wasm_guest_example.c")
+    if(NOT TARGET croft_wasm_wasm3 OR NOT TARGET wasm_json_source_guest_gen)
+        list(REMOVE_ITEM SAPLING_UNIT_TESTS
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/sapling_tests/unit/test_wasm_json_demo_manifest_smoke.c")
+    endif()
     foreach(test_src IN LISTS SAPLING_UNIT_TESTS)
         get_filename_component(test_name ${test_src} NAME_WE)
         set(test_link_target sapling_core)
@@ -4403,6 +4611,15 @@ if(CROFT_BUILD_TESTS)
                 croft_wit_wasi_random_world
             )
         endif()
+        if(test_name STREQUAL "test_wasm_json_demo_manifest_smoke")
+            target_link_libraries(${test_name} PRIVATE
+                croft_wasm_wasm3
+                croft_host_log
+                croft_host_time
+                croft_fs
+                croft_wit_world_runtime
+            )
+        endif()
         if(test_name STREQUAL "test_wasi_vendor_report_smoke")
             target_compile_definitions(${test_name} PRIVATE
                 CROFT_WASI_VENDOR_REPORT_TXT_PATH="${CMAKE_CURRENT_BINARY_DIR}/reports/croft-wasi-vendor-drift.txt"
@@ -4470,6 +4687,11 @@ if(CROFT_BUILD_TESTS)
             )
             target_include_directories(${test_name} PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
         endif()
+        if(test_name STREQUAL "test_wasm_json_demo_manifest_smoke")
+            add_dependencies(${test_name} wasm_json_source_guest_gen)
+            target_compile_definitions(${test_name} PRIVATE
+                CROFT_WASM_JSON_DEMO_MANIFEST_PATH="${JSON_SOURCE_GUEST_MANIFEST_PATH}")
+        endif()
         if(test_name STREQUAL "test_wit_scoped_names_smoke")
             add_dependencies(${test_name} scoped_names_wit_schema_gen)
             target_include_directories(${test_name} PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
@@ -4495,6 +4717,21 @@ if(CROFT_BUILD_TESTS)
         add_test(NAME sapling_${test_name} COMMAND ${test_name})
         set_tests_properties(sapling_${test_name} PROPERTIES LABELS "${test_labels}")
     endforeach()
+
+    if(CROFT_PYTHON3_TOOL AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tools/solve_xpi_requirements.py"
+            AND TARGET wasm_json_source_guest_gen)
+        add_test(NAME sapling_xpi_solver_json_demo
+            COMMAND ${CROFT_PYTHON3_TOOL}
+                "${CMAKE_CURRENT_SOURCE_DIR}/tools/solve_xpi_requirements.py"
+                --xpi "${CMAKE_CURRENT_BINARY_DIR}/croft-xpi.json"
+                --manifest "${JSON_SOURCE_GUEST_MANIFEST_PATH}"
+                --expect-family "croft_json_tree_text_view_family_current_machine"
+                --expect-slot "croft-editor-shell-slot-current-machine=croft-editor-appkit-current-machine"
+                --expect-bundle "croft-host-fs-current-machine"
+                --expect-bundle "croft-host-file-dialog-current-machine"
+                --expect-artifact "croft_editor_appkit")
+        set_tests_properties(sapling_xpi_solver_json_demo PROPERTIES LABELS "sapling-xpi")
+    endif()
 endif()
 
 # ── Packaging & artifact manifest ──────────────────────────────────────
@@ -4548,8 +4785,11 @@ if(NOT CROFT_XPI_ENTRYPOINT_ENTRIES)
     set(CROFT_XPI_ENTRYPOINT_ENTRIES "")
 endif()
 string(JOIN ",\n" CROFT_XPI_ENTRYPOINT_ENTRIES_JSON ${CROFT_XPI_ENTRYPOINT_ENTRIES})
+croft_collect_applicability_traits(CROFT_CURRENT_MACHINE_TRAITS "current-machine")
+croft_json_array(CROFT_CURRENT_MACHINE_TRAITS_JSON ${CROFT_CURRENT_MACHINE_TRAITS})
+croft_json_string(CROFT_XPI_BUILD_SYSTEM_JSON "${CMAKE_SYSTEM_NAME}")
 file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/croft-xpi.json"
-    CONTENT "{\n  \"artifacts\": [\n${CROFT_XPI_ARTIFACT_ENTRIES_JSON}\n  ],\n  \"substrates\": [\n${CROFT_XPI_SUBSTRATE_ENTRIES_JSON}\n  ],\n  \"slots\": [\n${CROFT_XPI_SLOT_ENTRIES_JSON}\n  ],\n  \"bundles\": [\n${CROFT_XPI_BUNDLE_ENTRIES_JSON}\n  ],\n  \"entrypoints\": [\n${CROFT_XPI_ENTRYPOINT_ENTRIES_JSON}\n  ]\n}\n")
+    CONTENT "{\n  \"context\": {\n    \"build_system\": ${CROFT_XPI_BUILD_SYSTEM_JSON},\n    \"current_machine_traits\": ${CROFT_CURRENT_MACHINE_TRAITS_JSON}\n  },\n  \"artifacts\": [\n${CROFT_XPI_ARTIFACT_ENTRIES_JSON}\n  ],\n  \"substrates\": [\n${CROFT_XPI_SUBSTRATE_ENTRIES_JSON}\n  ],\n  \"slots\": [\n${CROFT_XPI_SLOT_ENTRIES_JSON}\n  ],\n  \"bundles\": [\n${CROFT_XPI_BUNDLE_ENTRIES_JSON}\n  ],\n  \"entrypoints\": [\n${CROFT_XPI_ENTRYPOINT_ENTRIES_JSON}\n  ]\n}\n")
 
 get_property(CROFT_INSTALL_TARGETS GLOBAL PROPERTY CROFT_INSTALL_TARGETS)
 if(NOT CROFT_INSTALL_TARGETS)

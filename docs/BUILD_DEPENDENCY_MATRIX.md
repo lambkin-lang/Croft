@@ -172,9 +172,16 @@ filesystem path.
 `croft-xpi.json` is now the build's machine-readable summary of that structure.
 It records:
 
+- a top-level `context` block with the current build system and derived
+  current-machine applicability traits, so solver consumers do not have to
+  guess how `current-machine-*` labels map onto the machine that produced the
+  build
 - XPI-participating artifact projections, so the solver can see which build
   units realize which bundle memberships and shared substrates without joining
   a second file first
+- per-node `applicability_traits` alongside the human-facing applicability
+  string, so bundle selection can operate on explicit machine traits instead
+  of opaque labels
 - XPI entrypoints/examples with explicit required bundle sets, so top-level
   editor and WIT shells show up as consumers of the same capability graph
 - entrypoint bundle requirements are now derived from the registered artifacts
@@ -220,6 +227,24 @@ It records:
 - native provider artifacts and seams such as file-dialog, gestures, GLFW window backends, and AppKit menu/a11y providers where they participate in that same graph
 - the declared worlds versus expanded callable surfaces for those bundles
 - helper-interface couplings such as `wasi:io/error` and `wasi:filesystem/error`
+
+The repo also now carries a minimal solver-facing Wasm demo path:
+
+- `build/examples/json_source_guest.manifest.json` is a structured request
+  document rather than a custom line format
+- that manifest names a solver-facing family entrypoint, hard bundle
+  requirements, open-slot preferences, and guest/contract metadata
+- `tools/solve_xpi_requirements.py` consumes that manifest and `build/croft-xpi.json`
+  to emit a composition plan with selected bundles, provider artifacts, shared
+  substrates, helper interfaces, declared worlds, and expanded surfaces
+- `tests/sapling_tests/unit/test_wasm_json_demo_manifest_smoke.c` then uses the
+  same manifest to load a minimal Wasm guest, read JSON from guest memory,
+  parse it into Thatch, and render a collapsed text view
+
+That path is intentionally still heuristic, but it proves the current XPI
+graph is already sufficient for an early Lambkin-style "pick a family, satisfy
+the hard requirements, choose one bundle for each open slot, then execute"
+loop.
 
 `build/reports/croft-wasi-vendor-drift.txt` and
 `build/reports/croft-wasi-vendor-drift.json` now complement that metadata by
