@@ -187,6 +187,29 @@ That is much closer to a solver input than a build inventory. It lets Lambkin
 see the difference between "this artifact links that target" and "this
 capability only makes sense if these companion capabilities are also present."
 
+That still left one important source of blur: multipurpose providers.
+
+A GLFW-based host artifact may provide both window and clipboard capabilities,
+but a top-level consumer may only use one of them. Deriving bundle
+requirements from every capability a required artifact participates in is still
+an over-approximation in that case.
+
+The more honest rule is:
+
+- provider/aggregate artifacts may still participate in multiple bundles,
+- bundle specs define the real backend and capability relationships,
+- top-level consumers need an escape hatch to narrow which bundles they derive
+  from a required artifact when they only use a subset of that provider surface.
+
+Once that narrowing existed, another missing structure became concrete instead
+of hypothetical: true alternatives.
+
+Render backends and editor shells are not just loose collections of lower host
+capabilities. They are competing composition choices. Modeling them as bundles
+with explicit `roles` and `conflicts_with` turns the XPI graph from "what is in
+this build" into "which compositions are mutually exclusive inside one solved
+product."
+
 ## March 11, 2026: Vendoring Needs A Drift Story, Not Just A Snapshot
 
 Once WASI `0.2.9` became a first-class vendored input, another missing piece

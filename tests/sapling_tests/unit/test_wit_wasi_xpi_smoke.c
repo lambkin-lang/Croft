@@ -190,6 +190,17 @@ int main(void)
                           "\"capability_bundles\": [\"wasi-cli-stdio-terminal-current-machine\", \"wasi-random-current-machine\", \"wasi-clocks-poll-current-machine\", \"wasi-filesystem-streams-current-machine\"]");
     ok &= expect_contains("xpi host window substrate", xpi_json, "\"name\": \"croft-window-system\"");
     ok &= expect_contains("xpi host window bundle", xpi_json, "\"name\": \"croft-host-window-current-machine\"");
+    ok &= expect_contains("xpi render backend bundle", xpi_json, "\"name\": \"croft-render-tgfx-metal-current-machine\"");
+    ok &= expect_contains("xpi render backend conflicts",
+                          xpi_json,
+                          "\"conflicts_with\": [\"croft-render-tgfx-opengl-current-machine\", \"croft-render-metal-native-current-machine\"]");
+    ok &= expect_contains("xpi render backend role",
+                          xpi_json,
+                          "\"roles\": [\"croft-render-backend-current-machine\"]");
+    ok &= expect_contains("xpi editor shell bundle", xpi_json, "\"name\": \"croft-editor-appkit-current-machine\"");
+    ok &= expect_contains("xpi editor shell role",
+                          xpi_json,
+                          "\"roles\": [\"croft-editor-shell-current-machine\"]");
     ok &= expect_contains("xpi file dialog bundle", xpi_json, "\"name\": \"croft-host-file-dialog-current-machine\"");
     ok &= expect_contains("xpi gesture bundle", xpi_json, "\"name\": \"croft-host-gesture-current-machine\"");
     ok &= expect_contains("xpi host editor-input bundle", xpi_json, "\"name\": \"croft-host-editor-input-normalization\"");
@@ -220,19 +231,25 @@ int main(void)
                           "\"name\": \"example_editor_text_metal_native\"");
     ok &= expect_contains("xpi editor entrypoint bundles",
                           xpi_json,
-                          "\"requires_bundles\": [\"croft-host-gpu2d-current-machine\", \"croft-host-fs-current-machine\", \"croft-host-file-dialog-current-machine\", \"croft-host-window-current-machine\", \"croft-host-clock-current-machine\", \"croft-host-menu-current-machine\", \"croft-host-popup-menu-current-machine\", \"croft-host-clipboard-current-machine\", \"croft-host-editor-input-normalization\", \"croft-host-a11y-current-machine\"]");
+                          "\"requires_bundles\": [\"croft-editor-scene-metal-native-current-machine\", \"croft-host-window-current-machine\", \"croft-host-gpu2d-current-machine\", \"croft-render-metal-native-current-machine\", \"croft-host-fs-current-machine\", \"croft-host-file-dialog-current-machine\", \"croft-host-clock-current-machine\", \"croft-host-menu-current-machine\", \"croft-host-popup-menu-current-machine\", \"croft-host-clipboard-current-machine\", \"croft-host-editor-input-normalization\", \"croft-host-a11y-current-machine\"]");
     ok &= expect_contains("xpi direct editor entrypoint",
                           xpi_json,
                           "\"name\": \"example_editor_text\"");
     ok &= expect_contains("xpi direct editor bundles",
                           xpi_json,
-                          "\"requires_bundles\": [\"croft-host-window-current-machine\", \"croft-host-clipboard-current-machine\", \"croft-host-fs-current-machine\", \"croft-host-file-dialog-current-machine\", \"croft-host-popup-menu-current-machine\"]");
+                          "\"requires_bundles\": [\"croft-host-clipboard-current-machine\", \"croft-editor-scene-tgfx-metal-current-machine\", \"croft-host-window-current-machine\", \"croft-render-tgfx-metal-current-machine\", \"croft-host-fs-current-machine\", \"croft-host-file-dialog-current-machine\", \"croft-host-popup-menu-current-machine\"]");
     ok &= expect_contains("xpi zoom entrypoint",
                           xpi_json,
                           "\"name\": \"example_zoom_canvas\"");
     ok &= expect_contains("xpi zoom bundles",
                           xpi_json,
-                          "\"requires_bundles\": [\"croft-host-window-current-machine\", \"croft-host-clipboard-current-machine\", \"croft-host-gesture-current-machine\"]");
+                          "\"requires_bundles\": [\"croft-host-window-current-machine\", \"croft-render-tgfx-metal-current-machine\", \"croft-host-gesture-current-machine\"]");
+    ok &= expect_contains("xpi ui window entrypoint",
+                          xpi_json,
+                          "\"name\": \"example_ui_window_metal\"");
+    ok &= expect_contains("xpi ui window bundles",
+                          xpi_json,
+                          "\"requires_bundles\": [\"croft-host-window-current-machine\"]");
     ok &= expect_contains("xpi host window runtime artifact",
                           xpi_json,
                           "\"name\": \"croft_wit_host_window_runtime\"");
@@ -253,6 +270,12 @@ int main(void)
     ok &= expect_contains("artifact host window bundle",
                           artifact_json,
                           "\"capability_bundles\": [\"croft-host-window-current-machine\"]");
+    ok &= expect_contains("artifact render backend bundle",
+                          artifact_json,
+                          "\"capability_bundles\": [\"croft-render-tgfx-metal-current-machine\"]");
+    ok &= expect_contains("artifact render backend requires bundles",
+                          artifact_json,
+                          "\"requires_bundles\": [\"croft-host-window-current-machine\"]");
     ok &= expect_contains("artifact host window substrate",
                           artifact_json,
                           "\"shared_substrates\": [\"croft-window-system\"]");

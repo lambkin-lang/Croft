@@ -194,6 +194,13 @@ It records:
   entrypoints and bundle-backed runtime artifacts at configure time, so the
   graph reflects actual composition constraints instead of repeating them
   ad hoc in every top-level target
+- top-level examples can now opt out of deriving bundle requirements from every
+  required artifact when a multipurpose provider is in play; that keeps
+  window-only demos from accidentally looking clipboard-aware just because the
+  shared GLFW provider also exposes clipboard support
+- higher-level render and editor-shell alternatives are now modeled as their
+  own bundles with `roles` and `conflicts_with`, so solver-visible conflicts
+  are grounded in real competing backends rather than placeholder metadata
 - shared substrates such as byte streams, descriptor tables, pollables, system random, and time-base
 - current-machine capability bundles such as CLI stdio/terminal, random, clocks/poll, and filesystem/streams
 - Croft host mix-in bundles and substrates for filesystem, clock, window, clipboard, popup-menu, menu-bar, editor-input normalization, GPU surface access, and accessibility where the current machine provides them

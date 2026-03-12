@@ -435,7 +435,7 @@ function(croft_register_xpi_bundle name)
     cmake_parse_arguments(XPI
         ""
         "SUPPORT_STATUS;APPLICABILITY;DESCRIPTION"
-        "ARTIFACTS;SUBSTRATES;DECLARED_WORLDS;EXPANDED_SURFACES;HELPER_INTERFACES;REQUIRES_BUNDLES;COMPATIBLE_BUNDLES;CONFLICTS_WITH"
+        "ARTIFACTS;SUBSTRATES;DECLARED_WORLDS;EXPANDED_SURFACES;HELPER_INTERFACES;REQUIRES_BUNDLES;COMPATIBLE_BUNDLES;CONFLICTS_WITH;ROLES"
         ${ARGN})
     if(XPI_SUPPORT_STATUS)
         croft_json_string(support_status_json "${XPI_SUPPORT_STATUS}")
@@ -460,7 +460,8 @@ function(croft_register_xpi_bundle name)
     croft_json_array(requires_bundles_json ${XPI_REQUIRES_BUNDLES})
     croft_json_array(compatible_bundles_json ${XPI_COMPATIBLE_BUNDLES})
     croft_json_array(conflicts_with_json ${XPI_CONFLICTS_WITH})
-    set(entry "    {\n      \"name\": \"${name}\",\n      \"support_status\": ${support_status_json},\n      \"applicability\": ${applicability_json},\n      \"description\": ${description_json},\n      \"artifacts\": ${artifacts_json},\n      \"substrates\": ${substrates_json},\n      \"declared_worlds\": ${declared_worlds_json},\n      \"expanded_surfaces\": ${expanded_surfaces_json},\n      \"helper_interfaces\": ${helper_interfaces_json},\n      \"requires_bundles\": ${requires_bundles_json},\n      \"compatible_bundles\": ${compatible_bundles_json},\n      \"conflicts_with\": ${conflicts_with_json}\n    }")
+    croft_json_array(roles_json ${XPI_ROLES})
+    set(entry "    {\n      \"name\": \"${name}\",\n      \"support_status\": ${support_status_json},\n      \"applicability\": ${applicability_json},\n      \"description\": ${description_json},\n      \"artifacts\": ${artifacts_json},\n      \"substrates\": ${substrates_json},\n      \"declared_worlds\": ${declared_worlds_json},\n      \"expanded_surfaces\": ${expanded_surfaces_json},\n      \"helper_interfaces\": ${helper_interfaces_json},\n      \"requires_bundles\": ${requires_bundles_json},\n      \"compatible_bundles\": ${compatible_bundles_json},\n      \"conflicts_with\": ${conflicts_with_json},\n      \"roles\": ${roles_json}\n    }")
     set_property(GLOBAL APPEND PROPERTY CROFT_XPI_BUNDLE_ENTRIES "${entry}")
 endfunction()
 
@@ -490,7 +491,7 @@ function(croft_define_xpi_bundle_spec name)
     cmake_parse_arguments(XPI
         ""
         "SUPPORT_STATUS;APPLICABILITY;DESCRIPTION"
-        "ARTIFACTS;SUBSTRATES;DECLARED_WORLDS;EXPANDED_SURFACES;HELPER_INTERFACES;REQUIRES_BUNDLES;COMPATIBLE_BUNDLES;CONFLICTS_WITH"
+        "ARTIFACTS;SUBSTRATES;DECLARED_WORLDS;EXPANDED_SURFACES;HELPER_INTERFACES;REQUIRES_BUNDLES;COMPATIBLE_BUNDLES;CONFLICTS_WITH;ROLES"
         ${ARGN})
     string(MAKE_C_IDENTIFIER "${name}" key)
     set_property(GLOBAL APPEND PROPERTY CROFT_DEFINED_XPI_BUNDLES "${name}")
@@ -505,6 +506,7 @@ function(croft_define_xpi_bundle_spec name)
     set_property(GLOBAL PROPERTY "CROFT_XPI_BUNDLE_${key}_REQUIRES_BUNDLES" "${XPI_REQUIRES_BUNDLES}")
     set_property(GLOBAL PROPERTY "CROFT_XPI_BUNDLE_${key}_COMPATIBLE_BUNDLES" "${XPI_COMPATIBLE_BUNDLES}")
     set_property(GLOBAL PROPERTY "CROFT_XPI_BUNDLE_${key}_CONFLICTS_WITH" "${XPI_CONFLICTS_WITH}")
+    set_property(GLOBAL PROPERTY "CROFT_XPI_BUNDLE_${key}_ROLES" "${XPI_ROLES}")
     croft_register_xpi_bundle(${name}
         SUPPORT_STATUS "${XPI_SUPPORT_STATUS}"
         APPLICABILITY "${XPI_APPLICABILITY}"
@@ -517,6 +519,7 @@ function(croft_define_xpi_bundle_spec name)
         REQUIRES_BUNDLES ${XPI_REQUIRES_BUNDLES}
         COMPATIBLE_BUNDLES ${XPI_COMPATIBLE_BUNDLES}
         CONFLICTS_WITH ${XPI_CONFLICTS_WITH}
+        ROLES ${XPI_ROLES}
     )
 endfunction()
 
@@ -695,8 +698,15 @@ function(croft_register_wasm_guest target kind output_path)
 endfunction()
 
 function(croft_add_example target)
-    cmake_parse_arguments(EXAMPLE "" "FOCUS;APPLICABILITY" "SOURCES;LINKS;REQUIRES;REQUIRES_BUNDLES;TAGS;COMPILE_DEFINITIONS" ${ARGN})
-    croft_collect_registered_artifact_participation_bundles(derived_requires_bundles ${EXAMPLE_REQUIRES})
+    cmake_parse_arguments(EXAMPLE "NO_DERIVE_REQUIRES" "FOCUS;APPLICABILITY" "SOURCES;LINKS;REQUIRES;DERIVE_REQUIRES_FROM;REQUIRES_BUNDLES;TAGS;COMPILE_DEFINITIONS" ${ARGN})
+    if(EXAMPLE_NO_DERIVE_REQUIRES)
+        set(derive_requires_from ${EXAMPLE_DERIVE_REQUIRES_FROM})
+    elseif(EXAMPLE_DERIVE_REQUIRES_FROM)
+        set(derive_requires_from ${EXAMPLE_DERIVE_REQUIRES_FROM})
+    else()
+        set(derive_requires_from ${EXAMPLE_REQUIRES})
+    endif()
+    croft_collect_registered_artifact_participation_bundles(derived_requires_bundles ${derive_requires_from})
     set(effective_requires_bundles ${EXAMPLE_REQUIRES_BUNDLES} ${derived_requires_bundles})
     croft_collect_transitive_xpi_bundle_requirements(transitive_requires_bundles ${effective_requires_bundles})
     list(APPEND effective_requires_bundles ${transitive_requires_bundles})
@@ -2904,9 +2914,22 @@ if(CROFT_GLFW_TARGET AND CROFT_TGFX_TARGET AND CROFT_TGFX_REQUEST_OPENGL)
         target_compile_definitions(croft_render_tgfx_opengl PRIVATE GL_SILENCE_DEPRECATION)
     endif()
     croft_register_artifact(croft_render_tgfx_opengl render
+        CAPABILITY_BUNDLES croft-render-tgfx-opengl-current-machine
         TAGS tier6 render tgfx opengl
         DEPENDS croft_ui_glfw_opengl
-        DERIVE_REQUIRES_FROM croft_ui_glfw_opengl
+        REQUIRES_BUNDLES croft-host-window-current-machine
+    )
+    croft_define_xpi_bundle_spec(croft-render-tgfx-opengl-current-machine
+        SUPPORT_STATUS "host-implemented-subset"
+        APPLICABILITY "current-machine-windowed"
+        DESCRIPTION "TGFX/OpenGL render backend bundle over the current-machine window host."
+        ARTIFACTS croft_render_tgfx_opengl
+        SUBSTRATES croft-window-system
+        REQUIRES_BUNDLES croft-host-window-current-machine
+        CONFLICTS_WITH
+            croft-render-tgfx-metal-current-machine
+            croft-render-metal-native-current-machine
+        ROLES croft-render-backend-current-machine
     )
 
     add_library(croft_scene_core_tgfx_opengl STATIC
@@ -2933,9 +2956,22 @@ if(CROFT_GLFW_TARGET AND CROFT_TGFX_TARGET AND CROFT_TGFX_REQUEST_OPENGL)
             sapling_core
     )
     croft_register_artifact(croft_scene_text_editor_tgfx_opengl scene
+        CAPABILITY_BUNDLES croft-editor-scene-tgfx-opengl-current-machine
         TAGS tier7 scene text-editor tgfx opengl sapling
         DEPENDS croft_scene_core_tgfx_opengl sapling_core
         DERIVE_REQUIRES_FROM croft_scene_core_tgfx_opengl
+    )
+    croft_define_xpi_bundle_spec(croft-editor-scene-tgfx-opengl-current-machine
+        SUPPORT_STATUS "host-implemented-subset"
+        APPLICABILITY "current-machine-windowed"
+        DESCRIPTION "Scene-based editor shell bundle over the TGFX/OpenGL render backend."
+        ARTIFACTS croft_scene_text_editor_tgfx_opengl
+        REQUIRES_BUNDLES croft-render-tgfx-opengl-current-machine
+        CONFLICTS_WITH
+            croft-editor-scene-tgfx-metal-current-machine
+            croft-editor-scene-metal-native-current-machine
+            croft-editor-appkit-current-machine
+        ROLES croft-editor-shell-current-machine
     )
 endif()
 
@@ -2953,9 +2989,22 @@ if(APPLE AND CROFT_GLFW_TARGET AND CROFT_TGFX_TARGET AND CROFT_TGFX_REQUEST_META
             "-framework QuartzCore"
     )
     croft_register_artifact(croft_render_tgfx_metal render
+        CAPABILITY_BUNDLES croft-render-tgfx-metal-current-machine
         TAGS tier6 render tgfx metal macos
         DEPENDS croft_ui_glfw_metal
-        DERIVE_REQUIRES_FROM croft_ui_glfw_metal
+        REQUIRES_BUNDLES croft-host-window-current-machine
+    )
+    croft_define_xpi_bundle_spec(croft-render-tgfx-metal-current-machine
+        SUPPORT_STATUS "host-implemented-subset"
+        APPLICABILITY "current-machine-windowed"
+        DESCRIPTION "TGFX/Metal render backend bundle over the current-machine window host."
+        ARTIFACTS croft_render_tgfx_metal
+        SUBSTRATES croft-window-system
+        REQUIRES_BUNDLES croft-host-window-current-machine
+        CONFLICTS_WITH
+            croft-render-tgfx-opengl-current-machine
+            croft-render-metal-native-current-machine
+        ROLES croft-render-backend-current-machine
     )
 
     add_library(croft_scene_core_tgfx_metal STATIC
@@ -2982,9 +3031,22 @@ if(APPLE AND CROFT_GLFW_TARGET AND CROFT_TGFX_TARGET AND CROFT_TGFX_REQUEST_META
             sapling_core
     )
     croft_register_artifact(croft_scene_text_editor_tgfx_metal scene
+        CAPABILITY_BUNDLES croft-editor-scene-tgfx-metal-current-machine
         TAGS tier7 scene text-editor tgfx metal macos sapling
         DEPENDS croft_scene_core_tgfx_metal sapling_core
         DERIVE_REQUIRES_FROM croft_scene_core_tgfx_metal
+    )
+    croft_define_xpi_bundle_spec(croft-editor-scene-tgfx-metal-current-machine
+        SUPPORT_STATUS "host-implemented-subset"
+        APPLICABILITY "current-machine-windowed"
+        DESCRIPTION "Scene-based editor shell bundle over the TGFX/Metal render backend."
+        ARTIFACTS croft_scene_text_editor_tgfx_metal
+        REQUIRES_BUNDLES croft-render-tgfx-metal-current-machine
+        CONFLICTS_WITH
+            croft-editor-scene-tgfx-opengl-current-machine
+            croft-editor-scene-metal-native-current-machine
+            croft-editor-appkit-current-machine
+        ROLES croft-editor-shell-current-machine
     )
 endif()
 
@@ -3000,10 +3062,13 @@ if(APPLE AND TARGET croft_ui_glfw_metal)
             "-framework QuartzCore"
     )
     croft_register_artifact(croft_render_metal_native render
-        CAPABILITY_BUNDLES croft-host-gpu2d-current-machine
+        CAPABILITY_BUNDLES
+            croft-host-gpu2d-current-machine
+            croft-render-metal-native-current-machine
         SHARED_SUBSTRATES croft-native-2d-surface
         TAGS tier6 render metal native-direct macos
         DEPENDS croft_ui_glfw_metal
+        REQUIRES_BUNDLES croft-host-window-current-machine
     )
 
     croft_define_xpi_substrate_spec(croft-native-2d-surface
@@ -3035,6 +3100,20 @@ if(APPLE AND TARGET croft_ui_glfw_metal)
             croft-host-editor-input-normalization
             croft-host-a11y-current-machine
             croft-host-gesture-current-machine
+    )
+    croft_define_xpi_bundle_spec(croft-render-metal-native-current-machine
+        SUPPORT_STATUS "host-implemented-subset"
+        APPLICABILITY "current-machine-macos"
+        DESCRIPTION "Direct-Metal render backend bundle over the current-machine window host and host-gpu2d surface."
+        ARTIFACTS croft_render_metal_native
+        SUBSTRATES croft-native-2d-surface
+        REQUIRES_BUNDLES
+            croft-host-window-current-machine
+            croft-host-gpu2d-current-machine
+        CONFLICTS_WITH
+            croft-render-tgfx-opengl-current-machine
+            croft-render-tgfx-metal-current-machine
+        ROLES croft-render-backend-current-machine
     )
 
     add_library(croft_wit_host_gpu2d_runtime STATIC src/runtime/wit_host_gpu2d_runtime.c)
@@ -3074,9 +3153,22 @@ if(APPLE AND TARGET croft_ui_glfw_metal)
             sapling_core
     )
     croft_register_artifact(croft_scene_text_editor_metal_native scene
+        CAPABILITY_BUNDLES croft-editor-scene-metal-native-current-machine
         TAGS tier7 scene text-editor metal native-direct macos sapling
         DEPENDS croft_scene_core_metal_native sapling_core
         DERIVE_REQUIRES_FROM croft_scene_core_metal_native
+    )
+    croft_define_xpi_bundle_spec(croft-editor-scene-metal-native-current-machine
+        SUPPORT_STATUS "host-implemented-subset"
+        APPLICABILITY "current-machine-macos"
+        DESCRIPTION "Scene-based editor shell bundle over the direct-Metal render backend."
+        ARTIFACTS croft_scene_text_editor_metal_native
+        REQUIRES_BUNDLES croft-render-metal-native-current-machine
+        CONFLICTS_WITH
+            croft-editor-scene-tgfx-opengl-current-machine
+            croft-editor-scene-tgfx-metal-current-machine
+            croft-editor-appkit-current-machine
+        ROLES croft-editor-shell-current-machine
     )
 endif()
 
@@ -3212,11 +3304,26 @@ if(APPLE)
             "-framework AppKit"
     )
     croft_register_artifact(croft_editor_appkit editor
+        CAPABILITY_BUNDLES croft-editor-appkit-current-machine
         TAGS tier9 editor native appkit textkit macos cpu
         DEPENDS croft_editor_commands croft_editor_document_core croft_editor_document_fs
-        DERIVE_REQUIRES_FROM
-            croft_editor_document_fs
-            croft_file_dialog_macos
+        REQUIRES_BUNDLES
+            croft-host-fs-current-machine
+            croft-host-file-dialog-current-machine
+    )
+    croft_define_xpi_bundle_spec(croft-editor-appkit-current-machine
+        SUPPORT_STATUS "host-implemented-subset"
+        APPLICABILITY "current-machine-macos"
+        DESCRIPTION "AppKit/TextKit editor shell bundle over direct native macOS text and file-dialog services."
+        ARTIFACTS croft_editor_appkit
+        REQUIRES_BUNDLES
+            croft-host-fs-current-machine
+            croft-host-file-dialog-current-machine
+        CONFLICTS_WITH
+            croft-editor-scene-tgfx-opengl-current-machine
+            croft-editor-scene-tgfx-metal-current-machine
+            croft-editor-scene-metal-native-current-machine
+        ROLES croft-editor-shell-current-machine
     )
 
     add_library(croft_a11y_macos STATIC src/host/mac/host_a11y.m)
@@ -3696,6 +3803,8 @@ if(TARGET croft_ui_glfw_opengl)
         SOURCES examples/ui_window.c
         LINKS croft_ui_glfw_opengl
         REQUIRES croft_ui_glfw_opengl
+        NO_DERIVE_REQUIRES
+        REQUIRES_BUNDLES croft-host-window-current-machine
         TAGS ui window glfw opengl
         FOCUS "Windowing-only sample using a GLFW OpenGL context and no renderer."
     )
@@ -3706,6 +3815,8 @@ if(TARGET croft_ui_glfw_metal)
         SOURCES examples/ui_window.c
         LINKS croft_ui_glfw_metal
         REQUIRES croft_ui_glfw_metal
+        NO_DERIVE_REQUIRES
+        REQUIRES_BUNDLES croft-host-window-current-machine
         TAGS ui window glfw metal macos
         FOCUS "Windowing-only sample using a GLFW no-API window for the Metal path."
     )
@@ -3784,6 +3895,7 @@ if(CROFT_EXAMPLE_EDITOR_TARGET)
         SOURCES examples/editor_scene_shell.c
         LINKS ${CROFT_EDITOR_EXAMPLE_LINKS}
         REQUIRES ${CROFT_EDITOR_EXAMPLE_REQUIRES}
+        REQUIRES_BUNDLES croft-host-clipboard-current-machine
         TAGS editor text sapling gui
         FOCUS "Text-editor shell built on Sapling text, scene, and host IO."
     )
