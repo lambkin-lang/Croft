@@ -381,6 +381,9 @@ Current implemented editor baseline:
 - marked-text/IME composition preview plumbed through both the direct host-ui
   path and the WIT host-window/editor-input path for the custom-rendered
   editor families
+- native double-click word selection and text-service context menus in the
+  custom-rendered editor families, so direct-Metal behavior can inherit more
+  of the platform text stack instead of cloning it
 - background/underline decoration plumbing at the scene-editor node boundary so
   diagnostics, active ranges, and similar overlays do not need renderer-local
   one-offs

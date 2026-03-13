@@ -79,6 +79,7 @@ double host_ui_get_time(void);
 
 void host_ui_get_mouse_pos(double *x, double *y);
 int32_t host_ui_get_mouse_button(int32_t button);
+int32_t host_ui_get_last_click_count(void);
 uint32_t host_ui_get_modifiers(void);
 int32_t host_ui_set_clipboard_text(const char *utf8, size_t len);
 int32_t host_ui_get_clipboard_text(char **out_utf8, size_t *out_len);

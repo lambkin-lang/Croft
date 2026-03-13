@@ -247,6 +247,7 @@ int32_t text_editor_node_get_decoration(const text_editor_node *n,
                                         uint32_t index,
                                         croft_text_editor_decoration *out_decoration);
 void text_editor_node_select_all(text_editor_node *n);
+int32_t text_editor_node_select_word_at_offset(text_editor_node *n, uint32_t offset);
 int text_editor_node_is_find_active(const text_editor_node *n);
 int text_editor_node_is_replace_active(const text_editor_node *n);
 int text_editor_node_has_composition(const text_editor_node *n);

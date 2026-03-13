@@ -74,6 +74,20 @@ static uint8_t editor_has_selection(void) {
     return g_editor.sel_start != g_editor.sel_end;
 }
 
+static int select_editor_word_at_local_point(float local_x, float local_y) {
+    uint32_t offset = 0u;
+
+    if (text_editor_node_hit_test_offset(&g_editor,
+                                         g_editor.base.sx,
+                                         g_editor.base.sy,
+                                         local_x,
+                                         local_y,
+                                         &offset) != 0) {
+        return 0;
+    }
+    return text_editor_node_select_word_at_offset(&g_editor, offset) == 0;
+}
+
 static void bind_document_to_editor(croft_editor_document* document) {
     g_document = document;
     text_editor_node_bind_document(&g_editor, g_document);
@@ -269,6 +283,8 @@ static editor_action_result editor_apply_menu_action(int32_t action_id) {
 
 static void show_editor_context_menu(float x, float y) {
     int32_t action_id = 0;
+    char* contextual_utf8 = NULL;
+    size_t contextual_len = 0u;
     host_popup_menu_item items[] = {
         { CROFT_EDITOR_MENU_OPEN, "Open...", 1u, 0u },
         { CROFT_EDITOR_MENU_SAVE, "Save", 1u, 0u },
@@ -294,11 +310,17 @@ static void show_editor_context_menu(float x, float y) {
         { CROFT_EDITOR_MENU_FOLD, "Fold Region", 1u, 0u },
         { CROFT_EDITOR_MENU_UNFOLD, "Unfold Region", 1u, 0u }
     };
-    switch (host_popup_menu_show(items,
-                                 (uint32_t)(sizeof(items) / sizeof(items[0])),
-                                 x,
-                                 y,
-                                 &action_id)) {
+    if (editor_has_selection()) {
+        (void)text_editor_node_copy_selection_utf8(&g_editor, &contextual_utf8, &contextual_len);
+    }
+    switch (host_popup_menu_show_with_context(items,
+                                              (uint32_t)(sizeof(items) / sizeof(items[0])),
+                                              x,
+                                              y,
+                                              contextual_utf8,
+                                              contextual_len,
+                                              1u,
+                                              &action_id)) {
         case HOST_POPUP_MENU_RESULT_OK:
             (void)editor_apply_menu_action(action_id);
             break;
@@ -312,6 +334,7 @@ static void show_editor_context_menu(float x, float y) {
         default:
             break;
     }
+    free(contextual_utf8);
     if (action_id != 0) {
         request_redraw();
     }
@@ -513,7 +536,11 @@ static void on_ui_event(int32_t type, int32_t arg0, int32_t arg1) {
             scene_node_hit_test_tree(&g_root_vp.base, (float)g_mouse_x, (float)g_mouse_y, &hit);
             if (hit.node) {
                 g_focused_node = hit.node;
-                if (hit.node->vtbl && hit.node->vtbl->on_mouse_event) {
+                if (hit.node == &g_editor.base
+                        && arg0 == 0
+                        && host_ui_get_last_click_count() >= 2) {
+                    (void)select_editor_word_at_local_point(hit.local_x, hit.local_y);
+                } else if (hit.node->vtbl && hit.node->vtbl->on_mouse_event) {
                     hit.node->vtbl->on_mouse_event(hit.node, 1, hit.local_x, hit.local_y);
                 }
             }

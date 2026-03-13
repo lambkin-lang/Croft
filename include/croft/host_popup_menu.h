@@ -1,6 +1,7 @@
 #ifndef CROFT_HOST_POPUP_MENU_H
 #define CROFT_HOST_POPUP_MENU_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -20,6 +21,15 @@ typedef enum host_popup_menu_result {
     HOST_POPUP_MENU_RESULT_UNAVAILABLE = 2,
     HOST_POPUP_MENU_RESULT_INTERNAL = 3
 } host_popup_menu_result;
+
+host_popup_menu_result host_popup_menu_show_with_context(const host_popup_menu_item* items,
+                                                         uint32_t item_count,
+                                                         float x,
+                                                         float y,
+                                                         const char* contextual_utf8,
+                                                         size_t contextual_utf8_len,
+                                                         uint8_t include_native_text_services,
+                                                         int32_t* action_id_out);
 
 host_popup_menu_result host_popup_menu_show(const host_popup_menu_item* items,
                                             uint32_t item_count,

@@ -4075,6 +4075,39 @@ void text_editor_node_select_all(text_editor_node *n) {
                                             1);
 }
 
+int32_t text_editor_node_select_word_at_offset(text_editor_node *n, uint32_t offset) {
+    croft_editor_position position;
+    croft_editor_range range;
+    uint32_t start_offset;
+    uint32_t end_offset;
+
+    if (!n) {
+        return CROFT_EDITOR_ERR_INVALID;
+    }
+
+    offset = text_editor_clamp_u32(offset,
+                                   0u,
+                                   croft_editor_text_model_codepoint_length(&n->text_model));
+    position = croft_editor_text_model_get_position_at(&n->text_model, offset);
+    if (!croft_editor_text_model_get_word_range_at(&n->text_model, position, NULL, &range)) {
+        return CROFT_EDITOR_ERR_INVALID;
+    }
+
+    start_offset = croft_editor_text_model_get_offset_at(&n->text_model,
+                                                         range.start_line_number,
+                                                         range.start_column);
+    end_offset = croft_editor_text_model_get_offset_at(&n->text_model,
+                                                       range.end_line_number,
+                                                       range.end_column);
+    text_editor_break_coalescing(n);
+    text_editor_set_selection_with_affinity(n,
+                                            start_offset,
+                                            end_offset,
+                                            CROFT_TEXT_EDITOR_CARET_AFFINITY_TRAILING,
+                                            1);
+    return CROFT_EDITOR_OK;
+}
+
 int text_editor_node_is_find_active(const text_editor_node *n) {
     return n ? n->find_active : 0;
 }

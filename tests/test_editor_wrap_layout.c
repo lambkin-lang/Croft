@@ -1,6 +1,7 @@
 #include "croft/editor_document.h"
 #include "croft/scene.h"
 
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -147,6 +148,41 @@ int test_editor_wrap_layout_affinity(void)
     text_editor_node_set_caret_affinity(&editor, CROFT_TEXT_EDITOR_CARET_AFFINITY_TRAILING);
     ASSERT_WRAP(text_editor_node_get_caret_affinity(&editor) == CROFT_TEXT_EDITOR_CARET_AFFINITY_TRAILING);
 
+    text_editor_node_dispose(&editor);
+    croft_editor_document_destroy(document);
+    return 0;
+}
+
+int test_editor_double_click_word_selection(void)
+{
+    const char* initial = "alpha beta.gamma";
+    croft_editor_document* document =
+        croft_editor_document_create((const uint8_t*)initial, strlen(initial));
+    text_editor_node editor = {0};
+    char* selected = NULL;
+    size_t selected_len = 0u;
+
+    ASSERT_WRAP(document != NULL);
+    text_editor_node_init(&editor, NULL, 0.0f, 0.0f, 240.0f, 220.0f, NULL);
+    text_editor_node_bind_document(&editor, document);
+
+    ASSERT_WRAP(text_editor_node_select_word_at_offset(&editor, 8u) == 0);
+    ASSERT_WRAP(editor.sel_start == 6u);
+    ASSERT_WRAP(editor.sel_end == 10u);
+    ASSERT_WRAP(text_editor_node_copy_selection_utf8(&editor, &selected, &selected_len) == 0);
+    ASSERT_WRAP(selected != NULL);
+    ASSERT_WRAP(selected_len == 4u);
+    ASSERT_WRAP(memcmp(selected, "beta", 4u) == 0);
+    free(selected);
+    selected = NULL;
+
+    ASSERT_WRAP(text_editor_node_select_word_at_offset(&editor, 10u) == 0);
+    ASSERT_WRAP(text_editor_node_copy_selection_utf8(&editor, &selected, &selected_len) == 0);
+    ASSERT_WRAP(selected != NULL);
+    ASSERT_WRAP(selected_len == 4u);
+    ASSERT_WRAP(memcmp(selected, "beta", 4u) == 0);
+
+    free(selected);
     text_editor_node_dispose(&editor);
     croft_editor_document_destroy(document);
     return 0;

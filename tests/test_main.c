@@ -271,6 +271,7 @@ extern int test_editor_find_replace_next(void);
 extern int test_editor_find_replace_all_undo(void);
 extern int test_editor_wrap_layout_geometry(void);
 extern int test_editor_wrap_layout_affinity(void);
+extern int test_editor_double_click_word_selection(void);
 extern int test_editor_metrics_snapshot(void);
 extern int test_editor_composition_state(void);
 extern int test_editor_decorations_normalize(void);
@@ -434,6 +435,7 @@ int main(void)
     RUN_TEST(test_editor_find_replace_all_undo);
     RUN_TEST(test_editor_wrap_layout_geometry);
     RUN_TEST(test_editor_wrap_layout_affinity);
+    RUN_TEST(test_editor_double_click_word_selection);
     RUN_TEST(test_editor_metrics_snapshot);
     RUN_TEST(test_editor_composition_state);
     RUN_TEST(test_editor_decorations_normalize);

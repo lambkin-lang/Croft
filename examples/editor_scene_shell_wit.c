@@ -3,6 +3,7 @@
 #include "croft/editor_menu_ids.h"
 #include "croft/editor_scene_runtime.h"
 #include "croft/host_file_dialog.h"
+#include "croft/host_popup_menu.h"
 #include "croft/host_render.h"
 #include "croft/host_ui.h"
 #include "croft/scene.h"
@@ -12,7 +13,6 @@
 #include "croft/wit_host_clock_runtime.h"
 #include "croft/wit_host_editor_input_runtime.h"
 #include "croft/wit_host_menu_runtime.h"
-#include "croft/wit_host_popup_menu_runtime.h"
 #include "croft/wit_host_window_runtime.h"
 
 #include <stdio.h>
@@ -46,8 +46,6 @@ typedef enum editor_action_result {
 } editor_action_result;
 
 static int editor_input_expect_status_ok(const SapWitHostEditorInputReply* reply);
-static int popup_expect_status_ok(const SapWitHostPopupMenuReply* reply);
-static int popup_expect_action(const SapWitHostPopupMenuReply* reply, int32_t* action_id_out);
 
 static int env_flag_enabled(const char* value)
 {
@@ -118,6 +116,21 @@ static void log_recoverable_action_message(const char* action, const char* detai
 static uint8_t editor_has_selection(void)
 {
     return g_editor.sel_start != g_editor.sel_end;
+}
+
+static int select_editor_word_at_local_point(float local_x, float local_y)
+{
+    uint32_t offset = 0u;
+
+    if (text_editor_node_hit_test_offset(&g_editor,
+                                         g_editor.base.sx,
+                                         g_editor.base.sy,
+                                         local_x,
+                                         local_y,
+                                         &offset) != 0) {
+        return 0;
+    }
+    return text_editor_node_select_word_at_offset(&g_editor, offset) == 0;
 }
 
 static void bind_document_to_editor(croft_editor_document* document)
@@ -240,90 +253,66 @@ static editor_action_result dispatch_editor_menu_action(
     return EDITOR_ACTION_APPLIED;
 }
 
-static int popup_add_item(croft_wit_host_popup_menu_runtime* runtime,
-                          SapWitHostPopupMenuReply* reply,
-                          int32_t action_id,
-                          const char* label,
-                          uint8_t enabled,
-                          uint8_t separator)
-{
-    SapWitHostPopupMenuCommand command = {0};
-
-    command.case_tag = SAP_WIT_HOST_POPUP_MENU_COMMAND_ADD_ITEM;
-    command.val.add_item.action_id = action_id;
-    command.val.add_item.label_data = (const uint8_t*)(label ? label : "");
-    command.val.add_item.label_len = label ? (uint32_t)strlen(label) : 0u;
-    command.val.add_item.enabled = enabled;
-    command.val.add_item.separator = separator;
-    return croft_wit_host_popup_menu_runtime_dispatch(runtime, &command, reply) == 0
-        && popup_expect_status_ok(reply);
-}
-
-static void show_editor_context_menu(croft_wit_host_popup_menu_runtime* popup_runtime,
-                                     croft_wit_host_editor_input_runtime* editor_input_runtime,
+static void show_editor_context_menu(croft_wit_host_editor_input_runtime* editor_input_runtime,
                                      float x,
                                      float y)
 {
-    SapWitHostPopupMenuCommand command = {0};
-    SapWitHostPopupMenuReply reply = {0};
     int32_t action_id = 0;
-    int status;
+    char* contextual_utf8 = NULL;
+    size_t contextual_len = 0u;
+    host_popup_menu_item items[] = {
+        { CROFT_EDITOR_MENU_OPEN, "Open...", 1u, 0u },
+        { CROFT_EDITOR_MENU_SAVE, "Save", 1u, 0u },
+        { CROFT_EDITOR_MENU_SAVE_AS, "Save As...", 1u, 0u },
+        { 0, NULL, 0u, 1u },
+        { CROFT_EDITOR_MENU_UNDO, "Undo", croft_editor_document_can_undo(g_document) ? 1u : 0u, 0u },
+        { CROFT_EDITOR_MENU_REDO, "Redo", croft_editor_document_can_redo(g_document) ? 1u : 0u, 0u },
+        { 0, NULL, 0u, 1u },
+        { CROFT_EDITOR_MENU_CUT, "Cut", editor_has_selection() ? 1u : 0u, 0u },
+        { CROFT_EDITOR_MENU_COPY, "Copy", editor_has_selection() ? 1u : 0u, 0u },
+        { CROFT_EDITOR_MENU_PASTE, "Paste", 1u, 0u },
+        { CROFT_EDITOR_MENU_SELECT_ALL, "Select All", 1u, 0u },
+        { 0, NULL, 0u, 1u },
+        { CROFT_EDITOR_MENU_FIND, "Find...", 1u, 0u },
+        { CROFT_EDITOR_MENU_REPLACE, "Replace...", 1u, 0u },
+        { CROFT_EDITOR_MENU_FIND_NEXT, "Find Next", 1u, 0u },
+        { CROFT_EDITOR_MENU_FIND_PREVIOUS, "Find Previous", 1u, 0u },
+        { CROFT_EDITOR_MENU_REPLACE_NEXT, "Replace Next", 1u, 0u },
+        { CROFT_EDITOR_MENU_REPLACE_ALL, "Replace All", 1u, 0u },
+        { 0, NULL, 0u, 1u },
+        { CROFT_EDITOR_MENU_INDENT, "Indent Line", 1u, 0u },
+        { CROFT_EDITOR_MENU_OUTDENT, "Outdent Line", 1u, 0u },
+        { CROFT_EDITOR_MENU_FOLD, "Fold Region", 1u, 0u },
+        { CROFT_EDITOR_MENU_UNFOLD, "Unfold Region", 1u, 0u }
+    };
 
-    command.case_tag = SAP_WIT_HOST_POPUP_MENU_COMMAND_BEGIN_POPUP;
-    if (croft_wit_host_popup_menu_runtime_dispatch(popup_runtime, &command, &reply) != 0
-            || !popup_expect_status_ok(&reply)) {
-        log_recoverable_action_message("context menu", "popup menu bridge failed");
-        return;
-    }
-
-    if (!popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_OPEN, "Open...", 1u, 0u)
-            || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_SAVE, "Save", 1u, 0u)
-            || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_SAVE_AS, "Save As...", 1u, 0u)
-            || !popup_add_item(popup_runtime, &reply, 0, NULL, 0u, 1u)
-            || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_UNDO, "Undo",
-                               croft_editor_document_can_undo(g_document) ? 1u : 0u, 0u)
-            || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_REDO, "Redo",
-                               croft_editor_document_can_redo(g_document) ? 1u : 0u, 0u)
-            || !popup_add_item(popup_runtime, &reply, 0, NULL, 0u, 1u)
-            || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_CUT, "Cut",
-                               editor_has_selection() ? 1u : 0u, 0u)
-            || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_COPY, "Copy",
-                               editor_has_selection() ? 1u : 0u, 0u)
-            || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_PASTE, "Paste", 1u, 0u)
-            || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_SELECT_ALL, "Select All", 1u, 0u)
-            || !popup_add_item(popup_runtime, &reply, 0, NULL, 0u, 1u)
-            || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_FIND, "Find...", 1u, 0u)
-            || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_REPLACE, "Replace...", 1u, 0u)
-            || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_FIND_NEXT, "Find Next", 1u, 0u)
-            || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_FIND_PREVIOUS, "Find Previous", 1u, 0u)
-            || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_REPLACE_NEXT, "Replace Next", 1u, 0u)
-            || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_REPLACE_ALL, "Replace All", 1u, 0u)
-            || !popup_add_item(popup_runtime, &reply, 0, NULL, 0u, 1u)
-            || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_INDENT, "Indent Line", 1u, 0u)
-            || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_OUTDENT, "Outdent Line", 1u, 0u)
-            || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_FOLD, "Fold Region", 1u, 0u)
-            || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_UNFOLD, "Unfold Region", 1u, 0u)) {
-        log_recoverable_action_message("context menu", "popup menu item build failed");
-        return;
+    if (editor_has_selection()) {
+        (void)text_editor_node_copy_selection_utf8(&g_editor, &contextual_utf8, &contextual_len);
     }
 
-    command.case_tag = SAP_WIT_HOST_POPUP_MENU_COMMAND_SHOW_AT;
-    command.val.show_at.x_milli = (int32_t)(x * 1000.0f);
-    command.val.show_at.y_milli = (int32_t)(y * 1000.0f);
-    if (croft_wit_host_popup_menu_runtime_dispatch(popup_runtime, &command, &reply) != 0) {
-        log_recoverable_action_message("context menu", "popup menu show failed");
-        return;
+    switch (host_popup_menu_show_with_context(items,
+                                              (uint32_t)(sizeof(items) / sizeof(items[0])),
+                                              x,
+                                              y,
+                                              contextual_utf8,
+                                              contextual_len,
+                                              1u,
+                                              &action_id)) {
+        case HOST_POPUP_MENU_RESULT_OK:
+            (void)dispatch_editor_menu_action(editor_input_runtime, action_id);
+            break;
+        case HOST_POPUP_MENU_RESULT_UNAVAILABLE:
+            log_recoverable_action_message("context menu", "popup menu unavailable");
+            break;
+        case HOST_POPUP_MENU_RESULT_INTERNAL:
+            log_recoverable_action_message("context menu", "popup menu internal failure");
+            break;
+        case HOST_POPUP_MENU_RESULT_EMPTY:
+        default:
+            break;
     }
 
-    status = popup_expect_action(&reply, &action_id);
-    if (status < 0) {
-        log_recoverable_action_message("context menu", "popup menu reply invalid");
-        return;
-    }
-    if (status == 0) {
-        return;
-    }
-    (void)dispatch_editor_menu_action(editor_input_runtime, action_id);
+    free(contextual_utf8);
 
     if (action_id != 0) {
         request_redraw();
@@ -529,31 +518,6 @@ static int menu_expect_action(const SapWitHostMenuReply* reply, int32_t* action_
         return -1;
     }
     if (reply->case_tag != SAP_WIT_HOST_MENU_REPLY_ACTION) {
-        return -1;
-    }
-    if (!reply->val.action.is_v_ok) {
-        return -1;
-    }
-    if (!reply->val.action.v_val.ok.has_v) {
-        return 0;
-    }
-    *action_id_out = reply->val.action.v_val.ok.v;
-    return 1;
-}
-
-static int popup_expect_status_ok(const SapWitHostPopupMenuReply* reply)
-{
-    return reply
-        && reply->case_tag == SAP_WIT_HOST_POPUP_MENU_REPLY_STATUS
-        && reply->val.status.is_v_ok;
-}
-
-static int popup_expect_action(const SapWitHostPopupMenuReply* reply, int32_t* action_id_out)
-{
-    if (!reply || !action_id_out) {
-        return -1;
-    }
-    if (reply->case_tag != SAP_WIT_HOST_POPUP_MENU_REPLY_ACTION) {
         return -1;
     }
     if (!reply->val.action.is_v_ok) {
@@ -1026,7 +990,6 @@ int main(int argc, char** argv)
     croft_wit_host_window_runtime* window_runtime = NULL;
     croft_wit_host_clock_runtime* clock_runtime = NULL;
     croft_wit_host_menu_runtime* menu_runtime = NULL;
-    croft_wit_host_popup_menu_runtime* popup_menu_runtime = NULL;
     croft_wit_host_clipboard_runtime* clipboard_runtime = NULL;
     croft_wit_host_editor_input_runtime* editor_input_runtime = NULL;
     croft_wit_host_a11y_runtime* a11y_runtime = NULL;
@@ -1064,11 +1027,10 @@ int main(int argc, char** argv)
     window_runtime = croft_wit_host_window_runtime_create();
     clock_runtime = croft_wit_host_clock_runtime_create();
     menu_runtime = croft_wit_host_menu_runtime_create();
-    popup_menu_runtime = croft_wit_host_popup_menu_runtime_create();
     clipboard_runtime = croft_wit_host_clipboard_runtime_create();
     editor_input_runtime = croft_wit_host_editor_input_runtime_create();
     a11y_runtime = croft_wit_host_a11y_runtime_create();
-    if (!window_runtime || !clock_runtime || !menu_runtime || !popup_menu_runtime || !clipboard_runtime
+    if (!window_runtime || !clock_runtime || !menu_runtime || !clipboard_runtime
             || !editor_input_runtime || !a11y_runtime) {
         goto cleanup;
     }
@@ -1271,8 +1233,7 @@ int main(int argc, char** argv)
                         hit_result hit;
                         scene_node_hit_test_tree(&g_root_vp.base, (float)g_mouse_x, (float)g_mouse_y, &hit);
                         if (hit.node == &g_editor.base) {
-                            show_editor_context_menu(popup_menu_runtime,
-                                                     editor_input_runtime,
+                            show_editor_context_menu(editor_input_runtime,
                                                      (float)g_mouse_x,
                                                      (float)g_mouse_y);
                             break;
@@ -1283,7 +1244,11 @@ int main(int argc, char** argv)
                         scene_node_hit_test_tree(&g_root_vp.base, (float)g_mouse_x, (float)g_mouse_y, &hit);
                         if (hit.node) {
                             g_focused_node = hit.node;
-                            if (hit.node->vtbl && hit.node->vtbl->on_mouse_event) {
+                            if (hit.node == &g_editor.base
+                                    && event.val.mouse.button == 0
+                                    && host_ui_get_last_click_count() >= 2) {
+                                (void)select_editor_word_at_local_point(hit.local_x, hit.local_y);
+                            } else if (hit.node->vtbl && hit.node->vtbl->on_mouse_event) {
                                 hit.node->vtbl->on_mouse_event(hit.node, 1, hit.local_x, hit.local_y);
                             }
                         }
@@ -1450,7 +1415,6 @@ cleanup:
         croft_wit_host_window_runtime_dispatch(window_runtime, &window_command, &window_reply);
     }
     croft_wit_host_a11y_runtime_destroy(a11y_runtime);
-    croft_wit_host_popup_menu_runtime_destroy(popup_menu_runtime);
     croft_wit_host_editor_input_runtime_destroy(editor_input_runtime);
     croft_wit_host_clipboard_runtime_destroy(clipboard_runtime);
     croft_wit_host_menu_runtime_destroy(menu_runtime);

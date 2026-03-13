@@ -300,7 +300,8 @@ The scene-editor family now includes incremental syntax/fold caching, shared
 find/replace flows, wrapped-row layout with `Alt+Z` word-wrap toggling,
 font-probe-derived line metrics, explicit wrapped-caret affinity,
 background/underline decoration plumbing, live scene-tree accessibility frame
-updates, and marked-text composition preview in the custom-rendered shells.
+updates, marked-text composition preview, double-click word selection, and
+native text-service context menus in the custom-rendered shells.
 
 The current scene-editor shells no longer own pinch-to-zoom or camera
 behavior. Those now belong to the workspace line rather than the editor line.

@@ -16,9 +16,11 @@ static GLFWwindow *g_window = NULL;
 static host_ui_event_cb_t g_event_cb = NULL;
 static host_ui_composition_cb_t g_composition_cb = NULL;
 static uint32_t g_modifier_mask = 0;
+static int32_t g_last_click_count = 1;
 
 #ifdef __APPLE__
 extern void host_text_input_mac_init(void *ns_window_ptr);
+extern int32_t host_text_input_mac_current_click_count(void);
 #endif
 
 static uint32_t croft_ui_map_glfw_modifiers(int mods) {
@@ -57,6 +59,18 @@ static void glfw_key_callback(GLFWwindow* window, int key, int scancode, int act
 static void glfw_mouse_button_callback(GLFWwindow* window, int button, int action, int mods) {
     (void)window;
     g_modifier_mask = croft_ui_map_glfw_modifiers(mods);
+#ifdef __APPLE__
+    if (action == GLFW_PRESS) {
+        g_last_click_count = host_text_input_mac_current_click_count();
+        if (g_last_click_count < 1) {
+            g_last_click_count = 1;
+        }
+    }
+#else
+    if (action == GLFW_PRESS) {
+        g_last_click_count = 1;
+    }
+#endif
     
     if (g_event_cb) {
         /* Encodes button in arg0, action in arg1 */
@@ -120,6 +134,7 @@ void host_ui_terminate(void) {
     g_event_cb = NULL;
     g_composition_cb = NULL;
     g_modifier_mask = 0;
+    g_last_click_count = 1;
     glfwTerminate();
 }
 
@@ -208,6 +223,10 @@ void host_ui_get_mouse_pos(double *x, double *y) {
 int32_t host_ui_get_mouse_button(int32_t button) {
     if (!g_window) return 0;
     return glfwGetMouseButton(g_window, button) == GLFW_PRESS;
+}
+
+int32_t host_ui_get_last_click_count(void) {
+    return g_last_click_count > 0 ? g_last_click_count : 1;
 }
 
 uint32_t host_ui_get_modifiers(void) {
