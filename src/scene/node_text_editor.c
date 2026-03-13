@@ -64,6 +64,11 @@ typedef struct text_editor_visual_row {
     uint8_t is_folded_header;
 } text_editor_visual_row;
 
+typedef struct text_editor_decoration_buffer {
+    croft_text_editor_decoration items[128];
+    uint32_t count;
+} text_editor_decoration_buffer;
+
 enum {
     TEXT_EDITOR_TEXT_INSET_X = 12,
     TEXT_EDITOR_TEXT_INSET_Y = 8,
@@ -2353,6 +2358,25 @@ static void text_editor_visual_row_range_bounds(const text_editor_node* te,
         + text_editor_visual_row_prefix_width(te, row, line_text, end_offset);
 }
 
+static void text_editor_decoration_buffer_append(text_editor_decoration_buffer* buffer,
+                                                 uint32_t start_offset,
+                                                 uint32_t end_offset,
+                                                 croft_text_editor_decoration_style style,
+                                                 uint32_t color_rgba) {
+    croft_text_editor_decoration* decoration;
+
+    if (!buffer || buffer->count >= (sizeof(buffer->items) / sizeof(buffer->items[0]))
+            || end_offset <= start_offset) {
+        return;
+    }
+
+    decoration = &buffer->items[buffer->count++];
+    decoration->start_offset = start_offset;
+    decoration->end_offset = end_offset;
+    decoration->style = (uint8_t)style;
+    decoration->color_rgba = color_rgba;
+}
+
 static void text_editor_draw_range_highlight(const text_editor_node* te,
                                              const text_editor_layout* layout,
                                              uint32_t start_offset,
@@ -2398,35 +2422,6 @@ static void text_editor_draw_range_highlight(const text_editor_node* te,
             host_render_draw_rect(x1, line_top, x2 - x1, te->line_height, color_rgba);
         }
     }
-}
-
-static void text_editor_draw_search_match(const text_editor_node* te,
-                                          const text_editor_layout* layout,
-                                          const croft_editor_search_match* match,
-                                          uint32_t color_rgba)
-{
-    if (!te || !layout || !match) {
-        return;
-    }
-
-    text_editor_draw_range_highlight(te,
-                                     layout,
-                                     match->start_offset,
-                                     match->end_offset,
-                                     color_rgba);
-}
-
-static void text_editor_draw_codepoint_highlight(const text_editor_node* te,
-                                                 const text_editor_layout* layout,
-                                                 uint32_t offset,
-                                                 uint32_t color_rgba)
-{
-    if (!te || !layout
-            || offset >= croft_editor_text_model_codepoint_length(&te->text_model)) {
-        return;
-    }
-
-    text_editor_draw_range_highlight(te, layout, offset, offset + 1u, color_rgba);
 }
 
 static void text_editor_draw_range_underline(const text_editor_node* te,
@@ -2483,17 +2478,19 @@ static void text_editor_draw_range_underline(const text_editor_node* te,
     }
 }
 
-static void text_editor_draw_decorations(const text_editor_node* te,
-                                         const text_editor_layout* layout,
-                                         croft_text_editor_decoration_style style) {
+static void text_editor_draw_decoration_list(const text_editor_node* te,
+                                             const text_editor_layout* layout,
+                                             const croft_text_editor_decoration* decorations,
+                                             uint32_t decoration_count,
+                                             croft_text_editor_decoration_style style) {
     uint32_t index;
 
-    if (!te || !layout || te->decoration_count == 0u || !te->decorations) {
+    if (!te || !layout || decoration_count == 0u || !decorations) {
         return;
     }
 
-    for (index = 0u; index < te->decoration_count; index++) {
-        const croft_text_editor_decoration* decoration = &te->decorations[index];
+    for (index = 0u; index < decoration_count; index++) {
+        const croft_text_editor_decoration* decoration = &decorations[index];
 
         if ((croft_text_editor_decoration_style)decoration->style != style) {
             continue;
@@ -2512,6 +2509,16 @@ static void text_editor_draw_decorations(const text_editor_node* te,
                                              decoration->color_rgba);
         }
     }
+}
+
+static void text_editor_draw_decorations(const text_editor_node* te,
+                                         const text_editor_layout* layout,
+                                         croft_text_editor_decoration_style style) {
+    text_editor_draw_decoration_list(te,
+                                     layout,
+                                     te ? te->decorations : NULL,
+                                     te ? te->decoration_count : 0u,
+                                     style);
 }
 
 static void text_editor_draw_whitespace_marker(const text_editor_node* te,
@@ -2681,8 +2688,8 @@ static void text_editor_draw_whitespace_markers_for_row(const text_editor_node* 
     }
 }
 
-static void text_editor_draw_bracket_pair(text_editor_node* te,
-                                          const text_editor_layout* layout)
+static void text_editor_collect_bracket_pair_decorations(text_editor_node* te,
+                                                         text_editor_decoration_buffer* decorations)
 {
     croft_text_editor_profile_snapshot* stats = text_editor_profile_stats_mut(te);
     uint64_t start_usec = text_editor_profile_begin(te);
@@ -2690,7 +2697,7 @@ static void text_editor_draw_bracket_pair(text_editor_node* te,
     uint32_t selection_min = 0u;
     uint32_t selection_max = 0u;
 
-    if (!te || !layout) {
+    if (!te || !decorations) {
         return;
     }
 
@@ -2702,8 +2709,16 @@ static void text_editor_draw_bracket_pair(text_editor_node* te,
         return;
     }
 
-    text_editor_draw_codepoint_highlight(te, layout, match.open_offset, 0xC8E0FFCC);
-    text_editor_draw_codepoint_highlight(te, layout, match.close_offset, 0xC8E0FFCC);
+    text_editor_decoration_buffer_append(decorations,
+                                         match.open_offset,
+                                         match.open_offset + 1u,
+                                         CROFT_TEXT_EDITOR_DECORATION_STYLE_BACKGROUND,
+                                         0xC8E0FFCC);
+    text_editor_decoration_buffer_append(decorations,
+                                         match.close_offset,
+                                         match.close_offset + 1u,
+                                         CROFT_TEXT_EDITOR_DECORATION_STYLE_BACKGROUND,
+                                         0xC8E0FFCC);
 
     if (stats) {
         text_editor_profile_note(stats,
@@ -2713,8 +2728,8 @@ static void text_editor_draw_bracket_pair(text_editor_node* te,
     }
 }
 
-static void text_editor_draw_search_matches(text_editor_node* te,
-                                            const text_editor_layout* layout)
+static void text_editor_collect_search_decorations(text_editor_node* te,
+                                                   text_editor_decoration_buffer* decorations)
 {
     croft_text_editor_profile_snapshot* stats = text_editor_profile_stats_mut(te);
     uint64_t start_usec = text_editor_profile_begin(te);
@@ -2726,7 +2741,7 @@ static void text_editor_draw_search_matches(text_editor_node* te,
     uint32_t color_rgba = 0u;
     uint32_t search_from = 0u;
 
-    if (!te || !layout) {
+    if (!te || !decorations) {
         return;
     }
 
@@ -2755,7 +2770,11 @@ static void text_editor_draw_search_matches(text_editor_node* te,
     while (croft_editor_search_next(&te->text_model, needle, needle_len, search_from, &match)
             == CROFT_EDITOR_OK) {
         if (!(match.start_offset == selection_min && match.end_offset == selection_max)) {
-            text_editor_draw_search_match(te, layout, &match, color_rgba);
+            text_editor_decoration_buffer_append(decorations,
+                                                 match.start_offset,
+                                                 match.end_offset,
+                                                 CROFT_TEXT_EDITOR_DECORATION_STYLE_BACKGROUND,
+                                                 color_rgba);
         }
         if (match.start_offset == match.end_offset) {
             break;
@@ -2963,6 +2982,7 @@ static void text_editor_draw(scene_node *n, render_ctx *rc) {
     uint32_t first_visible_line = 1u;
     uint32_t last_visible_line = 1u;
     uint32_t cursor_row_number = 0u;
+    text_editor_decoration_buffer builtin_decorations = {0};
 
     if (text_editor_prepare_layout(te, n->sx, n->sy, &layout) != CROFT_EDITOR_OK) {
         return;
@@ -2999,6 +3019,8 @@ static void text_editor_draw(scene_node *n, render_ctx *rc) {
                                                                        cursor_offset,
                                                                        te->caret_affinity);
     }
+    text_editor_collect_search_decorations(te, &builtin_decorations);
+    text_editor_collect_bracket_pair_decorations(te, &builtin_decorations);
 
     {
         uint32_t visible_line_number;
@@ -3033,8 +3055,11 @@ static void text_editor_draw(scene_node *n, render_ctx *rc) {
     }
 
     text_editor_draw_decorations(te, &layout, CROFT_TEXT_EDITOR_DECORATION_STYLE_BACKGROUND);
-    text_editor_draw_search_matches(te, &layout);
-    text_editor_draw_bracket_pair(te, &layout);
+    text_editor_draw_decoration_list(te,
+                                     &layout,
+                                     builtin_decorations.items,
+                                     builtin_decorations.count,
+                                     CROFT_TEXT_EDITOR_DECORATION_STYLE_BACKGROUND);
 
     {
         uint32_t visible_line_number;
@@ -3130,6 +3155,11 @@ static void text_editor_draw(scene_node *n, render_ctx *rc) {
         }
     }
     text_editor_draw_decorations(te, &layout, CROFT_TEXT_EDITOR_DECORATION_STYLE_UNDERLINE);
+    text_editor_draw_decoration_list(te,
+                                     &layout,
+                                     builtin_decorations.items,
+                                     builtin_decorations.count,
+                                     CROFT_TEXT_EDITOR_DECORATION_STYLE_UNDERLINE);
     text_editor_draw_composition_overlay(te, &layout);
     host_render_restore();
 

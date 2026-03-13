@@ -55,7 +55,110 @@ static void draw_tree_recursive(scene_node *node, render_ctx *rc) {
     host_render_restore();
 }
 
+static void scene_node_child_accessibility_transform(scene_node* node,
+                                                     float* out_offset_x,
+                                                     float* out_offset_y,
+                                                     float* out_scale_x,
+                                                     float* out_scale_y) {
+    float offset_x = 0.0f;
+    float offset_y = 0.0f;
+    float scale_x = 1.0f;
+    float scale_y = 1.0f;
+
+    if (node && node->vtbl && node->vtbl->transform_coords) {
+        float origin_x = 0.0f;
+        float origin_y = 0.0f;
+        float unit_x = 1.0f;
+        float unit_y = 1.0f;
+        float step_x;
+        float step_y;
+
+        node->vtbl->transform_coords(node, &origin_x, &origin_y);
+        node->vtbl->transform_coords(node, &unit_x, &unit_y);
+        step_x = unit_x - origin_x;
+        step_y = unit_y - origin_y;
+
+        if (step_x > 0.0001f || step_x < -0.0001f) {
+            scale_x = 1.0f / step_x;
+            offset_x = -origin_x * scale_x;
+        }
+        if (step_y > 0.0001f || step_y < -0.0001f) {
+            scale_y = 1.0f / step_y;
+            offset_y = -origin_y * scale_y;
+        }
+    }
+
+    if (out_offset_x) {
+        *out_offset_x = offset_x;
+    }
+    if (out_offset_y) {
+        *out_offset_y = offset_y;
+    }
+    if (out_scale_x) {
+        *out_scale_x = scale_x;
+    }
+    if (out_scale_y) {
+        *out_scale_y = scale_y;
+    }
+}
+
+static void update_accessibility_recursive(scene_node* node,
+                                           float parent_origin_x,
+                                           float parent_origin_y,
+                                           float parent_scale_x,
+                                           float parent_scale_y) {
+    float node_origin_x;
+    float node_origin_y;
+    float node_width;
+    float node_height;
+    float child_offset_x = 0.0f;
+    float child_offset_y = 0.0f;
+    float child_scale_x = 1.0f;
+    float child_scale_y = 1.0f;
+    scene_node* child;
+
+    if (!node) {
+        return;
+    }
+
+    node_origin_x = parent_origin_x + (node->x * parent_scale_x);
+    node_origin_y = parent_origin_y + (node->y * parent_scale_y);
+    node_width = node->sx * parent_scale_x;
+    node_height = node->sy * parent_scale_y;
+
+    if (node->a11y_handle) {
+        croft_scene_a11y_update_frame(node->a11y_handle,
+                                      node_origin_x,
+                                      node_origin_y,
+                                      node_width,
+                                      node_height);
+    }
+    if (node->vtbl && node->vtbl->update_accessibility) {
+        node->vtbl->update_accessibility(node);
+    }
+
+    scene_node_child_accessibility_transform(node,
+                                             &child_offset_x,
+                                             &child_offset_y,
+                                             &child_scale_x,
+                                             &child_scale_y);
+    child = node->first_child;
+    while (child) {
+        update_accessibility_recursive(child,
+                                       node_origin_x + (child_offset_x * parent_scale_x),
+                                       node_origin_y + (child_offset_y * parent_scale_y),
+                                       parent_scale_x * child_scale_x,
+                                       parent_scale_y * child_scale_y);
+        child = child->next_sibling;
+    }
+}
+
+void scene_node_update_accessibility_tree(scene_node *root) {
+    update_accessibility_recursive(root, 0.0f, 0.0f, 1.0f, 1.0f);
+}
+
 void scene_node_draw_tree(scene_node *root, render_ctx *rc) {
+    scene_node_update_accessibility_tree(root);
     draw_tree_recursive(root, rc);
 }
 

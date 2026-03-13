@@ -384,6 +384,8 @@ Current implemented editor baseline:
 - background/underline decoration plumbing at the scene-editor node boundary so
   diagnostics, active ranges, and similar overlays do not need renderer-local
   one-offs
+- a live scene-tree accessibility frame pass so scene-rendered editor nodes no
+  longer rely on static creation-time bounds
 - syntax highlighting for JavaScript/TypeScript, JSON, YAML, Markdown, Python,
   Lambkin, WIT/WAT, CSS, HTML, and XML
 - file open/save/save-as plus native context menus in the AppKit and scene
@@ -396,9 +398,8 @@ VS Code-like document editor that do not require the extension/LSP ecosystem:
 
 1. richer decoration producers for diagnostics, search results, active ranges,
    and syntax-driven styling now that the core background/underline seam exists
-2. accessibility and platform-collapse tightening around the direct-Metal path
-   now that metrics and composition are no longer hidden inside renderer-local
-   guesses
+2. accessibility label/value/action parity around the direct-Metal path now
+   that frame updates no longer depend on static creation-time bounds
 3. follow-through on remaining text-input edge cases where the scene-rendered
    editor still needs to prove parity with the native-collapsed path
 
@@ -473,9 +474,9 @@ host-boundary pressure points instead of broadening the system indiscriminately.
 2. Keep WIT/codegen refactors broad: schema-shape changes should sweep
    `src/runtime`, `examples`, and `tests`, then build and smoke-check the
    example matrix instead of stopping at the first green target.
-3. Build on the new text-metrics, affinity, composition, and decoration seams
-   by tackling accessibility and higher-level editor producers instead of
-   retreating into renderer-local shortcuts.
+3. Build on the new text-metrics, affinity, composition, decoration, and
+   scene-a11y seams by tackling label/action parity and higher-level editor
+   producers instead of retreating into renderer-local shortcuts.
 4. Keep the incremental cache and wrapped-row geometry covered by focused
    editor/scene tests so later refactors do not regress quietly.
 5. Keep AppKit as the CPU-native contrast case and tgfx as the scene-rendered
@@ -523,8 +524,8 @@ implementation tasks:
 
 The next concrete implementation work should happen in this order:
 
-1. Push direct-Metal editor work into accessibility and higher-level decoration
-   producers rather than more shell-level chrome.
+1. Push direct-Metal editor work into accessibility label/action parity and
+   higher-level decoration producers rather than more shell-level chrome.
 2. Keep AppKit and tgfx alive as contrast cases while treating the native
    direct-Metal editor as the main custom-rendered reference path.
 3. Keep `make test-examples` and the example smoke path honest whenever WIT

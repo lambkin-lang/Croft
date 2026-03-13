@@ -266,6 +266,7 @@ extern int test_editor_commands_outdent_lines(void);
 extern int test_editor_scene_runtime_bounds_invalidate(void);
 extern int test_editor_scene_runtime_cursor_blink_invalidate(void);
 extern int test_editor_scene_runtime_auto_close(void);
+extern int test_scene_accessibility_tree_updates(void);
 extern int test_editor_find_replace_next(void);
 extern int test_editor_find_replace_all_undo(void);
 extern int test_editor_wrap_layout_geometry(void);
@@ -428,6 +429,7 @@ int main(void)
     RUN_TEST(test_editor_scene_runtime_bounds_invalidate);
     RUN_TEST(test_editor_scene_runtime_cursor_blink_invalidate);
     RUN_TEST(test_editor_scene_runtime_auto_close);
+    RUN_TEST(test_scene_accessibility_tree_updates);
     RUN_TEST(test_editor_find_replace_next);
     RUN_TEST(test_editor_find_replace_all_undo);
     RUN_TEST(test_editor_wrap_layout_geometry);

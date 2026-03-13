@@ -69,6 +69,7 @@ struct scene_node {
 void scene_node_init(scene_node *n, scene_node_vtbl *vtbl, float x, float y, float sx, float sy);
 void scene_node_add_child(scene_node *parent, scene_node *child);
 
+void scene_node_update_accessibility_tree(scene_node *root);
 void scene_node_draw_tree(scene_node *root, render_ctx *rc);
 void scene_node_hit_test_tree(scene_node *root, float x, float y, hit_result *out);
 
