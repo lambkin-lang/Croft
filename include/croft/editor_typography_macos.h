@@ -68,6 +68,18 @@ static inline NSFont* croft_editor_mac_monospace_bold_font(CGFloat size) {
     return font;
 }
 
+static inline NSFont* croft_editor_mac_ui_font(CGFloat size) {
+    NSFont* font = [NSFont systemFontOfSize:size];
+
+    if (!font) {
+        font = [NSFont messageFontOfSize:size];
+    }
+    if (!font) {
+        font = croft_editor_mac_monospace_font(size);
+    }
+    return font;
+}
+
 static inline int32_t croft_editor_mac_probe_font(NSFont* font,
                                                   CGFloat point_size,
                                                   const char* requested_style,

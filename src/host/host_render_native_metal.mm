@@ -301,15 +301,20 @@ static int32_t encode_textured_rect(CGRect rect_device, id<MTLTexture> texture, 
     return 0;
 }
 
-static NSFont* resolve_font(float font_size) {
+static NSFont* resolve_font(float font_size, uint8_t font_role) {
+    if (font_role == CROFT_TEXT_FONT_ROLE_UI) {
+        return croft_editor_mac_ui_font(font_size);
+    }
     return croft_editor_mac_monospace_font(font_size);
 }
 
-static NSString* text_cache_key(NSString* string, float font_size) {
-    return [NSString stringWithFormat:@"%.2f|%@", font_size, string];
+static NSString* text_cache_key(NSString* string, float font_size, uint8_t font_role) {
+    return [NSString stringWithFormat:@"%u|%.2f|%@", (unsigned)font_role, font_size, string];
 }
 
-static CroftTextTextureEntry* create_text_texture_entry(NSString* string, float font_size) {
+static CroftTextTextureEntry* create_text_texture_entry(NSString* string,
+                                                        float font_size,
+                                                        uint8_t font_role) {
     NSFont* font;
     NSDictionary* attrs;
     NSSize measured;
@@ -325,7 +330,7 @@ static CroftTextTextureEntry* create_text_texture_entry(NSString* string, float 
         return nil;
     }
 
-    font = resolve_font(font_size);
+    font = resolve_font(font_size, font_role);
     attrs = @{
         NSFontAttributeName: font,
         NSForegroundColorAttributeName: [NSColor whiteColor]
@@ -384,7 +389,9 @@ static CroftTextTextureEntry* create_text_texture_entry(NSString* string, float 
     return entry;
 }
 
-static CroftTextTextureEntry* cached_text_texture_entry(NSString* string, float font_size) {
+static CroftTextTextureEntry* cached_text_texture_entry(NSString* string,
+                                                        float font_size,
+                                                        uint8_t font_role) {
     NSString* key;
     CroftTextTextureEntry* entry;
 
@@ -396,13 +403,13 @@ static CroftTextTextureEntry* cached_text_texture_entry(NSString* string, float 
         g_text_cache = [[NSMutableDictionary alloc] init];
     }
 
-    key = text_cache_key(string, font_size);
+    key = text_cache_key(string, font_size, font_role);
     entry = [g_text_cache objectForKey:key];
     if (entry) {
         return entry;
     }
 
-    entry = create_text_texture_entry(string, font_size);
+    entry = create_text_texture_entry(string, font_size, font_role);
     if (entry) {
         [g_text_cache setObject:entry forKey:key];
     }
@@ -698,12 +705,13 @@ int32_t host_render_draw_rect(float x, float y, float w, float h, uint32_t color
     return encode_rect(rect, rgba_to_color(color_rgba));
 }
 
-int32_t host_render_draw_text(float x,
-                              float y,
-                              const char* text,
-                              uint32_t len,
-                              float font_size,
-                              uint32_t color_rgba) {
+int32_t host_render_draw_text_with_role(float x,
+                                        float y,
+                                        const char* text,
+                                        uint32_t len,
+                                        float font_size,
+                                        uint8_t font_role,
+                                        uint32_t color_rgba) {
     NSString* string = nil;
     CroftTextTextureEntry* entry = nil;
     CGRect rect;
@@ -717,7 +725,7 @@ int32_t host_render_draw_text(float x,
         return -1;
     }
 
-    entry = cached_text_texture_entry(string, font_size);
+    entry = cached_text_texture_entry(string, font_size, font_role);
     if (!entry || !entry.texture) {
         return -1;
     }
@@ -730,7 +738,25 @@ int32_t host_render_draw_text(float x,
     return encode_textured_rect(rect, entry.texture, rgba_to_color(color_rgba));
 }
 
-float host_render_measure_text(const char* text, uint32_t len, float font_size) {
+int32_t host_render_draw_text(float x,
+                              float y,
+                              const char* text,
+                              uint32_t len,
+                              float font_size,
+                              uint32_t color_rgba) {
+    return host_render_draw_text_with_role(x,
+                                           y,
+                                           text,
+                                           len,
+                                           font_size,
+                                           CROFT_TEXT_FONT_ROLE_MONOSPACE,
+                                           color_rgba);
+}
+
+float host_render_measure_text_with_role(const char* text,
+                                         uint32_t len,
+                                         float font_size,
+                                         uint8_t font_role) {
     if (!text || len == 0) {
         return 0.0f;
     }
@@ -743,17 +769,24 @@ float host_render_measure_text(const char* text, uint32_t len, float font_size) 
     }
 
     NSDictionary* attrs = @{
-        NSFontAttributeName: resolve_font(font_size)
+        NSFontAttributeName: resolve_font(font_size, font_role)
     };
     NSSize size = [string sizeWithAttributes:attrs];
     return static_cast<float>(std::ceil(size.width));
+}
+
+float host_render_measure_text(const char* text, uint32_t len, float font_size) {
+    return host_render_measure_text_with_role(text,
+                                              len,
+                                              font_size,
+                                              CROFT_TEXT_FONT_ROLE_MONOSPACE);
 }
 
 int32_t host_render_probe_font(float font_size,
                                const char* sample,
                                uint32_t len,
                                croft_editor_font_probe* out_probe) {
-    return croft_editor_mac_probe_font(resolve_font(font_size),
+    return croft_editor_mac_probe_font(resolve_font(font_size, CROFT_TEXT_FONT_ROLE_MONOSPACE),
                                        font_size,
                                        CROFT_EDITOR_MONOSPACE_FONT_REGULAR,
                                        sample,

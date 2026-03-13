@@ -319,12 +319,13 @@ static int32_t croft_wit_host_gpu2d_dispatch_draw_text(void* ctx,
     if (!croft_wit_host_gpu2d_dispatch_frame_required(runtime, request->surface, reply_out)) {
         return 0;
     }
-    if (host_render_draw_text(request->x,
-                              request->y,
-                              (const char*)request->utf8_data,
-                              request->utf8_len,
-                              request->font_size,
-                              request->color_rgba) != 0) {
+    if (host_render_draw_text_with_role(request->x,
+                                        request->y,
+                                        (const char*)request->utf8_data,
+                                        request->utf8_len,
+                                        request->font_size,
+                                        request->font_role,
+                                        request->color_rgba) != 0) {
         croft_wit_host_gpu2d_reply_status_err(reply_out, "internal");
         return 0;
     }
@@ -348,9 +349,10 @@ static int32_t croft_wit_host_gpu2d_dispatch_measure_text(
     }
     croft_wit_host_gpu2d_reply_measure_ok(
         reply_out,
-        host_render_measure_text((const char*)request->utf8_data,
-                                 request->utf8_len,
-                                 request->font_size));
+        host_render_measure_text_with_role((const char*)request->utf8_data,
+                                           request->utf8_len,
+                                           request->font_size,
+                                           request->font_role));
     return 0;
 }
 

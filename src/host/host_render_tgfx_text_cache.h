@@ -18,23 +18,29 @@ namespace croft_tgfx_text_cache {
 
 struct TextKey {
     uint32_t font_size_centipoints;
+    uint8_t font_role;
     std::string text;
 
     bool operator==(const TextKey& other) const {
-        return font_size_centipoints == other.font_size_centipoints && text == other.text;
+        return font_size_centipoints == other.font_size_centipoints
+            && font_role == other.font_role
+            && text == other.text;
     }
 };
 
 struct TextKeyHash {
     size_t operator()(const TextKey& key) const {
         size_t h1 = std::hash<uint32_t>{}(key.font_size_centipoints);
-        size_t h2 = std::hash<std::string>{}(key.text);
-        return h1 ^ (h2 + 0x9e3779b9u + (h1 << 6u) + (h1 >> 2u));
+        size_t h2 = std::hash<uint8_t>{}(key.font_role);
+        size_t h3 = std::hash<std::string>{}(key.text);
+        size_t combined = h1 ^ (h2 + 0x9e3779b9u + (h1 << 6u) + (h1 >> 2u));
+        return combined ^ (h3 + 0x9e3779b9u + (combined << 6u) + (combined >> 2u));
     }
 };
 
 struct Cache {
-    std::shared_ptr<tgfx::Typeface> typeface = nullptr;
+    std::shared_ptr<tgfx::Typeface> monospace_typeface = nullptr;
+    std::shared_ptr<tgfx::Typeface> ui_typeface = nullptr;
     std::unordered_map<TextKey, std::shared_ptr<tgfx::TextBlob>, TextKeyHash> blobs = {};
     std::unordered_map<TextKey, float, TextKeyHash> widths = {};
 };
@@ -48,23 +54,35 @@ inline uint32_t font_size_key(float font_size) {
     return static_cast<uint32_t>(std::lround(font_size * 100.0f));
 }
 
-inline const std::shared_ptr<tgfx::Typeface>& resolve_typeface(Cache* cache) {
+inline const std::shared_ptr<tgfx::Typeface>& resolve_typeface(Cache* cache, uint8_t font_role) {
     static std::shared_ptr<tgfx::Typeface> empty = nullptr;
+    std::shared_ptr<tgfx::Typeface>* slot = nullptr;
 
     if (!cache) {
         return empty;
     }
-    if (!cache->typeface) {
-        cache->typeface = tgfx::Typeface::MakeFromName(CROFT_EDITOR_MONOSPACE_FONT_FAMILY, "");
-        if (!cache->typeface) {
-            cache->typeface = tgfx::Typeface::MakeFromName("", "");
+
+    slot = font_role == CROFT_TEXT_FONT_ROLE_UI
+        ? &cache->ui_typeface
+        : &cache->monospace_typeface;
+    if (!*slot) {
+        if (font_role == CROFT_TEXT_FONT_ROLE_UI) {
+            *slot = tgfx::Typeface::MakeFromName("", "");
+        } else {
+            *slot = tgfx::Typeface::MakeFromName(CROFT_EDITOR_MONOSPACE_FONT_FAMILY, "");
+        }
+        if (!*slot && font_role != CROFT_TEXT_FONT_ROLE_MONOSPACE) {
+            *slot = resolve_typeface(cache, CROFT_TEXT_FONT_ROLE_MONOSPACE);
+        }
+        if (!*slot) {
+            *slot = tgfx::Typeface::MakeFromName("", "");
         }
     }
-    return cache->typeface;
+    return *slot;
 }
 
-inline tgfx::Font make_font(Cache* cache, float font_size) {
-    return tgfx::Font(resolve_typeface(cache), font_size);
+inline tgfx::Font make_font(Cache* cache, float font_size, uint8_t font_role) {
+    return tgfx::Font(resolve_typeface(cache, font_role), font_size);
 }
 
 inline void copy_probe_name(char* dest, size_t capacity, const std::string& value) {
@@ -79,7 +97,8 @@ inline void reset(Cache* cache) {
         return;
     }
 
-    cache->typeface.reset();
+    cache->monospace_typeface.reset();
+    cache->ui_typeface.reset();
     cache->blobs.clear();
     cache->widths.clear();
 }
@@ -87,16 +106,29 @@ inline void reset(Cache* cache) {
 inline std::shared_ptr<tgfx::TextBlob> get_text_blob(Cache* cache,
                                                      const char* text,
                                                      uint32_t len,
-                                                     float font_size) {
+                                                     float font_size,
+                                                     uint8_t font_role);
+inline float measure_text(Cache* cache,
+                          const char* text,
+                          uint32_t len,
+                          float font_size,
+                          uint8_t font_role);
+
+inline std::shared_ptr<tgfx::TextBlob> get_text_blob(Cache* cache,
+                                                     const char* text,
+                                                     uint32_t len,
+                                                     float font_size,
+                                                     uint8_t font_role) {
     TextKey key;
     auto found = cache ? cache->blobs.end() : decltype(cache->blobs.end()){};
-    tgfx::Font font = make_font(cache, font_size);
+    tgfx::Font font = make_font(cache, font_size, font_role);
 
     if (!cache || !text || len == 0) {
         return nullptr;
     }
 
     key.font_size_centipoints = font_size_key(font_size);
+    key.font_role = font_role;
     key.text.assign(text, static_cast<size_t>(len));
     found = cache->blobs.find(key);
     if (found != cache->blobs.end()) {
@@ -117,9 +149,24 @@ inline std::shared_ptr<tgfx::TextBlob> get_text_blob(Cache* cache,
 }
 
 inline float measure_text(Cache* cache, const char* text, uint32_t len, float font_size) {
+    return measure_text(cache, text, len, font_size, CROFT_TEXT_FONT_ROLE_MONOSPACE);
+}
+
+inline std::shared_ptr<tgfx::TextBlob> get_text_blob(Cache* cache,
+                                                     const char* text,
+                                                     uint32_t len,
+                                                     float font_size) {
+    return get_text_blob(cache, text, len, font_size, CROFT_TEXT_FONT_ROLE_MONOSPACE);
+}
+
+inline float measure_text(Cache* cache,
+                          const char* text,
+                          uint32_t len,
+                          float font_size,
+                          uint8_t font_role) {
     TextKey key;
     auto found = cache ? cache->widths.end() : decltype(cache->widths.end()){};
-    tgfx::Font font = make_font(cache, font_size);
+    tgfx::Font font = make_font(cache, font_size, font_role);
     float total_advance = 0.0f;
     uint32_t i = 0;
 
@@ -129,6 +176,7 @@ inline float measure_text(Cache* cache, const char* text, uint32_t len, float fo
 
     if (cache) {
         key.font_size_centipoints = font_size_key(font_size);
+        key.font_role = font_role;
         key.text.assign(text, static_cast<size_t>(len));
         found = cache->widths.find(key);
         if (found != cache->widths.end()) {
@@ -188,7 +236,7 @@ inline int32_t probe_font(Cache* cache,
                           const char* sample,
                           uint32_t len,
                           croft_editor_font_probe* out_probe) {
-    const auto& typeface = resolve_typeface(cache);
+    const auto& typeface = resolve_typeface(cache, CROFT_TEXT_FONT_ROLE_MONOSPACE);
     tgfx::Font font;
     tgfx::FontMetrics metrics;
 
@@ -211,7 +259,7 @@ inline int32_t probe_font(Cache* cache,
                     sizeof(out_probe->resolved_style),
                     typeface->fontStyle());
 
-    font = make_font(cache, font_size);
+    font = make_font(cache, font_size, CROFT_TEXT_FONT_ROLE_MONOSPACE);
     metrics = font.getMetrics();
     out_probe->line_height = std::fmax(0.0f, metrics.descent - metrics.ascent + metrics.leading);
     if (sample && len > 0u) {

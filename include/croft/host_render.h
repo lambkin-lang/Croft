@@ -69,9 +69,20 @@ int32_t host_render_draw_rect(float x, float y, float w, float h, uint32_t color
 /**
  * Draws a shaped text string.
  */
+int32_t host_render_draw_text_with_role(float x,
+                                        float y,
+                                        const char* text,
+                                        uint32_t len,
+                                        float font_size,
+                                        uint8_t font_role,
+                                        uint32_t color_rgba);
 int32_t host_render_draw_text(float x, float y, const char* text, uint32_t len, float font_size, uint32_t color_rgba);
 
 // Computes the graphical width of the given utf8 text
+float host_render_measure_text_with_role(const char* text,
+                                         uint32_t len,
+                                         float font_size,
+                                         uint8_t font_role);
 float host_render_measure_text(const char* text, uint32_t len, float font_size);
 
 int32_t host_render_probe_font(float font_size,

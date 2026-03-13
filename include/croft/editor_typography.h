@@ -22,4 +22,9 @@ typedef struct croft_editor_font_probe {
     char resolved_style[CROFT_EDITOR_FONT_PROBE_NAME_CAPACITY];
 } croft_editor_font_probe;
 
+typedef enum croft_text_font_role {
+    CROFT_TEXT_FONT_ROLE_MONOSPACE = 0,
+    CROFT_TEXT_FONT_ROLE_UI = 1
+} croft_text_font_role;
+
 #endif

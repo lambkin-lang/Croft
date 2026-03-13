@@ -259,7 +259,13 @@ int32_t host_render_draw_rect(float x, float y, float w, float h, uint32_t color
     return 0;
 }
 
-int32_t host_render_draw_text(float x, float y, const char* text, uint32_t len, float font_size, uint32_t color_rgba) {
+int32_t host_render_draw_text_with_role(float x,
+                                        float y,
+                                        const char* text,
+                                        uint32_t len,
+                                        float font_size,
+                                        uint8_t font_role,
+                                        uint32_t color_rgba) {
     if (!state.canvas) return -1;
     tgfx::Paint paint;
     float r = ((color_rgba >> 24) & 0xFF) / 255.0f;
@@ -268,15 +274,41 @@ int32_t host_render_draw_text(float x, float y, const char* text, uint32_t len, 
     float a =  (color_rgba        & 0xFF) / 255.0f;
     paint.setColor(tgfx::Color{r, g, b, a});
     
-    auto textBlob = croft_tgfx_text_cache::get_text_blob(&g_text_cache, text, len, font_size);
+    auto textBlob =
+        croft_tgfx_text_cache::get_text_blob(&g_text_cache, text, len, font_size, font_role);
     if (textBlob) {
         state.canvas->drawTextBlob(textBlob, x, y, paint);
     }
     return 0;
 }
 
+int32_t host_render_draw_text(float x,
+                              float y,
+                              const char* text,
+                              uint32_t len,
+                              float font_size,
+                              uint32_t color_rgba) {
+    return host_render_draw_text_with_role(x,
+                                           y,
+                                           text,
+                                           len,
+                                           font_size,
+                                           CROFT_TEXT_FONT_ROLE_MONOSPACE,
+                                           color_rgba);
+}
+
+float host_render_measure_text_with_role(const char* text,
+                                         uint32_t len,
+                                         float font_size,
+                                         uint8_t font_role) {
+    return croft_tgfx_text_cache::measure_text(&g_text_cache, text, len, font_size, font_role);
+}
+
 float host_render_measure_text(const char* text, uint32_t len, float font_size) {
-    return croft_tgfx_text_cache::measure_text(&g_text_cache, text, len, font_size);
+    return host_render_measure_text_with_role(text,
+                                              len,
+                                              font_size,
+                                              CROFT_TEXT_FONT_ROLE_MONOSPACE);
 }
 
 int32_t host_render_probe_font(float font_size,

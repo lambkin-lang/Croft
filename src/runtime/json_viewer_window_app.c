@@ -210,6 +210,7 @@ static int croft_json_viewer_gpu_measure_text(const CroftJsonViewerWindowAppConf
                                               const uint8_t *text,
                                               uint32_t text_len,
                                               float font_size,
+                                              uint8_t font_role,
                                               float *width_out)
 {
     SapWitHostGpu2dCommand gpu_cmd = {0};
@@ -225,6 +226,7 @@ static int croft_json_viewer_gpu_measure_text(const CroftJsonViewerWindowAppConf
     gpu_cmd.val.measure_text.utf8_data = text;
     gpu_cmd.val.measure_text.utf8_len = text_len;
     gpu_cmd.val.measure_text.font_size = font_size;
+    gpu_cmd.val.measure_text.font_role = font_role;
     rc = config->gpu_dispatch(config->dispatch_ctx, &gpu_cmd, &gpu_reply);
     if (rc == ERR_OK) {
         rc = expect_measure_ok(&gpu_reply, width_out) ? ERR_OK : ERR_TYPE;
@@ -240,6 +242,7 @@ static int croft_json_viewer_gpu_draw_text(const CroftJsonViewerWindowAppConfig 
                                            const uint8_t *text,
                                            uint32_t text_len,
                                            float font_size,
+                                           uint8_t font_role,
                                            uint32_t color_rgba)
 {
     SapWitHostGpu2dCommand gpu_cmd = {0};
@@ -253,6 +256,7 @@ static int croft_json_viewer_gpu_draw_text(const CroftJsonViewerWindowAppConfig 
     gpu_cmd.val.draw_text.utf8_data = text;
     gpu_cmd.val.draw_text.utf8_len = text_len;
     gpu_cmd.val.draw_text.font_size = font_size;
+    gpu_cmd.val.draw_text.font_role = font_role;
     gpu_cmd.val.draw_text.color_rgba = color_rgba;
     rc = config->gpu_dispatch(config->dispatch_ctx, &gpu_cmd, &gpu_reply);
     if (rc == ERR_OK) {
@@ -296,6 +300,7 @@ static uint32_t croft_json_viewer_fit_text(const CroftJsonViewerWindowAppConfig 
                                            SapWitHostGpu2dSurfaceResource surface,
                                            const char *text,
                                            float font_size,
+                                           uint8_t font_role,
                                            float max_width,
                                            char *out,
                                            uint32_t out_cap)
@@ -317,6 +322,7 @@ static uint32_t croft_json_viewer_fit_text(const CroftJsonViewerWindowAppConfig 
                                            (const uint8_t *)out,
                                            len,
                                            font_size,
+                                           font_role,
                                            &width) != ERR_OK) {
         return len;
     }
@@ -332,6 +338,7 @@ static uint32_t croft_json_viewer_fit_text(const CroftJsonViewerWindowAppConfig 
                                            (const uint8_t *)k_ellipsis,
                                            3u,
                                            font_size,
+                                           font_role,
                                            &width) != ERR_OK
             || width > max_width) {
         out[0] = '\0';
@@ -354,6 +361,7 @@ static uint32_t croft_json_viewer_fit_text(const CroftJsonViewerWindowAppConfig 
                                                (const uint8_t *)out,
                                                prefix_len + 3u,
                                                font_size,
+                                               font_role,
                                                &width) == ERR_OK
                 && width <= max_width) {
             return prefix_len + 3u;
@@ -369,6 +377,7 @@ static uint32_t croft_json_viewer_fit_text(const CroftJsonViewerWindowAppConfig 
 static uint32_t croft_json_viewer_pick_footer_help(const CroftJsonViewerWindowAppConfig *config,
                                                    SapWitHostGpu2dSurfaceResource surface,
                                                    float font_size,
+                                                   uint8_t font_role,
                                                    float max_width,
                                                    char *out,
                                                    uint32_t out_cap)
@@ -395,6 +404,7 @@ static uint32_t croft_json_viewer_pick_footer_help(const CroftJsonViewerWindowAp
                                                (const uint8_t *)candidate,
                                                len,
                                                font_size,
+                                               font_role,
                                                &width) == ERR_OK
                 && width <= max_width) {
             return croft_json_viewer_copy_text(out, out_cap, candidate);
@@ -405,6 +415,7 @@ static uint32_t croft_json_viewer_pick_footer_help(const CroftJsonViewerWindowAp
                                       surface,
                                       "Click to select  wheel scrolls",
                                       font_size,
+                                      font_role,
                                       max_width,
                                       out,
                                       out_cap);
@@ -557,6 +568,8 @@ static int croft_json_viewer_render_frame(CroftJsonViewerWindowAppState *state,
     float line_height = 22.0f;
     float content_viewport_height;
     float max_scroll;
+    uint8_t mono_font_role = SAP_WIT_HOST_GPU2D_FONT_ROLE_MONOSPACE;
+    uint8_t ui_font_role = SAP_WIT_HOST_GPU2D_FONT_ROLE_UI;
     uint32_t selected_line = 0u;
     int rc;
 
@@ -574,6 +587,7 @@ static int croft_json_viewer_render_frame(CroftJsonViewerWindowAppState *state,
                                                    surface,
                                                    selected_display,
                                                    14.0f,
+                                                   ui_font_role,
                                                    content_badge_max_width - 16.0f,
                                                    content_badge,
                                                    sizeof(content_badge));
@@ -588,6 +602,7 @@ static int croft_json_viewer_render_frame(CroftJsonViewerWindowAppState *state,
                                                 (const uint8_t *)content_badge,
                                                 content_badge_len,
                                                 14.0f,
+                                                ui_font_role,
                                                 &content_badge_width);
         if (rc != ERR_OK) {
             return rc;
@@ -605,6 +620,7 @@ static int croft_json_viewer_render_frame(CroftJsonViewerWindowAppState *state,
                                             (const uint8_t *)selected_label,
                                             9u,
                                             footer_font,
+                                            ui_font_role,
                                             &footer_label_width);
     if (rc != ERR_OK) {
         return rc;
@@ -613,6 +629,7 @@ static int croft_json_viewer_render_frame(CroftJsonViewerWindowAppState *state,
                                                      surface,
                                                      selected_display,
                                                      footer_font,
+                                                     ui_font_role,
                                                      (float)width * 0.24f,
                                                      footer_selected,
                                                      sizeof(footer_selected));
@@ -622,6 +639,7 @@ static int croft_json_viewer_render_frame(CroftJsonViewerWindowAppState *state,
                                                 (const uint8_t *)footer_selected,
                                                 footer_selected_len,
                                                 footer_font,
+                                                ui_font_role,
                                                 &footer_selected_width);
         if (rc != ERR_OK) {
             return rc;
@@ -635,6 +653,7 @@ static int croft_json_viewer_render_frame(CroftJsonViewerWindowAppState *state,
     footer_help_len = croft_json_viewer_pick_footer_help(config,
                                                          surface,
                                                          footer_font,
+                                                         ui_font_role,
                                                          footer_help_max_width,
                                                          footer_help,
                                                          sizeof(footer_help));
@@ -644,6 +663,7 @@ static int croft_json_viewer_render_frame(CroftJsonViewerWindowAppState *state,
                                                 (const uint8_t *)footer_help,
                                                 footer_help_len,
                                                 footer_font,
+                                                ui_font_role,
                                                 &footer_help_width);
         if (rc != ERR_OK) {
             return rc;
@@ -688,6 +708,7 @@ static int croft_json_viewer_render_frame(CroftJsonViewerWindowAppState *state,
                                          config->title_data,
                                          config->title_len,
                                          30.0f,
+                                         ui_font_role,
                                          0xF6EFE5FFu);
     if (rc != ERR_OK) {
         return rc;
@@ -699,6 +720,7 @@ static int croft_json_viewer_render_frame(CroftJsonViewerWindowAppState *state,
                                          (const uint8_t *)"Nodes",
                                          5u,
                                          20.0f,
+                                         ui_font_role,
                                          0x17324DFFu);
     if (rc != ERR_OK) {
         return rc;
@@ -710,6 +732,7 @@ static int croft_json_viewer_render_frame(CroftJsonViewerWindowAppState *state,
                                          (const uint8_t *)"Rendered JSON",
                                          13u,
                                          20.0f,
+                                         ui_font_role,
                                          0x17324DFFu);
     if (rc != ERR_OK) {
         return rc;
@@ -758,6 +781,7 @@ static int croft_json_viewer_render_frame(CroftJsonViewerWindowAppState *state,
                                              (const uint8_t *)label,
                                              (uint32_t)sap_wit_rt_strlen(label),
                                              16.0f,
+                                             ui_font_role,
                                              selected ? 0x0C4A63FFu : (expanded ? 0x35566DFFu : 0x52697DFFu));
         if (rc != ERR_OK) {
             return rc;
@@ -781,6 +805,7 @@ static int croft_json_viewer_render_frame(CroftJsonViewerWindowAppState *state,
                                          (const uint8_t *)content_badge,
                                          content_badge_len,
                                          14.0f,
+                                         ui_font_role,
                                          0x0F5B7AFFu);
     if (rc != ERR_OK) {
         return rc;
@@ -832,6 +857,7 @@ static int croft_json_viewer_render_frame(CroftJsonViewerWindowAppState *state,
                                                      (const uint8_t *)line,
                                                      line_len,
                                                      17.0f,
+                                                     mono_font_role,
                                                      0x17324DFFu);
                 if (rc != ERR_OK) {
                     return rc;
@@ -874,6 +900,7 @@ static int croft_json_viewer_render_frame(CroftJsonViewerWindowAppState *state,
                                              (const uint8_t *)footer_help,
                                              footer_help_len,
                                              footer_font,
+                                             ui_font_role,
                                              0x52697DFFu);
         if (rc != ERR_OK) {
             return rc;
@@ -886,6 +913,7 @@ static int croft_json_viewer_render_frame(CroftJsonViewerWindowAppState *state,
                                          (const uint8_t *)selected_label,
                                          9u,
                                          footer_font,
+                                         ui_font_role,
                                          0x52697DFFu);
     if (rc != ERR_OK) {
         return rc;
@@ -900,6 +928,7 @@ static int croft_json_viewer_render_frame(CroftJsonViewerWindowAppState *state,
                                            (const uint8_t *)footer_selected,
                                            footer_selected_len,
                                            footer_font,
+                                           ui_font_role,
                                            0x0F5B7AFFu);
 }
 
