@@ -10,6 +10,7 @@ struct croft_wit_host_gpu2d_runtime {
     uint8_t live;
     uint8_t frame_active;
 };
+static const SapWitHostGpu2dDispatchOps g_croft_wit_host_gpu2d_dispatch_ops;
 
 /*
  * The current native host only exposes one implicit render target bound to the
@@ -137,6 +138,19 @@ void croft_wit_host_gpu2d_runtime_destroy(croft_wit_host_gpu2d_runtime* runtime)
         host_render_terminate();
     }
     free(runtime);
+}
+
+int croft_wit_host_gpu2d_runtime_bind_exports(
+    croft_wit_host_gpu2d_runtime* runtime,
+    SapWitHostGpu2dHostGpu2dWorldExports* exports_out)
+{
+    if (!runtime || !exports_out) {
+        return ERR_INVALID;
+    }
+
+    exports_out->host_gpu2d_ctx = runtime;
+    exports_out->host_gpu2d_ops = &g_croft_wit_host_gpu2d_dispatch_ops;
+    return ERR_OK;
 }
 
 static int32_t croft_wit_host_gpu2d_dispatch_capabilities(

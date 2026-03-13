@@ -8,6 +8,7 @@
 struct croft_wit_host_clock_runtime {
     uint32_t reserved;
 };
+static const SapWitHostClockDispatchOps g_croft_wit_host_clock_dispatch_ops;
 
 static void croft_wit_host_clock_reply_zero(SapWitHostClockReply* reply)
 {
@@ -30,6 +31,18 @@ croft_wit_host_clock_runtime* croft_wit_host_clock_runtime_create(void)
 void croft_wit_host_clock_runtime_destroy(croft_wit_host_clock_runtime* runtime)
 {
     free(runtime);
+}
+
+int croft_wit_host_clock_runtime_bind_exports(croft_wit_host_clock_runtime* runtime,
+                                              SapWitHostClockHostClockWorldExports* exports_out)
+{
+    if (!runtime || !exports_out) {
+        return ERR_INVALID;
+    }
+
+    exports_out->host_clock_ctx = runtime;
+    exports_out->host_clock_ops = &g_croft_wit_host_clock_dispatch_ops;
+    return ERR_OK;
 }
 
 static int32_t croft_wit_host_clock_dispatch_monotonic_now(void* ctx,

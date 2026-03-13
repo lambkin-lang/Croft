@@ -72,6 +72,46 @@ static int expect_contains(const char* label, const char* haystack, const char* 
     return 0;
 }
 
+static int expect_context_traits(const char* label,
+                                 const char* xpi_json,
+                                 const char* const* expected_traits,
+                                 uint32_t expected_count)
+{
+    const char* start;
+    const char* end;
+    uint32_t i;
+
+    if (!xpi_json || !expected_traits) {
+        fprintf(stderr, "%s: missing json or trait list\n", label);
+        return 0;
+    }
+    start = strstr(xpi_json, "\"current_machine_traits\": [");
+    if (!start) {
+        fprintf(stderr, "%s: missing current_machine_traits array\n", label);
+        return 0;
+    }
+    end = strchr(start, ']');
+    if (!end) {
+        fprintf(stderr, "%s: unterminated current_machine_traits array\n", label);
+        return 0;
+    }
+    for (i = 0u; i < expected_count; i++) {
+        char needle[64];
+        const char* match;
+
+        if (snprintf(needle, sizeof(needle), "\"%s\"", expected_traits[i]) >= (int)sizeof(needle)) {
+            fprintf(stderr, "%s: trait name too long\n", label);
+            return 0;
+        }
+        match = strstr(start, needle);
+        if (!match || match > end) {
+            fprintf(stderr, "%s: missing trait '%s'\n", label, expected_traits[i]);
+            return 0;
+        }
+    }
+    return 1;
+}
+
 static char* read_file(const char* path)
 {
     FILE* f;
@@ -112,6 +152,12 @@ int main(void)
     const croft_wit_wasi_machine_substrate_descriptor* streams = NULL;
     const croft_wit_wasi_machine_bundle_descriptor* filesystem = NULL;
     const croft_wit_wasi_machine_bundle_descriptor* clocks = NULL;
+    static const char* k_expected_context_traits[] = {
+        "current-machine",
+        "macos",
+        "unix",
+        "windowed",
+    };
     char* xpi_json = read_file(CROFT_XPI_JSON_PATH);
     char* artifact_json = read_file(CROFT_ARTIFACT_JSON_PATH);
     int ok = 1;
@@ -186,9 +232,10 @@ int main(void)
     ok &= expect_contains("xpi entrypoints section", xpi_json, "\"entrypoints\": [");
     ok &= expect_contains("xpi slots section", xpi_json, "\"slots\": [");
     ok &= expect_contains("xpi context section", xpi_json, "\"context\": {");
-    ok &= expect_contains("xpi current machine traits",
-                          xpi_json,
-                          "\"current_machine_traits\": [\"current-machine\", \"macos\", \"unix\"]");
+    ok &= expect_context_traits("xpi current machine traits",
+                                xpi_json,
+                                k_expected_context_traits,
+                                4u);
     ok &= expect_contains("xpi runtime artifact", xpi_json, "\"name\": \"croft_wit_wasi_machine_runtime\"");
     ok &= expect_contains("xpi runtime bundles",
                           xpi_json,

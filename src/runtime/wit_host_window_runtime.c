@@ -18,6 +18,7 @@ struct croft_wit_host_window_runtime {
 };
 
 static croft_wit_host_window_runtime* g_window_runtime = NULL;
+static const SapWitHostWindowDispatchOps g_croft_wit_host_window_dispatch_ops;
 
 static void croft_wit_host_window_reply_zero(SapWitHostWindowReply* reply)
 {
@@ -235,6 +236,19 @@ void* croft_wit_host_window_runtime_native_window(croft_wit_host_window_runtime*
     }
 
     return host_ui_get_native_window();
+}
+
+int croft_wit_host_window_runtime_bind_exports(
+    croft_wit_host_window_runtime* runtime,
+    SapWitHostWindowHostWindowWorldExports* exports_out)
+{
+    if (!runtime || !exports_out) {
+        return ERR_INVALID;
+    }
+
+    exports_out->host_window_ctx = runtime;
+    exports_out->host_window_ops = &g_croft_wit_host_window_dispatch_ops;
+    return ERR_OK;
 }
 
 static int32_t croft_wit_host_window_dispatch_open(void* ctx,

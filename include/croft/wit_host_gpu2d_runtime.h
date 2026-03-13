@@ -15,6 +15,10 @@ croft_wit_host_gpu2d_runtime* croft_wit_host_gpu2d_runtime_create(void);
 
 void croft_wit_host_gpu2d_runtime_destroy(croft_wit_host_gpu2d_runtime* runtime);
 
+int croft_wit_host_gpu2d_runtime_bind_exports(
+    croft_wit_host_gpu2d_runtime* runtime,
+    SapWitHostGpu2dHostGpu2dWorldExports* exports_out);
+
 /*
  * This runtime models the direct-Metal renderer as a stateful `surface`
  * resource plus one stateless capability query. That split is intentional:

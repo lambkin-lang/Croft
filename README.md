@@ -55,6 +55,28 @@ ctest --test-dir build -L sapling-runner --output-on-failure
 ctest --test-dir build -L sapling-wasi --output-on-failure
 ```
 
+### Orchestration Runner
+
+The canonical Croft-hosted Wasm orchestration path is now exposed as the
+`example_orchestration_bootstrap_runner` sample. After a normal build, run:
+
+```bash
+./build/example_orchestration_bootstrap_runner
+```
+
+When the bundled JSON orchestration guest was built, that command uses it as
+the default bootstrap module. You can also point the runner at any compatible
+bootstrap guest explicitly:
+
+```bash
+./build/example_orchestration_bootstrap_runner /path/to/bootstrap.wasm
+```
+
+That path exercises the WIT control plane in
+`schemas/wit/orchestration.wit`, the compiled XPI registry, and the
+in-process orchestration runtime described in
+`docs/BUILD_DEPENDENCY_MATRIX.md`.
+
 Croft now emits a set of static libraries and records them in
 `build/croft-artifacts.json`. Lambkin can treat that manifest as the universe of
 available mix-ins for constraint solving and final link selection. Each
@@ -241,10 +263,13 @@ Representative examples include:
 - `example_wit_clock_now`
 - `example_wit_window_events`
 - `example_wit_gpu_canvas`
+- `example_wit_window_wasm_host`
 - `example_sapling_text`
 - `example_wit_text_handles`
 - `example_wit_text_window`
 - `example_wit_textpad_window`
+- `example_wit_json_viewer_window`
+- `example_wit_json_viewer_wasm_host`
 - `example_wit_db_kv`
 - `example_wit_mailbox_ping`
 - `example_wasm_guest`
@@ -302,10 +327,23 @@ For shared common-side WIT logic across multiple worlds, compare:
 
 - `example_wit_text_cli` as the CLI/file-oriented host shape
 - `example_wit_text_wasm_host` as the current Wasm-hosted world shape over `wasm3`
+- `example_wit_window_wasm_host` as the first auto-closing window/GPU guest hosted through `wasm3`
 - `example_wit_text_window` as the native window/GPU host shape
 - `example_wit_textpad_window` as a smaller non-scene textpad that reuses
   WIT window/menu/clipboard/editor-input mix-ins without pulling in the scene
   editor
+- `example_wit_json_viewer_window` and `example_wit_json_viewer_wasm_host` as
+  the shared Thatch-backed read-only JSON viewer in native and wasm-hosted
+  shells
+
+The JSON viewer samples accept either a file path or a startup file-picker
+request:
+
+```bash
+./build/example_wit_json_viewer_window path/to/sample.json
+./build/example_wit_json_viewer_window --open
+./build/example_wit_json_viewer_wasm_host --open
+```
 
 Current optimized size datapoints for that trio plus the GPU-only host mix-in
 sample are:

@@ -12,6 +12,10 @@
 #error "CROFT_ORCH_JSON_BOOTSTRAP_WASM_PATH must be defined"
 #endif
 
+#ifndef CROFT_ORCH_FAIL_BOOTSTRAP_WASM_PATH
+#error "CROFT_ORCH_FAIL_BOOTSTRAP_WASM_PATH must be defined"
+#endif
+
 #define CHECK(expr)                                                                           \
     do {                                                                                      \
         if (!(expr)) {                                                                        \
@@ -75,6 +79,42 @@ static int expect_status(croft_orchestration_runtime *runtime,
     return status.phase == phase && status.worker_count == workers && status.running_count == 0u;
 }
 
+static int expect_failed_status(croft_orchestration_runtime *runtime,
+                                SapWitOrchestrationSessionResource session,
+                                uint32_t workers,
+                                const char *expected_error_substr)
+{
+    SapWitOrchestrationSessionStatus status;
+    size_t error_len = 0u;
+
+    if (croft_orchestration_runtime_session_status(runtime, session, &status) != ERR_OK) {
+        fprintf(stderr, "status-fetch-failed for session=%u\n", session);
+        return 0;
+    }
+    if (status.has_last_error) {
+        error_len = status.last_error_len;
+    }
+    if (!(status.phase == SAP_WIT_ORCHESTRATION_SESSION_PHASE_FAILED
+            && status.worker_count == workers
+            && status.running_count == 0u
+            && status.has_last_error
+            && status.last_error_data
+            && strstr((const char *)status.last_error_data, expected_error_substr) != NULL)) {
+        fprintf(stderr,
+                "failed-status-mismatch: session=%u phase=%u workers=%u running=%u last_error=%.*s\n",
+                session,
+                (unsigned)status.phase,
+                (unsigned)status.worker_count,
+                (unsigned)status.running_count,
+                (int)error_len,
+                (status.has_last_error && status.last_error_data)
+                    ? (const char *)status.last_error_data
+                    : "");
+        return 0;
+    }
+    return 1;
+}
+
 static int expect_table_value(croft_orchestration_runtime *runtime,
                               SapWitOrchestrationSessionResource session,
                               const char *table,
@@ -114,9 +154,11 @@ int main(void)
     croft_orchestration_runtime_config config;
     croft_orchestration_runtime *runtime = NULL;
     SapWitOrchestrationSessionResource toy_session;
+    SapWitOrchestrationSessionResource fail_session;
     SapWitOrchestrationSessionResource json_session;
 
     if (!file_exists(CROFT_ORCH_TOY_BOOTSTRAP_WASM_PATH)
+            || !file_exists(CROFT_ORCH_FAIL_BOOTSTRAP_WASM_PATH)
             || !file_exists(CROFT_ORCH_JSON_BOOTSTRAP_WASM_PATH)) {
         printf("SKIP: orchestration demo Wasm guests are unavailable.\n");
         return 0;
@@ -136,6 +178,15 @@ int main(void)
                         2u));
     CHECK(expect_table_value(runtime, toy_session, "events", "producer-start", "hello-from-bootstrap"));
     CHECK(expect_table_value(runtime, toy_session, "events", "consumer-seen", "hello-from-bootstrap"));
+
+    CHECK(run_bootstrap_and_join(runtime,
+                                 CROFT_ORCH_FAIL_BOOTSTRAP_WASM_PATH,
+                                 &fail_session)
+          == ERR_OK);
+    CHECK(expect_failed_status(runtime,
+                               fail_session,
+                               1u,
+                               "worker-run-failed:failer:failing-worker-triggered"));
 
     CHECK(run_bootstrap_and_join(runtime,
                                  CROFT_ORCH_JSON_BOOTSTRAP_WASM_PATH,

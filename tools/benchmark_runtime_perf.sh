@@ -134,6 +134,15 @@ append_history_row() {
 runtime_env_args() {
     local target="$1"
     case "$target" in
+        example_wit_window_wasm_host)
+            printf 'CROFT_WIT_WINDOW_WASM_HOST_AUTO_CLOSE_MS=%s\n' "$AUTO_CLOSE_MS"
+            ;;
+        example_wit_json_viewer_window)
+            printf 'CROFT_WIT_JSON_VIEWER_AUTO_CLOSE_MS=%s\n' "$AUTO_CLOSE_MS"
+            ;;
+        example_wit_json_viewer_wasm_host)
+            printf 'CROFT_WIT_JSON_VIEWER_WASM_HOST_AUTO_CLOSE_MS=%s\n' "$AUTO_CLOSE_MS"
+            ;;
         example_wit_gpu_canvas)
             printf 'CROFT_WIT_GPU_AUTO_CLOSE_MS=%s\n' "$AUTO_CLOSE_MS"
             ;;
@@ -444,6 +453,7 @@ done
 if (( ${#TARGETS[@]} == 0 )); then
     append_target "example_wit_text_cli"
     append_target "example_wit_text_wasm_host"
+    append_target "example_wit_window_wasm_host"
 fi
 
 if [[ ! "$ITERATIONS" =~ ^[0-9]+$ ]] || (( ITERATIONS < 1 )); then

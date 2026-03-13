@@ -1467,6 +1467,16 @@ static void croft_orch_builder_slot_clear(croft_orch_builder_slot *slot)
     memset(slot, 0, sizeof(*slot));
 }
 
+static void croft_orch_builder_invalidate_resolved(croft_orch_builder_slot *slot)
+{
+    if (!slot) {
+        return;
+    }
+    slot->resolved_valid = 0u;
+    memset(&slot->resolved, 0, sizeof(slot->resolved));
+    croft_orch_rendered_plan_clear(&slot->rendered_plan);
+}
+
 static void croft_orch_session_slot_clear(croft_orch_session_slot *slot)
 {
     uint32_t i;
@@ -1474,7 +1484,7 @@ static void croft_orch_session_slot_clear(croft_orch_session_slot *slot)
     if (!slot) {
         return;
     }
-    for (i = 0u; i < slot->worker_count; i++) {
+    for (i = 0u; i < CROFT_ORCH_MAX_TOTAL_WORKERS; i++) {
         croft_orch_rendered_startup_clear(&slot->workers[i].startup);
     }
     croft_orch_manifest_spec_clear(&slot->manifest);
@@ -2568,6 +2578,7 @@ static int32_t croft_orch_session_status_value(croft_orch_session_slot *session,
         return ERR_INVALID;
     }
     memset(status_out, 0, sizeof(*status_out));
+    host_mutex_lock(&session->state_mutex);
     status_out->phase = session->phase;
     status_out->worker_count = session->worker_count;
     status_out->running_count = session->running_count;
@@ -2576,6 +2587,7 @@ static int32_t croft_orch_session_status_value(croft_orch_session_slot *session,
         status_out->last_error_data = (const uint8_t *)session->last_error;
         status_out->last_error_len = (uint32_t)strlen(session->last_error);
     }
+    host_mutex_unlock(&session->state_mutex);
     return ERR_OK;
 }
 
@@ -3170,6 +3182,26 @@ static void *croft_orch_worker_thread_main(void *arg)
     return NULL;
 }
 
+static void croft_orch_abort_launch_session(croft_orchestration_runtime *runtime,
+                                            SapWitOrchestrationSessionResource handle)
+{
+    croft_orch_session_slot *session;
+
+    if (!runtime || handle == SAP_WIT_ORCHESTRATION_SESSION_RESOURCE_INVALID) {
+        return;
+    }
+    session = croft_orch_session_lookup(runtime, handle);
+    if (!session) {
+        return;
+    }
+    (void)croft_orchestration_runtime_stop_session(runtime, handle);
+    (void)croft_orchestration_runtime_join_session(runtime, handle);
+    croft_orch_session_slot_clear(session);
+    if (runtime->last_session == handle) {
+        runtime->last_session = SAP_WIT_ORCHESTRATION_SESSION_RESOURCE_INVALID;
+    }
+}
+
 static int croft_orch_launch_session(croft_orchestration_runtime *runtime,
                                      const croft_orch_manifest_spec *manifest,
                                      const croft_orch_plan_spec *plan,
@@ -3192,20 +3224,27 @@ static int croft_orch_launch_session(croft_orchestration_runtime *runtime,
     if (!runtime || !manifest || !plan || !handle_out) {
         return ERR_INVALID;
     }
+    *handle_out = SAP_WIT_ORCHESTRATION_SESSION_RESOURCE_INVALID;
 
     rc = croft_orch_allocate_session(runtime, &handle);
     if (rc != ERR_OK) {
         return rc;
     }
     session = croft_orch_session_lookup(runtime, handle);
+    if (!session) {
+        rc = ERR_INVALID;
+        goto fail;
+    }
     rc = croft_orch_manifest_spec_clone(&session->manifest, manifest);
     if (rc != ERR_OK) {
         snprintf(err_out, err_cap, "manifest-clone-failed");
         croft_orch_session_set_error(session, err_out);
-        return rc;
+        goto fail;
     }
     memcpy(&session->plan, plan, sizeof(session->plan));
+    host_mutex_lock(&session->state_mutex);
     session->phase = SAP_WIT_ORCHESTRATION_SESSION_PHASE_LAUNCHING;
+    host_mutex_unlock(&session->state_mutex);
 
     if (manifest->payload_module_count > 0u) {
         uint32_t wasm_len = 0u;
@@ -3213,7 +3252,8 @@ static int croft_orch_launch_session(croft_orchestration_runtime *runtime,
         if (!session->payload_wasm_bytes) {
             snprintf(err_out, err_cap, "payload-module-read-failed");
             croft_orch_session_set_error(session, err_out);
-            return ERR_NOT_FOUND;
+            rc = ERR_NOT_FOUND;
+            goto fail;
         }
         session->payload_wasm_len = wasm_len;
         strncpy(session->payload_module_name,
@@ -3228,7 +3268,8 @@ static int croft_orch_launch_session(croft_orchestration_runtime *runtime,
     if (!session->store_runtime || !session->mailbox_runtime) {
         snprintf(err_out, err_cap, "session-runtime-create-failed");
         croft_orch_session_set_error(session, err_out);
-        return ERR_OOM;
+        rc = ERR_OOM;
+        goto fail;
     }
 
     sap_wit_zero_orchestration_store_reply(&open_reply);
@@ -3243,7 +3284,8 @@ static int croft_orch_launch_session(croft_orchestration_runtime *runtime,
         snprintf(err_out, err_cap, "db-open-failed");
         sap_wit_dispose_orchestration_store_reply(&open_reply);
         croft_orch_session_set_error(session, err_out);
-        return ERR_INVALID;
+        rc = ERR_INVALID;
+        goto fail;
     }
     session->db_handle = open_reply.val.db.v_val.ok.v;
     sap_wit_dispose_orchestration_store_reply(&open_reply);
@@ -3266,7 +3308,8 @@ static int croft_orch_launch_session(croft_orchestration_runtime *runtime,
             snprintf(err_out, err_cap, "mailbox-open-failed");
             sap_wit_dispose_orchestration_mailbox_reply(&reply);
             croft_orch_session_set_error(session, err_out);
-            return ERR_INVALID;
+            rc = ERR_INVALID;
+            goto fail;
         }
         strncpy(session->mailboxes[session->mailbox_count].name,
                 manifest->mailboxes[i].name,
@@ -3287,7 +3330,8 @@ static int croft_orch_launch_session(croft_orchestration_runtime *runtime,
         if (!manifest_worker) {
             snprintf(err_out, err_cap, "worker-missing");
             croft_orch_session_set_error(session, err_out);
-            return ERR_NOT_FOUND;
+            rc = ERR_NOT_FOUND;
+            goto fail;
         }
         for (replica = 0u; replica < plan->workers[i].replicas; replica++) {
             croft_orch_worker_instance *instance;
@@ -3302,7 +3346,8 @@ static int croft_orch_launch_session(croft_orchestration_runtime *runtime,
             if (windex >= CROFT_ORCH_MAX_TOTAL_WORKERS) {
                 snprintf(err_out, err_cap, "too-many-worker-replicas");
                 croft_orch_session_set_error(session, err_out);
-                return ERR_RANGE;
+                rc = ERR_RANGE;
+                goto fail;
             }
             instance = &session->workers[windex];
             instance->session = session;
@@ -3318,7 +3363,8 @@ static int croft_orch_launch_session(croft_orchestration_runtime *runtime,
                 if (!table) {
                     snprintf(err_out, err_cap, "worker-table-missing");
                     croft_orch_session_set_error(session, err_out);
-                    return ERR_NOT_FOUND;
+                    rc = ERR_NOT_FOUND;
+                    goto fail;
                 }
                 startup_tables[startup_table_count++] = *table;
             }
@@ -3328,7 +3374,8 @@ static int croft_orch_launch_session(croft_orchestration_runtime *runtime,
                 if (!mailbox) {
                     snprintf(err_out, err_cap, "worker-inbox-missing");
                     croft_orch_session_set_error(session, err_out);
-                    return ERR_NOT_FOUND;
+                    rc = ERR_NOT_FOUND;
+                    goto fail;
                 }
                 instance->policy.inbox_handles[instance->policy.inbox_count++] = mailbox->handle;
                 startup_inboxes[startup_inbox_count++] = *mailbox;
@@ -3339,7 +3386,8 @@ static int croft_orch_launch_session(croft_orchestration_runtime *runtime,
                 if (!mailbox) {
                     snprintf(err_out, err_cap, "worker-outbox-missing");
                     croft_orch_session_set_error(session, err_out);
-                    return ERR_NOT_FOUND;
+                    rc = ERR_NOT_FOUND;
+                    goto fail;
                 }
                 instance->policy.outbox_handles[instance->policy.outbox_count++] = mailbox->handle;
                 startup_outboxes[startup_outbox_count++] = *mailbox;
@@ -3357,27 +3405,46 @@ static int croft_orch_launch_session(croft_orchestration_runtime *runtime,
             if (rc != ERR_OK) {
                 snprintf(err_out, err_cap, "worker-startup-render-failed");
                 croft_orch_session_set_error(session, err_out);
-                return rc;
+                goto fail;
             }
 
-            if (host_thread_create(&instance->thread, croft_orch_worker_thread_main, instance) != 0) {
-                snprintf(err_out, err_cap, "worker-thread-create-failed");
-                croft_orch_session_set_error(session, err_out);
-                return ERR_INVALID;
-            }
-            instance->thread_started = 1u;
+            host_mutex_lock(&session->state_mutex);
             session->worker_count++;
             session->running_count++;
+            host_mutex_unlock(&session->state_mutex);
+            if (host_thread_create(&instance->thread, croft_orch_worker_thread_main, instance) != 0) {
+                host_mutex_lock(&session->state_mutex);
+                if (session->worker_count > 0u) {
+                    session->worker_count--;
+                }
+                if (session->running_count > 0u) {
+                    session->running_count--;
+                }
+                host_mutex_unlock(&session->state_mutex);
+                snprintf(err_out, err_cap, "worker-thread-create-failed");
+                croft_orch_session_set_error(session, err_out);
+                rc = ERR_INVALID;
+                goto fail;
+            }
+            instance->thread_started = 1u;
             windex++;
         }
     }
 
-    session->phase = session->worker_count > 0u
-                         ? SAP_WIT_ORCHESTRATION_SESSION_PHASE_RUNNING
-                         : SAP_WIT_ORCHESTRATION_SESSION_PHASE_STOPPED;
+    host_mutex_lock(&session->state_mutex);
+    if (session->phase != SAP_WIT_ORCHESTRATION_SESSION_PHASE_FAILED) {
+        session->phase = session->running_count > 0u
+                             ? SAP_WIT_ORCHESTRATION_SESSION_PHASE_RUNNING
+                             : SAP_WIT_ORCHESTRATION_SESSION_PHASE_STOPPED;
+    }
+    host_mutex_unlock(&session->state_mutex);
     runtime->last_session = handle;
     *handle_out = handle;
     return ERR_OK;
+
+fail:
+    croft_orch_abort_launch_session(runtime, handle);
+    return rc;
 }
 
 void croft_orchestration_runtime_config_default(croft_orchestration_runtime_config *config)
@@ -3755,8 +3822,12 @@ static int32_t croft_orch_control_require_bundle(void *ctx,
         return ERR_INVALID;
     }
     if (croft_orch_copy_text(bundle, sizeof(bundle), payload->bundle_data, payload->bundle_len) != ERR_OK
-            || croft_orch_manifest_add_required_bundle(&builder->spec, bundle) != ERR_OK
-            || croft_orch_read_plan_and_manifest(builder) != ERR_OK) {
+            || croft_orch_manifest_add_required_bundle(&builder->spec, bundle) != ERR_OK) {
+        croft_orch_control_reply_status_err(reply_out, "require-bundle-failed");
+        return ERR_OK;
+    }
+    croft_orch_builder_invalidate_resolved(builder);
+    if (croft_orch_read_plan_and_manifest(builder) != ERR_OK) {
         croft_orch_control_reply_status_err(reply_out, "require-bundle-failed");
         return ERR_OK;
     }
@@ -3794,8 +3865,12 @@ static int32_t croft_orch_control_prefer_slot(void *ctx,
     if (croft_orch_string_list_add_unique(pref->bundles,
                                           &pref->bundle_count,
                                           CROFT_ORCH_MAX_PREF_BUNDLES,
-                                          bundle) != ERR_OK
-            || croft_orch_read_plan_and_manifest(builder) != ERR_OK) {
+                                          bundle) != ERR_OK) {
+        croft_orch_control_reply_status_err(reply_out, "prefer-slot-failed");
+        return ERR_OK;
+    }
+    croft_orch_builder_invalidate_resolved(builder);
+    if (croft_orch_read_plan_and_manifest(builder) != ERR_OK) {
         croft_orch_control_reply_status_err(reply_out, "prefer-slot-failed");
         return ERR_OK;
     }
@@ -3825,6 +3900,7 @@ static int32_t croft_orch_control_add_module(void *ctx,
         return ERR_OK;
     }
     builder->spec.payload_module_count++;
+    croft_orch_builder_invalidate_resolved(builder);
     if (croft_orch_read_plan_and_manifest(builder) != ERR_OK) {
         croft_orch_control_reply_status_err(reply_out, "module-add-failed");
         return ERR_OK;
@@ -3843,8 +3919,12 @@ static int32_t croft_orch_control_set_db_schema(void *ctx,
     if (!builder || !payload || !reply_out) {
         return ERR_INVALID;
     }
-    if (croft_orch_parse_db_schema(&payload->schema, &builder->spec.db_schema) != ERR_OK
-            || croft_orch_read_plan_and_manifest(builder) != ERR_OK) {
+    if (croft_orch_parse_db_schema(&payload->schema, &builder->spec.db_schema) != ERR_OK) {
+        croft_orch_control_reply_status_err(reply_out, "db-schema-invalid");
+        return ERR_OK;
+    }
+    croft_orch_builder_invalidate_resolved(builder);
+    if (croft_orch_read_plan_and_manifest(builder) != ERR_OK) {
         croft_orch_control_reply_status_err(reply_out, "db-schema-invalid");
         return ERR_OK;
     }
@@ -3890,6 +3970,7 @@ static int32_t croft_orch_control_add_mailbox(void *ctx,
     }
     mailbox = &builder->spec.mailboxes[builder->spec.mailbox_count++];
     *mailbox = parsed[0];
+    croft_orch_builder_invalidate_resolved(builder);
     if (croft_orch_read_plan_and_manifest(builder) != ERR_OK) {
         croft_orch_control_reply_status_err(reply_out, "mailbox-add-failed");
         return ERR_OK;
@@ -3934,6 +4015,7 @@ static int32_t croft_orch_control_add_worker(void *ctx,
         }
     }
     builder->spec.workers[builder->spec.worker_count++] = parsed[0];
+    croft_orch_builder_invalidate_resolved(builder);
     if (croft_orch_read_plan_and_manifest(builder) != ERR_OK) {
         croft_orch_control_reply_status_err(reply_out, "worker-add-failed");
         return ERR_OK;

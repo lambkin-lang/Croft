@@ -1,6 +1,6 @@
 #include "thatch_json_guest.h"
 
-#include "orchestration_guest_runtime.h"
+#include "croft/wit_guest_runtime.h"
 #include "croft/wit_runtime_support.h"
 
 #include <limits.h>
@@ -28,6 +28,30 @@ typedef struct {
     uint32_t len;
     uint32_t overflowed;
 } CroftGuestJsonTextBuf;
+
+static uint32_t croft_guest_json_strlen(const char *text)
+{
+    return text ? (uint32_t)sap_wit_rt_strlen(text) : 0u;
+}
+
+static int croft_guest_json_text_equals(const char *lhs, const char *rhs)
+{
+    uint32_t i = 0u;
+
+    if (lhs == rhs) {
+        return 1;
+    }
+    if (!lhs || !rhs) {
+        return 0;
+    }
+    while (lhs[i] != '\0' && rhs[i] != '\0') {
+        if (lhs[i] != rhs[i]) {
+            return 0;
+        }
+        i++;
+    }
+    return lhs[i] == rhs[i];
+}
 
 static void croft_guest_json_skip_ws(CroftGuestJsonParser *parser)
 {
@@ -555,7 +579,7 @@ static int croft_guest_json_path_is_expanded(const char *path,
     uint32_t i;
 
     for (i = 0u; i < expanded_path_count; i++) {
-        if (expanded_paths[i] && croft_orch_guest_text_equals(path, expanded_paths[i])) {
+        if (expanded_paths[i] && croft_guest_json_text_equals(path, expanded_paths[i])) {
             return 1;
         }
     }
@@ -568,7 +592,7 @@ static int croft_guest_json_append_path(CroftGuestJsonTextBuf *buf,
                                         uint32_t name_len)
 {
     if (base && base[0] != '\0') {
-        if (croft_guest_json_buf_put(buf, base, croft_orch_guest_strlen(base)) != ERR_OK) {
+        if (croft_guest_json_buf_put(buf, base, croft_guest_json_strlen(base)) != ERR_OK) {
             return ERR_FULL;
         }
     } else {
@@ -576,7 +600,7 @@ static int croft_guest_json_append_path(CroftGuestJsonTextBuf *buf,
             return ERR_FULL;
         }
     }
-    if (base && base[0] != '\0' && base[croft_orch_guest_strlen(base) - 1u] != '.') {
+    if (base && base[0] != '\0' && base[croft_guest_json_strlen(base) - 1u] != '.') {
         if (croft_guest_json_buf_put_ch(buf, '.') != ERR_OK) {
             return ERR_FULL;
         }
@@ -750,7 +774,7 @@ static int croft_guest_json_render_array_children(const ThatchRegion *region,
 
         child_path[0] = '\0';
         if (path && path[0] != '\0') {
-            rc = croft_guest_json_buf_put(&path_buf, path, croft_orch_guest_strlen(path));
+            rc = croft_guest_json_buf_put(&path_buf, path, croft_guest_json_strlen(path));
             if (rc != ERR_OK) {
                 return rc;
             }
@@ -773,7 +797,7 @@ static int croft_guest_json_render_array_children(const ThatchRegion *region,
         rc = croft_guest_json_render_value(region,
                                            cursor,
                                            child_path,
-                                           child_path + croft_orch_guest_strlen(path ? path : ""),
+                                           child_path + croft_guest_json_strlen(path ? path : ""),
                                            indent + 1u,
                                            expanded_paths,
                                            expanded_path_count,
@@ -813,7 +837,7 @@ static int croft_guest_json_render_value(const ThatchRegion *region,
         return rc;
     }
     if (label && label[0] != '\0') {
-        rc = croft_guest_json_buf_put(buf, label, croft_orch_guest_strlen(label));
+        rc = croft_guest_json_buf_put(buf, label, croft_guest_json_strlen(label));
         if (rc == ERR_OK) {
             rc = croft_guest_json_buf_put(buf, ": ", 2u);
         }
@@ -928,7 +952,7 @@ static int croft_guest_json_collect_paths(const ThatchRegion *region,
         return rc;
     }
     if ((tag == CROFT_GJ_TAG_OBJECT || tag == CROFT_GJ_TAG_ARRAY) && path && path[0] != '\0') {
-        rc = croft_guest_json_buf_put(buf, path, croft_orch_guest_strlen(path));
+        rc = croft_guest_json_buf_put(buf, path, croft_guest_json_strlen(path));
         if (rc == ERR_OK) {
             rc = croft_guest_json_buf_put_ch(buf, '\n');
         }
@@ -988,7 +1012,7 @@ static int croft_guest_json_collect_paths(const ThatchRegion *region,
 
             child_path[0] = '\0';
             if (path && path[0] != '\0') {
-                rc = croft_guest_json_buf_put(&path_buf, path, croft_orch_guest_strlen(path));
+                rc = croft_guest_json_buf_put(&path_buf, path, croft_guest_json_strlen(path));
             } else {
                 rc = croft_guest_json_buf_put_ch(&path_buf, '.');
             }
@@ -1005,6 +1029,127 @@ static int croft_guest_json_collect_paths(const ThatchRegion *region,
                 return rc;
             }
             rc = croft_guest_json_collect_paths(region, child, child_path, buf);
+            if (rc != ERR_OK) {
+                return rc;
+            }
+            rc = croft_guest_json_val_size(region, child, &skip_len);
+            if (rc != ERR_OK) {
+                return rc;
+            }
+            child += skip_len;
+            index++;
+        }
+    }
+    return ERR_OK;
+}
+
+static int croft_guest_json_collect_visible_paths(const ThatchRegion *region,
+                                                  ThatchCursor pos,
+                                                  const char *path,
+                                                  const char *const *expanded_paths,
+                                                  uint32_t expanded_path_count,
+                                                  CroftGuestJsonTextBuf *buf)
+{
+    ThatchCursor cursor = pos;
+    uint8_t tag = 0u;
+    int rc;
+
+    rc = thatch_read_tag(region, &cursor, &tag);
+    if (rc != ERR_OK) {
+        return rc;
+    }
+    if (path && path[0] != '\0') {
+        rc = croft_guest_json_buf_put(buf, path, croft_guest_json_strlen(path));
+        if (rc == ERR_OK) {
+            rc = croft_guest_json_buf_put_ch(buf, '\n');
+        }
+        if (rc != ERR_OK) {
+            return rc;
+        }
+    }
+    if (tag == CROFT_GJ_TAG_OBJECT && croft_guest_json_path_is_expanded(path,
+                                                                        expanded_paths,
+                                                                        expanded_path_count)) {
+        ThatchCursor child = cursor;
+        uint32_t skip_len = 0u;
+        ThatchCursor end = 0u;
+
+        rc = thatch_read_skip_len(region, &child, &skip_len);
+        if (rc != ERR_OK) {
+            return rc;
+        }
+        end = child + skip_len;
+        while (child < end) {
+            const uint8_t *name = NULL;
+            uint32_t name_len = 0u;
+            char child_path[256];
+            CroftGuestJsonTextBuf path_buf = {child_path, sizeof(child_path), 0u, 0u};
+
+            rc = croft_guest_json_read_string_like(region, &child, CROFT_GJ_TAG_KEY, &name, &name_len);
+            if (rc != ERR_OK) {
+                return rc;
+            }
+            child_path[0] = '\0';
+            rc = croft_guest_json_append_path(&path_buf, path, name, name_len);
+            if (rc != ERR_OK) {
+                return rc;
+            }
+            rc = croft_guest_json_collect_visible_paths(region,
+                                                        child,
+                                                        child_path,
+                                                        expanded_paths,
+                                                        expanded_path_count,
+                                                        buf);
+            if (rc != ERR_OK) {
+                return rc;
+            }
+            rc = croft_guest_json_val_size(region, child, &skip_len);
+            if (rc != ERR_OK) {
+                return rc;
+            }
+            child += skip_len;
+        }
+    } else if (tag == CROFT_GJ_TAG_ARRAY && croft_guest_json_path_is_expanded(path,
+                                                                               expanded_paths,
+                                                                               expanded_path_count)) {
+        ThatchCursor child = cursor;
+        uint32_t skip_len = 0u;
+        ThatchCursor end = 0u;
+        uint32_t index = 0u;
+
+        rc = thatch_read_skip_len(region, &child, &skip_len);
+        if (rc != ERR_OK) {
+            return rc;
+        }
+        end = child + skip_len;
+        while (child < end) {
+            char child_path[256];
+            CroftGuestJsonTextBuf path_buf = {child_path, sizeof(child_path), 0u, 0u};
+
+            child_path[0] = '\0';
+            if (path && path[0] != '\0') {
+                rc = croft_guest_json_buf_put(&path_buf, path, croft_guest_json_strlen(path));
+            } else {
+                rc = croft_guest_json_buf_put_ch(&path_buf, '.');
+            }
+            if (rc == ERR_OK) {
+                rc = croft_guest_json_buf_put_ch(&path_buf, '[');
+            }
+            if (rc == ERR_OK) {
+                rc = croft_guest_json_buf_put_u32(&path_buf, index);
+            }
+            if (rc == ERR_OK) {
+                rc = croft_guest_json_buf_put_ch(&path_buf, ']');
+            }
+            if (rc != ERR_OK) {
+                return rc;
+            }
+            rc = croft_guest_json_collect_visible_paths(region,
+                                                        child,
+                                                        child_path,
+                                                        expanded_paths,
+                                                        expanded_path_count,
+                                                        buf);
             if (rc != ERR_OK) {
                 return rc;
             }
@@ -1104,6 +1249,33 @@ int croft_guest_json_render_cursor_paths(const CroftGuestJsonDocument *doc,
     buf.data = out;
     buf.cap = out_cap;
     rc = croft_guest_json_collect_paths(&doc->region, doc->root, ".", &buf);
+    if (rc != ERR_OK || buf.overflowed) {
+        return ERR_FULL;
+    }
+    return ERR_OK;
+}
+
+int croft_guest_json_render_visible_paths(const CroftGuestJsonDocument *doc,
+                                          const char *const *expanded_paths,
+                                          uint32_t expanded_path_count,
+                                          char *out,
+                                          uint32_t out_cap)
+{
+    CroftGuestJsonTextBuf buf = {0};
+    int rc;
+
+    if (!doc || !out || out_cap == 0u) {
+        return ERR_INVALID;
+    }
+    out[0] = '\0';
+    buf.data = out;
+    buf.cap = out_cap;
+    rc = croft_guest_json_collect_visible_paths(&doc->region,
+                                                doc->root,
+                                                ".",
+                                                expanded_paths,
+                                                expanded_path_count,
+                                                &buf);
     if (rc != ERR_OK || buf.overflowed) {
         return ERR_FULL;
     }

@@ -248,9 +248,13 @@ The repo now carries a canonical WIT orchestration path for Croft-hosted Wasm:
   `tests/wasm_guests/orchestration_worker_json.c` are the guest-local
   JSON-to-Thatch demo, where the worker parses JSON into a local Thatch tree
   and only writes serialized view artifacts back to the shared host DB
+- `tests/wasm_guests/orchestration_bootstrap_fail.c` /
+  `tests/wasm_guests/orchestration_worker_fail.c` are the deterministic
+  failure-path pair that proves worker errors surface as failed sessions
 - `example_orchestration_bootstrap_runner` is the small executable entrypoint
   on top of that runtime, and the orchestration smokes now validate the same
-  path instead of reconstructing the flow from JSON manifests and solved plans
+  path instead of reconstructing the flow from JSON manifests and solved plans,
+  including both successful and failed worker lifecycles
 
 That path is intentionally still heuristic, but it proves the current XPI
 graph is already sufficient for an early Lambkin-style "pick a family, satisfy

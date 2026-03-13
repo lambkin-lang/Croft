@@ -23,6 +23,10 @@ void croft_wit_host_window_runtime_destroy(croft_wit_host_window_runtime* runtim
 void* croft_wit_host_window_runtime_native_window(croft_wit_host_window_runtime* runtime,
                                                   SapWitHostWindowResource window);
 
+int croft_wit_host_window_runtime_bind_exports(
+    croft_wit_host_window_runtime* runtime,
+    SapWitHostWindowHostWindowWorldExports* exports_out);
+
 /*
  * This runtime makes the current singleton/callback GLFW host look like an
  * explicit window resource plus polled event stream. That mismatch is exactly

@@ -2845,8 +2845,10 @@ croft_register_artifact(croft_editor_document editor
 
 add_library(croft_wit_world_runtime STATIC src/runtime/wit_world_runtime.c)
 croft_apply_public_includes(croft_wit_world_runtime)
+target_link_libraries(croft_wit_world_runtime PUBLIC croft_thatch_core)
 croft_register_artifact(croft_wit_world_runtime wit
     TAGS tier8 wit world runtime metadata generated-glue
+    DEPENDS croft_thatch_core
 )
 
 croft_define_xpi_substrate_spec(wasi-process-context
@@ -4159,6 +4161,31 @@ if(TARGET croft_wasm_wasm3 AND CROFT_LLVM_CLANG_TOOL AND CROFT_WASM_LD_TOOL)
         COMPILE_DEFINITIONS
             CROFT_ORCH_TOY_WORKER_WASM_PATH="${WASM_ORCH_WORKER_TOY_BIN}"
     )
+    croft_add_wit_wasm_guest(wasm_orchestration_worker_fail_gen
+        OUTPUT_NAME "orchestration_worker_fail"
+        OUT_VAR WASM_ORCH_WORKER_FAIL_BIN
+        SOURCES
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/orchestration_worker_fail.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/orchestration_guest_runtime.c"
+            "${ORCHESTRATION_WIT_GENERATED_C}"
+        DEPENDS
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/orchestration_guest_runtime.h"
+            "${ORCHESTRATION_WIT_GENERATED_H}"
+    )
+    croft_add_wit_wasm_guest(wasm_orchestration_bootstrap_fail_gen
+        OUTPUT_NAME "orchestration_bootstrap_fail"
+        OUT_VAR WASM_ORCH_BOOTSTRAP_FAIL_BIN
+        SOURCES
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/orchestration_bootstrap_fail.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/orchestration_guest_runtime.c"
+            "${ORCHESTRATION_WIT_GENERATED_C}"
+        DEPENDS
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/orchestration_guest_runtime.h"
+            "${ORCHESTRATION_WIT_GENERATED_H}"
+            "${WASM_ORCH_WORKER_FAIL_BIN}"
+        COMPILE_DEFINITIONS
+            CROFT_ORCH_FAIL_WORKER_WASM_PATH="${WASM_ORCH_WORKER_FAIL_BIN}"
+    )
     croft_add_wit_wasm_guest(wasm_orchestration_worker_json_gen
         OUTPUT_NAME "orchestration_worker_json"
         OUT_VAR WASM_ORCH_WORKER_JSON_BIN
@@ -4207,6 +4234,40 @@ if(TARGET croft_wasm_wasm3 AND CROFT_LLVM_CLANG_TOOL AND CROFT_WASM_LD_TOOL)
             "${WORLD_INLINE_COMMAND_WIT_GENERATED_H}"
         INCLUDE_DIRS
             "${CMAKE_CURRENT_BINARY_DIR}/tests/generated"
+    )
+    croft_add_wit_wasm_guest(wasm_wit_window_guest_gen
+        OUTPUT_NAME "wit_window_guest"
+        OUT_VAR WASM_WIT_WINDOW_GUEST_BIN
+        SOURCES
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/wit_window_guest.c"
+            "${HOST_WINDOW_WIT_GENERATED_C}"
+            "${HOST_GPU2D_WIT_GENERATED_C}"
+            "${HOST_CLOCK_WIT_GENERATED_C}"
+        DEPENDS
+            "${HOST_WINDOW_WIT_GENERATED_H}"
+            "${HOST_GPU2D_WIT_GENERATED_H}"
+            "${HOST_CLOCK_WIT_GENERATED_H}"
+    )
+    croft_add_wit_wasm_guest(wasm_wit_json_viewer_guest_gen
+        OUTPUT_NAME "wit_json_viewer_guest"
+        OUT_VAR WASM_WIT_JSON_VIEWER_GUEST_BIN
+        SOURCES
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/wit_json_viewer_guest.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/wasm_guests/thatch_json_guest.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/json_viewer_state.c"
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/runtime/json_viewer_window_app.c"
+            "${HOST_WINDOW_WIT_GENERATED_C}"
+            "${HOST_GPU2D_WIT_GENERATED_C}"
+            "${HOST_CLOCK_WIT_GENERATED_C}"
+        DEPENDS
+            "${CMAKE_CURRENT_SOURCE_DIR}/include/croft/json_viewer_core.h"
+            "${CMAKE_CURRENT_SOURCE_DIR}/include/croft/json_viewer_state.h"
+            "${CMAKE_CURRENT_SOURCE_DIR}/include/croft/json_viewer_window_app.h"
+            "${HOST_WINDOW_WIT_GENERATED_H}"
+            "${HOST_GPU2D_WIT_GENERATED_H}"
+            "${HOST_CLOCK_WIT_GENERATED_H}"
+        LINK_OPTIONS
+            "-Wl,--initial-memory=262144"
     )
 elseif(TARGET croft_wasm_wasm3)
     croft_optional_missing("wasm-c-guest"
@@ -4309,6 +4370,30 @@ if(TARGET croft_wit_host_window_runtime AND TARGET croft_wit_host_gpu2d_runtime 
     add_dependencies(example_wit_text_window common_wit_schema_gen host_window_wit_schema_gen host_gpu2d_wit_schema_gen host_clock_wit_schema_gen)
 endif()
 
+if(TARGET croft_wit_host_window_runtime AND TARGET croft_wit_host_gpu2d_runtime AND TARGET croft_wit_host_clock_runtime)
+    croft_add_example(example_wit_json_viewer_window
+        SOURCES
+            examples/wit_json_viewer_window.c
+            tests/wasm_guests/thatch_json_guest.c
+            src/runtime/json_viewer_state.c
+            src/runtime/json_viewer_window_app.c
+        LINKS croft_wit_host_window_runtime
+              croft_wit_host_gpu2d_runtime
+              croft_wit_host_clock_runtime
+              croft_file_dialog_macos
+        REQUIRES croft_wit_host_window_runtime
+                 croft_wit_host_gpu2d_runtime
+                 croft_wit_host_clock_runtime
+                 croft_file_dialog_macos
+        TAGS wit xpi host-window host-gpu2d host-clock json viewer native-window
+        FOCUS "A read-only JSON tree viewer over the WIT window, GPU, and clock host mix-ins."
+    )
+    add_dependencies(example_wit_json_viewer_window
+        host_window_wit_schema_gen
+        host_gpu2d_wit_schema_gen
+        host_clock_wit_schema_gen)
+endif()
+
 if(TARGET croft_wit_host_window_runtime
         AND TARGET croft_wit_host_gpu2d_runtime
         AND TARGET croft_wit_text_runtime
@@ -4406,6 +4491,58 @@ if(TARGET wasm_text_bridge_guest_gen)
         FOCUS "The same common-side WIT text logic reused in a Wasm-hosted world over Croft's current wasm3 host."
     )
     add_dependencies(example_wit_text_wasm_host wasm_text_bridge_guest_gen common_wit_schema_gen)
+endif()
+
+if(TARGET wasm_wit_window_guest_gen
+        AND TARGET croft_wit_host_window_runtime
+        AND TARGET croft_wit_host_gpu2d_runtime
+        AND TARGET croft_wit_host_clock_runtime)
+    croft_add_example(example_wit_window_wasm_host
+        SOURCES examples/wit_window_wasm_host.c
+        LINKS croft_wasm_wasm3
+              croft_wit_host_window_runtime
+              croft_wit_host_gpu2d_runtime
+              croft_wit_host_clock_runtime
+        REQUIRES croft_wasm_wasm3
+                 croft_wit_host_window_runtime
+                 croft_wit_host_gpu2d_runtime
+                 croft_wit_host_clock_runtime
+        TAGS wasm wasm3 wit host-window host-gpu2d host-clock host-bridge native-window
+        COMPILE_DEFINITIONS WIT_WINDOW_GUEST_WASM_PATH="${WASM_WIT_WINDOW_GUEST_BIN}"
+        FOCUS "A Wasm guest running over Croft's current wasm3 bridge while driving the native WIT window, GPU, and clock mix-ins."
+    )
+    add_dependencies(example_wit_window_wasm_host
+        wasm_wit_window_guest_gen
+        host_window_wit_schema_gen
+        host_gpu2d_wit_schema_gen
+        host_clock_wit_schema_gen)
+endif()
+
+if(TARGET wasm_wit_json_viewer_guest_gen
+        AND TARGET croft_wit_host_window_runtime
+        AND TARGET croft_wit_host_gpu2d_runtime
+        AND TARGET croft_wit_host_clock_runtime)
+    croft_add_example(example_wit_json_viewer_wasm_host
+        SOURCES examples/wit_json_viewer_wasm_host.c
+        LINKS croft_wasm_wasm3
+              croft_wit_host_window_runtime
+              croft_wit_host_gpu2d_runtime
+              croft_wit_host_clock_runtime
+              croft_file_dialog_macos
+        REQUIRES croft_wasm_wasm3
+                 croft_wit_host_window_runtime
+                 croft_wit_host_gpu2d_runtime
+                 croft_wit_host_clock_runtime
+                 croft_file_dialog_macos
+        TAGS wasm wasm3 wit host-window host-gpu2d host-clock json viewer host-bridge native-window
+        COMPILE_DEFINITIONS WIT_JSON_VIEWER_GUEST_WASM_PATH="${WASM_WIT_JSON_VIEWER_GUEST_BIN}"
+        FOCUS "The JSON viewer state and renderer reused in a Wasm guest over Croft's current wasm3 bridge."
+    )
+    add_dependencies(example_wit_json_viewer_wasm_host
+        wasm_wit_json_viewer_guest_gen
+        host_window_wit_schema_gen
+        host_gpu2d_wit_schema_gen
+        host_clock_wit_schema_gen)
 endif()
 
 if(TARGET croft_orchestration_runtime)
@@ -4620,7 +4757,7 @@ endif()
 if(CROFT_BUILD_TESTS)
     enable_testing()
 
-    add_executable(test_croft tests/test_main.c tests/test_queue.c tests/host_tests/test_fs.c tests/test_editor_text_model.c tests/test_editor_syntax.c tests/test_editor_brackets.c tests/test_editor_folding.c tests/test_editor_whitespace.c tests/test_editor_search.c tests/test_editor_status.c tests/test_editor_document.c tests/test_editor_commands.c tests/test_editor_scene_runtime.c tests/test_wit_resource_codegen.c tests/test_wit_text_runtime.c tests/test_wit_text_program.c tests/test_wit_store_runtime.c tests/test_wit_mailbox_runtime.c tests/test_wit_host_fs_runtime.c tests/test_wit_host_clock_runtime.c tests/test_wit_host_editor_input_runtime.c tests/test_wit_host_popup_menu_runtime.c)
+    add_executable(test_croft tests/test_main.c tests/test_queue.c tests/host_tests/test_fs.c tests/test_editor_text_model.c tests/test_editor_syntax.c tests/test_editor_brackets.c tests/test_editor_folding.c tests/test_editor_whitespace.c tests/test_editor_search.c tests/test_editor_status.c tests/test_editor_document.c tests/test_editor_commands.c tests/test_editor_scene_runtime.c tests/test_json_viewer_state.c tests/test_wit_resource_codegen.c tests/test_wit_text_runtime.c tests/test_wit_text_program.c tests/test_wit_store_runtime.c tests/test_wit_mailbox_runtime.c tests/test_wit_host_fs_runtime.c tests/test_wit_host_clock_runtime.c tests/test_wit_host_editor_input_runtime.c tests/test_wit_host_popup_menu_runtime.c tests/wasm_guests/thatch_json_guest.c src/runtime/json_viewer_state.c)
     target_include_directories(test_croft PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
     target_link_libraries(test_croft
         PRIVATE
@@ -4749,6 +4886,7 @@ if(CROFT_BUILD_TESTS)
     endif()
     if(NOT TARGET croft_orchestration_runtime
             OR NOT TARGET wasm_orchestration_bootstrap_toy_gen
+            OR NOT TARGET wasm_orchestration_bootstrap_fail_gen
             OR NOT TARGET wasm_orchestration_bootstrap_json_gen)
         list(REMOVE_ITEM SAPLING_UNIT_TESTS
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/sapling_tests/unit/test_wasm_orchestration_demos_smoke.c")
@@ -4918,9 +5056,11 @@ if(CROFT_BUILD_TESTS)
             add_dependencies(${test_name}
                 orchestration_wit_schema_gen
                 wasm_orchestration_bootstrap_toy_gen
+                wasm_orchestration_bootstrap_fail_gen
                 wasm_orchestration_bootstrap_json_gen)
             target_compile_definitions(${test_name} PRIVATE
                 CROFT_ORCH_TOY_BOOTSTRAP_WASM_PATH="${WASM_ORCH_BOOTSTRAP_TOY_BIN}"
+                CROFT_ORCH_FAIL_BOOTSTRAP_WASM_PATH="${WASM_ORCH_BOOTSTRAP_FAIL_BIN}"
                 CROFT_ORCH_JSON_BOOTSTRAP_WASM_PATH="${WASM_ORCH_BOOTSTRAP_JSON_BIN}")
         endif()
         if(test_name STREQUAL "test_wit_scoped_names_smoke")

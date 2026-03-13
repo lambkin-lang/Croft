@@ -15,6 +15,9 @@ croft_wit_host_clock_runtime* croft_wit_host_clock_runtime_create(void);
 
 void croft_wit_host_clock_runtime_destroy(croft_wit_host_clock_runtime* runtime);
 
+int croft_wit_host_clock_runtime_bind_exports(croft_wit_host_clock_runtime* runtime,
+                                              SapWitHostClockHostClockWorldExports* exports_out);
+
 /*
  * Unlike file/database/mailbox barriers, the clock mix-in is a pure service
  * query. That is deliberate: not every host capability should be forced into a

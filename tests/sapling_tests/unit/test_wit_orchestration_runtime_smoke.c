@@ -229,6 +229,17 @@ static int parse_first_diagnostic(const SapWitOrchestrationPlan *plan,
     return ERR_OK;
 }
 
+static int bytes_equal_text(const uint8_t *data, uint32_t len, const char *expected)
+{
+    size_t expected_len;
+
+    if (!expected) {
+        return data == NULL && len == 0u;
+    }
+    expected_len = strlen(expected);
+    return data != NULL && len == (uint32_t)expected_len && memcmp(data, expected, expected_len) == 0;
+}
+
 int main(void)
 {
     croft_orchestration_runtime_config config;
@@ -391,6 +402,116 @@ int main(void)
         CHECK(parse_first_diagnostic(&reply.val.resolve.v_val.ok.v, diagnostic, sizeof(diagnostic)) == ERR_OK);
         CHECK(strcmp(diagnostic, "resolved-with-compiled-xpi-registry") == 0);
         sap_wit_dispose_orchestration_control_reply(&reply);
+    }
+
+    {
+        SapWitOrchestrationBuilderCreate payload = create_payload;
+        SapWitOrchestrationBuilderResource stale_launch_builder;
+        SapWitOrchestrationBuilderPreferSlot prefer = {0};
+        SapWitOrchestrationBuilderResolve resolve = {0};
+        SapWitOrchestrationBuilderRequireBundle require = {0};
+        SapWitOrchestrationBuilderLaunch launch = {0};
+
+        sap_wit_zero_orchestration_control_reply(&reply);
+        CHECK(ops->create(runtime, &payload, &reply) == ERR_OK);
+        stale_launch_builder = reply.val.builder.v_val.ok.v;
+        sap_wit_dispose_orchestration_control_reply(&reply);
+
+        prefer.builder = stale_launch_builder;
+        prefer.slot_data = (const uint8_t *)"croft-editor-shell-slot-current-machine";
+        prefer.slot_len = 39u;
+        prefer.bundle_data = (const uint8_t *)"croft-editor-appkit-current-machine";
+        prefer.bundle_len = 35u;
+        sap_wit_zero_orchestration_control_reply(&reply);
+        CHECK(ops->prefer_slot(runtime, &prefer, &reply) == ERR_OK);
+        CHECK_STATUS_OK(reply);
+        sap_wit_dispose_orchestration_control_reply(&reply);
+
+        resolve.builder = stale_launch_builder;
+        sap_wit_zero_orchestration_control_reply(&reply);
+        CHECK(ops->resolve(runtime, &resolve, &reply) == ERR_OK);
+        CHECK_PLAN_OK(reply);
+        sap_wit_dispose_orchestration_control_reply(&reply);
+
+        require.builder = stale_launch_builder;
+        require.bundle_data = (const uint8_t *)"croft-editor-scene-metal-native-current-machine";
+        require.bundle_len = 47u;
+        sap_wit_zero_orchestration_control_reply(&reply);
+        CHECK(ops->require_bundle(runtime, &require, &reply) == ERR_OK);
+        CHECK_STATUS_OK(reply);
+        sap_wit_dispose_orchestration_control_reply(&reply);
+
+        launch.builder = stale_launch_builder;
+        sap_wit_zero_orchestration_control_reply(&reply);
+        CHECK(ops->launch(runtime, &launch, &reply) == ERR_OK);
+        CHECK(reply.case_tag == SAP_WIT_ORCHESTRATION_CONTROL_REPLY_SESSION);
+        CHECK(reply.val.session.is_v_ok == 0u);
+        CHECK(bytes_equal_text(reply.val.session.v_val.err.v_data,
+                               reply.val.session.v_val.err.v_len,
+                               "bundle-conflict"));
+        sap_wit_dispose_orchestration_control_reply(&reply);
+    }
+
+    {
+        SapWitOrchestrationBuilderCreate payload = {0};
+        SapWitOrchestrationBuilderResource failing_launch_builder;
+        SapWitOrchestrationBuilderAddModule add = {0};
+        SapWitOrchestrationBuilderAddWorker add_worker = {0};
+        SapWitOrchestrationBuilderResolve resolve = {0};
+        SapWitOrchestrationBuilderLaunch launch = {0};
+        SapWitOrchestrationWorkerSpec missing_worker = {0};
+        uint32_t attempt;
+
+        payload.name_data = (const uint8_t *)"launch-failure-smoke";
+        payload.name_len = 20u;
+        payload.family_data = (const uint8_t *)"croft_orchestration_mailbox_demo_family_current_machine";
+        payload.family_len = 55u;
+        payload.applicability_data = (const uint8_t *)"current-machine";
+        payload.applicability_len = 15u;
+        sap_wit_zero_orchestration_control_reply(&reply);
+        CHECK(ops->create(runtime, &payload, &reply) == ERR_OK);
+        failing_launch_builder = reply.val.builder.v_val.ok.v;
+        sap_wit_dispose_orchestration_control_reply(&reply);
+
+        add.builder = failing_launch_builder;
+        add.name_data = (const uint8_t *)"missing-workers";
+        add.name_len = 15u;
+        add.path_data = (const uint8_t *)"/tmp/does-not-exist.wasm";
+        add.path_len = 24u;
+        sap_wit_zero_orchestration_control_reply(&reply);
+        CHECK(ops->add_module(runtime, &add, &reply) == ERR_OK);
+        CHECK_STATUS_OK(reply);
+        sap_wit_dispose_orchestration_control_reply(&reply);
+
+        missing_worker.name_data = (const uint8_t *)"idle-worker";
+        missing_worker.name_len = 11u;
+        missing_worker.module_data = (const uint8_t *)"missing-workers";
+        missing_worker.module_len = 15u;
+        missing_worker.replicas = 1u;
+        add_worker.builder = failing_launch_builder;
+        add_worker.worker = missing_worker;
+        sap_wit_zero_orchestration_control_reply(&reply);
+        CHECK(ops->add_worker(runtime, &add_worker, &reply) == ERR_OK);
+        CHECK_STATUS_OK(reply);
+        sap_wit_dispose_orchestration_control_reply(&reply);
+
+        resolve.builder = failing_launch_builder;
+        sap_wit_zero_orchestration_control_reply(&reply);
+        CHECK(ops->resolve(runtime, &resolve, &reply) == ERR_OK);
+        CHECK_PLAN_OK(reply);
+        sap_wit_dispose_orchestration_control_reply(&reply);
+
+        launch.builder = failing_launch_builder;
+        for (attempt = 0u; attempt < 10u; attempt++) {
+            sap_wit_zero_orchestration_control_reply(&reply);
+            CHECK(ops->launch(runtime, &launch, &reply) == ERR_OK);
+            CHECK(reply.case_tag == SAP_WIT_ORCHESTRATION_CONTROL_REPLY_SESSION);
+            CHECK(reply.val.session.is_v_ok == 0u);
+            CHECK(bytes_equal_text(reply.val.session.v_val.err.v_data,
+                                   reply.val.session.v_val.err.v_len,
+                                   "payload-module-read-failed"));
+            sap_wit_dispose_orchestration_control_reply(&reply);
+        }
     }
 
     {
