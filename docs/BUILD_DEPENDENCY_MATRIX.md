@@ -33,8 +33,8 @@ workstation, GLFW is expected from Homebrew at `/opt/homebrew/Cellar/glfw/3.4`.
 | Input | Purpose | Canonical acquisition | Notes |
 | --- | --- | --- | --- |
 | CMake 3.15+ | Top-level configure/build | Install outside Croft | Required by [CMakeLists.txt](../CMakeLists.txt). |
-| C11 compiler | Build Croft runtime | Install outside Croft | On this macOS workstation, a fresh configure now prefers Homebrew `llvm@21` automatically when present. |
-| C++17 compiler | Build `host_render.cpp` and `tgfx` | Install outside Croft | On this macOS workstation, a fresh configure now prefers Homebrew `llvm@21` automatically when present. |
+| C11 compiler | Build Croft runtime | Install outside Croft | On this macOS workstation, a fresh configure now keeps the system AppleClang toolchain by default. Homebrew `llvm@21` is an explicit native override only. |
+| C++17 compiler | Build `host_render.cpp` and `tgfx` | Install outside Croft | On this macOS workstation, a fresh configure now keeps the system AppleClang toolchain by default. Homebrew `llvm@21` is an explicit native override only. |
 | pthread-capable system toolchain | `Threads::Threads` | OS toolchain | Required for Croft and Sapling threading. |
 | macOS SDK / Xcode Command Line Tools | AppKit-backed artifacts | Install outside Croft | Needed for `croft_a11y_macos`, `croft_menu_macos`, and `croft_gesture_macos`. These artifacts cannot be produced in a Linux Docker image. |
 
@@ -48,8 +48,8 @@ The table below covers the external dependencies that affect which Croft artifac
 | `tgfx` | Tencent GPU-accelerated 2D graphics library | `croft_render_tgfx_opengl`, `croft_scene_core_tgfx_opengl`, `croft_scene_text_editor_tgfx_opengl` | Standalone repo. It is not a sub-system of `glfw`. | Use a pinned external checkout. Do not rely on generated `_deps/tgfx` build outputs as the source of truth. Croft's bootstrap verifies the pinned checkout instead of recloning it. | `CROFT_TGFX_SOURCE_DIR` | Consult the local `tgfx` checkout README at `/Users/mshonle/Projects/Tencent/tgfx/README.md`. On this machine, prepare it with `git -C /Users/mshonle/Projects/Tencent/tgfx status --short --branch`, `git lfs version`, and `(cd /Users/mshonle/Projects/Tencent/tgfx && bash ./sync_deps.sh)`. | Present at `/Users/mshonle/Projects/Tencent/tgfx`; `sync_deps.sh` completed successfully on 2026-03-06. |
 | `wasm3` | Embeddable WebAssembly interpreter | `croft_wasm_wasm3` and host Wasm test coverage | Standalone. It is not part of the `WASI` spec repo and it is not a sub-system of `wasm-micro-runtime`. | Use a pinned local checkout staged by `tools/bootstrap_deps.sh`. Direct `FetchContent` is only a fallback path. | `CROFT_WASM3_SOURCE_DIR`; fallback: `CROFT_FETCH_WASM3` with `CROFT_WASM3_GIT_REPOSITORY` and `CROFT_WASM3_GIT_TAG` | Consult the official `wasm3` repo and README for build instructions if you need a local override. | Not installed locally before bootstrap. |
 | `wabt` | WebAssembly Binary Toolkit. Croft currently uses the `wat2wasm` tool, not the library. | Wasm guest test fixture generation when `croft_wasm_wasm3` is enabled | Standalone. It is not part of the `WASI` spec repo. | Prefer an external tool install that puts `wat2wasm` on `PATH`. Use a separate source checkout only if you want Croft to build the tool itself. | `find_program(wat2wasm)` or `CROFT_WABT_SOURCE_DIR` | Consult the WABT README if a source build is needed. For this machine, the verified tool install is under Homebrew. | Present at `/opt/homebrew/Cellar/wabt/1.0.39/bin/wat2wasm` and `/opt/homebrew/opt/wabt`. |
-| `llvm@21` | Preferred Clang toolchain on this macOS workstation | Fresh CMake configure for Croft host/native builds and current C-to-Wasm guest builds | Standalone formula. | Let CMake auto-discover `/opt/homebrew/opt/llvm@21` on fresh configure, or override with `CROFT_LLVM_21_ROOT`. | `CROFT_PREFER_HOMEBREW_LLVM_21`, `CROFT_LLVM_21_ROOT` | No user-level `PATH` mutation is required. Existing build directories keep their already-cached compiler until reconfigured cleanly. | Present at `/opt/homebrew/opt/llvm@21`. |
-| `lld@21` | Preferred Wasm linker for Croft guest tooling | Current C-to-Wasm guest compilation and other explicit Wasm link steps | Standalone formula, paired with `llvm@21`. | Let CMake auto-discover `/opt/homebrew/opt/lld@21` on fresh configure, or override with `CROFT_LLD_21_ROOT`. | `CROFT_WASM_LD_TOOL`, `CROFT_LLD_21_ROOT` | No user-level `PATH` mutation is required. Croft resolves `wasm-ld` by absolute path for build-scoped use. | Present at `/opt/homebrew/opt/lld@21/bin/wasm-ld`. |
+| `llvm@21` | Homebrew Clang toolchain for Croft Wasm guest builds and an optional native override on this macOS workstation | Fresh CMake configure for current C-to-Wasm guest builds by default, and for host/native builds only when explicitly requested | Standalone formula. | Keep it installed for Wasm guest compilation. If you also want it as the native compiler override, opt in with `CROFT_PREFER_HOMEBREW_LLVM_21=ON`; otherwise Croft still auto-discovers it for Wasm guest tooling via `CROFT_PREFER_HOMEBREW_LLVM_21_WASM`. | `CROFT_PREFER_HOMEBREW_LLVM_21`, `CROFT_PREFER_HOMEBREW_LLVM_21_WASM`, `CROFT_LLVM_21_ROOT` | No user-level `PATH` mutation is required. Existing build directories keep their already-cached compiler until reconfigured cleanly. | Present at `/opt/homebrew/opt/llvm@21`. |
+| `lld@21` | Preferred Wasm linker for Croft guest tooling | Current C-to-Wasm guest compilation and other explicit Wasm link steps | Standalone formula, paired with `llvm@21`. | Let CMake auto-discover `/opt/homebrew/opt/lld@21` on fresh configure, or override with `CROFT_LLD_21_ROOT`. | `CROFT_PREFER_HOMEBREW_LLD_21`, `CROFT_WASM_LD_TOOL`, `CROFT_LLD_21_ROOT` | No user-level `PATH` mutation is required. Croft resolves `wasm-ld` by absolute path for build-scoped use. | Present at `/opt/homebrew/opt/lld@21/bin/wasm-ld`. |
 | `miniaudio` | Single-header native audio library | `croft_audio_miniaudio` | Standalone. It is not hiding inside `tgfx`, `makepad`, or the Microsoft editor repos. | Stage the pinned `miniaudio.h` header into `local_deps/src/miniaudio/` with `tools/bootstrap_deps.sh`. A full repo checkout is unnecessary because Croft only includes the header. | `CROFT_MINIAUDIO_SOURCE_DIR`; fallback: `CROFT_FETCH_MINIAUDIO` with `CROFT_MINIAUDIO_GIT_REPOSITORY` and `CROFT_MINIAUDIO_GIT_TAG` | Consult the official `miniaudio` repo/header documentation if you need a local override. The bootstrap uses the raw header URL pinned in `tools/deps.lock.sh`. | Not installed locally before bootstrap. |
 | WASI proposals checkout (optional) | Upstream WIT definitions | Validation against an external upstream checkout instead of Croft's vendored `0.2.9` snapshot | Standalone spec repo checkout. It is not a runtime dependency and Croft still builds without it. | Keep it outside the Croft tree and point CMake at the `proposals/` directory. | `CROFT_WASI_PROPOSALS_DIR` | Useful when validating parser/codegen changes against upstream `wasi:*` packages. If unset, Croft uses `vendor/wasi/0.2.9/proposals/` plus any explicit current-machine overlays under `schemas/wit/wasi-current-machine/0.2.9/`. | Present on this machine at `/Users/mshonle/Projects/WebAssembly/WASI/proposals`. |
 
@@ -116,18 +116,29 @@ Ensure `wat2wasm` is on `PATH` before configuring if WAT guest tests are expecte
 source local_deps/env.sh
 ```
 
-For the Homebrew LLVM/LLD toolchain on macOS, no shell-level `PATH` export is needed. A fresh configure will auto-discover:
+For the Homebrew LLVM/LLD Wasm guest toolchain on macOS, no shell-level `PATH` export is needed. A fresh configure will auto-discover:
 
 - `/opt/homebrew/opt/llvm@21/bin/clang`
-- `/opt/homebrew/opt/llvm@21/bin/clang++`
 - `/opt/homebrew/opt/lld@21/bin/wasm-ld`
 
-That toolchain is now used directly by the full current-machine build for the generated C-based `wit_world_bridge_guest.wasm` test fixture; no user shell configuration is required.
+Those tools are used by default for Croft's freestanding C-to-Wasm guest path. The native compiler toolchain still follows the active CMake default on macOS, which means AppleClang on a fresh configure unless you explicitly opt into Homebrew `llvm@21`.
 
-If those are installed elsewhere, point CMake at them explicitly:
+The resolved Homebrew `clang` and `wasm-ld` paths are used directly by the full current-machine build for the generated C-based `wit_world_bridge_guest.wasm` test fixture; no user shell configuration is required.
+
+If those tools are installed elsewhere, point CMake at them explicitly:
 
 ```bash
 cmake -S . -B build \
+  -DCROFT_LLVM_21_ROOT=/custom/prefix/llvm@21 \
+  -DCROFT_LLD_21_ROOT=/custom/prefix/lld@21
+```
+
+If you want to force Homebrew `llvm@21` as the native compiler toolchain too, opt in explicitly:
+
+```bash
+cmake -S . -B build \
+  -DCROFT_PREFER_HOMEBREW_LLVM_21=ON \
+  -DCROFT_PREFER_HOMEBREW_LLVM_21_WASM=ON \
   -DCROFT_LLVM_21_ROOT=/custom/prefix/llvm@21 \
   -DCROFT_LLD_21_ROOT=/custom/prefix/lld@21
 ```

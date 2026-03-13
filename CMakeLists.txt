@@ -1,7 +1,13 @@
 cmake_minimum_required(VERSION 3.15)
 
 option(CROFT_PREFER_HOMEBREW_LLVM_21
-       "Prefer Homebrew llvm@21/lld@21 on macOS for fresh configure runs"
+       "Prefer Homebrew llvm@21 for native macOS compilers on fresh configure runs"
+       OFF)
+option(CROFT_PREFER_HOMEBREW_LLVM_21_WASM
+       "Prefer Homebrew llvm@21 clang for Croft Wasm guest compilation on macOS for fresh configure runs"
+       ON)
+option(CROFT_PREFER_HOMEBREW_LLD_21
+       "Prefer Homebrew lld@21 wasm-ld on macOS for fresh configure runs"
        ON)
 set(CROFT_LLVM_21_ROOT "" CACHE PATH
     "Optional override for the preferred LLVM 21 install prefix (expects bin/clang and bin/clang++)")
@@ -37,15 +43,15 @@ set(CROFT_LLVM_CLANG_TOOL "" CACHE FILEPATH
     "Resolved clang path used by Croft tool discovery")
 set(CROFT_LLVM_CLANGXX_TOOL "" CACHE FILEPATH
     "Resolved clang++ path used by Croft tool discovery")
+set(CROFT_WASM_CLANG_TOOL "" CACHE FILEPATH
+    "Resolved clang path used by Croft Wasm guest tooling")
 set(CROFT_WASM_LD_TOOL "" CACHE FILEPATH
     "Resolved wasm-ld path used by Croft Wasm guest tooling")
 
 if(CROFT_PREFER_HOMEBREW_LLVM_21)
     croft_collect_preferred_prefixes(_croft_llvm_prefixes "${CROFT_LLVM_21_ROOT}" "llvm@21")
-    croft_collect_preferred_prefixes(_croft_lld_prefixes "${CROFT_LLD_21_ROOT}" "lld@21")
     croft_find_tool_in_prefixes(_croft_clang clang ${_croft_llvm_prefixes})
     croft_find_tool_in_prefixes(_croft_clangxx clang++ ${_croft_llvm_prefixes})
-    croft_find_tool_in_prefixes(_croft_wasm_ld wasm-ld ${_croft_lld_prefixes})
 
     if(_croft_clang AND _croft_clangxx)
         set(CROFT_LLVM_CLANG_TOOL "${_croft_clang}" CACHE FILEPATH
@@ -70,14 +76,51 @@ if(CROFT_PREFER_HOMEBREW_LLVM_21)
             set(CMAKE_OBJCXX_COMPILER "${_croft_clangxx}" CACHE FILEPATH
                 "Objective-C++ compiler selected by Croft tool discovery")
         endif()
+    else()
+        set(CROFT_LLVM_CLANG_TOOL "" CACHE FILEPATH
+            "Resolved clang path used by Croft tool discovery" FORCE)
+        set(CROFT_LLVM_CLANGXX_TOOL "" CACHE FILEPATH
+            "Resolved clang++ path used by Croft tool discovery" FORCE)
     endif()
+else()
+    set(CROFT_LLVM_CLANG_TOOL "" CACHE FILEPATH
+        "Resolved clang path used by Croft tool discovery" FORCE)
+    set(CROFT_LLVM_CLANGXX_TOOL "" CACHE FILEPATH
+        "Resolved clang++ path used by Croft tool discovery" FORCE)
+endif()
 
+if(CROFT_PREFER_HOMEBREW_LLVM_21_WASM)
+    croft_collect_preferred_prefixes(_croft_wasm_llvm_prefixes "${CROFT_LLVM_21_ROOT}" "llvm@21")
+    croft_find_tool_in_prefixes(_croft_wasm_clang clang ${_croft_wasm_llvm_prefixes})
+    if(_croft_wasm_clang)
+        set(CROFT_WASM_CLANG_TOOL "${_croft_wasm_clang}" CACHE FILEPATH
+            "Resolved clang path used by Croft Wasm guest tooling" FORCE)
+        get_filename_component(_croft_wasm_llvm_bin_dir "${_croft_wasm_clang}" DIRECTORY)
+        list(PREPEND CMAKE_PROGRAM_PATH "${_croft_wasm_llvm_bin_dir}")
+    else()
+        set(CROFT_WASM_CLANG_TOOL "" CACHE FILEPATH
+            "Resolved clang path used by Croft Wasm guest tooling" FORCE)
+    endif()
+else()
+    set(CROFT_WASM_CLANG_TOOL "" CACHE FILEPATH
+        "Resolved clang path used by Croft Wasm guest tooling" FORCE)
+endif()
+
+if(CROFT_PREFER_HOMEBREW_LLD_21)
+    croft_collect_preferred_prefixes(_croft_lld_prefixes "${CROFT_LLD_21_ROOT}" "lld@21")
+    croft_find_tool_in_prefixes(_croft_wasm_ld wasm-ld ${_croft_lld_prefixes})
     if(_croft_wasm_ld)
         set(CROFT_WASM_LD_TOOL "${_croft_wasm_ld}" CACHE FILEPATH
             "Resolved wasm-ld path used by Croft Wasm guest tooling" FORCE)
         get_filename_component(_croft_lld_bin_dir "${_croft_wasm_ld}" DIRECTORY)
         list(PREPEND CMAKE_PROGRAM_PATH "${_croft_lld_bin_dir}")
+    else()
+        set(CROFT_WASM_LD_TOOL "" CACHE FILEPATH
+            "Resolved wasm-ld path used by Croft Wasm guest tooling" FORCE)
     endif()
+else()
+    set(CROFT_WASM_LD_TOOL "" CACHE FILEPATH
+        "Resolved wasm-ld path used by Croft Wasm guest tooling" FORCE)
 endif()
 
 if(CMAKE_PROGRAM_PATH)
@@ -98,9 +141,13 @@ if(CROFT_PREFER_HOMEBREW_LLVM_21)
                 "but active compiler is ${CMAKE_C_COMPILER}. Use a fresh build dir to adopt the preferred toolchain.")
         endif()
     endif()
-    if(CROFT_WASM_LD_TOOL)
-        message(STATUS "Croft Wasm linker: ${CROFT_WASM_LD_TOOL}")
-    endif()
+endif()
+
+if(CROFT_WASM_LD_TOOL)
+    message(STATUS "Croft Wasm linker: ${CROFT_WASM_LD_TOOL}")
+endif()
+if(CROFT_WASM_CLANG_TOOL)
+    message(STATUS "Croft Wasm compiler: ${CROFT_WASM_CLANG_TOOL}")
 endif()
 
 set(CMAKE_C_STANDARD 11)
@@ -1316,7 +1363,7 @@ function(croft_add_freestanding_c_wasm_guest target)
         "OUTPUT_NAME;OUTPUT_SUBDIR;OUT_VAR"
         "SOURCES;DEPENDS;INCLUDE_DIRS;COMPILE_DEFINITIONS;COMPILE_OPTIONS;LINK_OPTIONS"
         ${ARGN})
-    if(NOT TARGET croft_wasm_wasm3 OR NOT CROFT_LLVM_CLANG_TOOL OR NOT CROFT_WASM_LD_TOOL)
+    if(NOT TARGET croft_wasm_wasm3 OR NOT CROFT_WASM_CLANG_TOOL OR NOT CROFT_WASM_LD_TOOL)
         return()
     endif()
     if(NOT WASM_GUEST_SOURCES)
@@ -1336,7 +1383,7 @@ function(croft_add_freestanding_c_wasm_guest target)
 
     set(output_path "${CMAKE_CURRENT_BINARY_DIR}/${output_subdir}/${output_name}.wasm")
     set(compile_cmd
-        ${CROFT_LLVM_CLANG_TOOL}
+        ${CROFT_WASM_CLANG_TOOL}
         --target=wasm32-unknown-unknown
         -std=c11
         -Oz
@@ -4135,7 +4182,7 @@ if(TARGET croft_wasm_wasm3 AND CROFT_WAT2WASM_TOOL)
     )
 endif()
 
-if(TARGET croft_wasm_wasm3 AND CROFT_LLVM_CLANG_TOOL AND CROFT_WASM_LD_TOOL)
+if(TARGET croft_wasm_wasm3 AND CROFT_WASM_CLANG_TOOL AND CROFT_WASM_LD_TOOL)
     croft_add_wit_wasm_guest(wasm_orchestration_worker_toy_gen
         OUTPUT_NAME "orchestration_worker_toy"
         OUT_VAR WASM_ORCH_WORKER_TOY_BIN
@@ -4271,7 +4318,7 @@ if(TARGET croft_wasm_wasm3 AND CROFT_LLVM_CLANG_TOOL AND CROFT_WASM_LD_TOOL)
     )
 elseif(TARGET croft_wasm_wasm3)
     croft_optional_missing("wasm-c-guest"
-        "set CROFT_LLVM_CLANG_TOOL and CROFT_WASM_LD_TOOL to build the generated WIT C guest bridge")
+        "set CROFT_WASM_CLANG_TOOL and CROFT_WASM_LD_TOOL to build the generated WIT C guest bridge")
 endif()
 
 # ── Examples ─────────────────────────────────────────────────────────
