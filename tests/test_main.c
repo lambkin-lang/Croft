@@ -269,8 +269,11 @@ extern int test_editor_scene_runtime_auto_close(void);
 extern int test_editor_find_replace_next(void);
 extern int test_editor_find_replace_all_undo(void);
 extern int test_editor_wrap_layout_geometry(void);
+extern int test_editor_wrap_layout_affinity(void);
 extern int test_editor_metrics_snapshot(void);
 extern int test_editor_composition_state(void);
+extern int test_editor_decorations_normalize(void);
+extern int test_editor_decorations_clamp_after_edit(void);
 extern int test_wit_resource_open_command_roundtrip(void);
 extern int test_wit_resource_handle_roundtrip(void);
 extern int test_wit_text_runtime_roundtrip(void);
@@ -428,8 +431,11 @@ int main(void)
     RUN_TEST(test_editor_find_replace_next);
     RUN_TEST(test_editor_find_replace_all_undo);
     RUN_TEST(test_editor_wrap_layout_geometry);
+    RUN_TEST(test_editor_wrap_layout_affinity);
     RUN_TEST(test_editor_metrics_snapshot);
     RUN_TEST(test_editor_composition_state);
+    RUN_TEST(test_editor_decorations_normalize);
+    RUN_TEST(test_editor_decorations_clamp_after_edit);
 
     printf("\n[wit_common_core]\n");
     RUN_TEST(test_wit_resource_open_command_roundtrip);

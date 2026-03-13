@@ -80,12 +80,41 @@ static void text_editor_resolve_font_metrics(text_editor_node* te);
 static float text_editor_row_top(const text_editor_node* te, uint32_t visible_line_number);
 static float text_editor_row_baseline(const text_editor_node* te, uint32_t visible_line_number);
 static void text_editor_clear_composition_state(text_editor_node* te);
+static void text_editor_normalize_decorations(text_editor_node* te);
+static float text_editor_visual_row_prefix_width(const text_editor_node* te,
+                                                 const text_editor_visual_row* row,
+                                                 const char* line_text,
+                                                 uint32_t offset);
 
 static void text_editor_invalidate_visual_layout(text_editor_node* te) {
     if (!te) {
         return;
     }
     te->visual_layout_dirty = 1u;
+}
+
+static croft_text_editor_caret_affinity text_editor_normalize_caret_affinity(
+    croft_text_editor_caret_affinity affinity) {
+    if (affinity == CROFT_TEXT_EDITOR_CARET_AFFINITY_TRAILING) {
+        return CROFT_TEXT_EDITOR_CARET_AFFINITY_TRAILING;
+    }
+    return CROFT_TEXT_EDITOR_CARET_AFFINITY_LEADING;
+}
+
+static int text_editor_caret_affinity_prefers_leading(croft_text_editor_caret_affinity affinity) {
+    return text_editor_normalize_caret_affinity(affinity) == CROFT_TEXT_EDITOR_CARET_AFFINITY_LEADING;
+}
+
+static croft_text_editor_caret_affinity text_editor_affinity_for_row_offset(
+    const text_editor_visual_row* row,
+    uint32_t offset) {
+    if (!row) {
+        return CROFT_TEXT_EDITOR_CARET_AFFINITY_LEADING;
+    }
+    if (!row->is_last_in_line && offset == row->end_offset) {
+        return CROFT_TEXT_EDITOR_CARET_AFFINITY_TRAILING;
+    }
+    return CROFT_TEXT_EDITOR_CARET_AFFINITY_LEADING;
 }
 
 static void text_editor_resolve_font_metrics(text_editor_node* te) {
@@ -370,6 +399,28 @@ static int32_t text_editor_reserve_line_row_maps(text_editor_node* te, uint32_t 
     return CROFT_EDITOR_OK;
 }
 
+static int32_t text_editor_reserve_decorations(text_editor_node* te, uint32_t capacity) {
+    croft_text_editor_decoration* resized;
+
+    if (!te) {
+        return CROFT_EDITOR_ERR_INVALID;
+    }
+    if (capacity <= te->decoration_capacity) {
+        return CROFT_EDITOR_OK;
+    }
+
+    resized = (croft_text_editor_decoration*)realloc(
+        te->decorations,
+        sizeof(croft_text_editor_decoration) * (size_t)capacity);
+    if (!resized) {
+        return CROFT_EDITOR_ERR_OOM;
+    }
+
+    te->decorations = resized;
+    te->decoration_capacity = capacity;
+    return CROFT_EDITOR_OK;
+}
+
 static int32_t text_editor_append_visual_row(text_editor_node* te,
                                              uint32_t model_line_number,
                                              uint32_t line_start_offset,
@@ -637,6 +688,54 @@ static uint32_t text_editor_visual_row_number_for_offset(const text_editor_node*
     }
 
     return first_row + row_count - 1u;
+}
+
+static uint32_t text_editor_visual_row_number_for_affinity(
+    const text_editor_node* te,
+    uint32_t offset,
+    croft_text_editor_caret_affinity affinity) {
+    return text_editor_visual_row_number_for_offset(te,
+                                                    offset,
+                                                    text_editor_caret_affinity_prefers_leading(affinity));
+}
+
+static uint32_t text_editor_pick_offset_in_row_for_x(const text_editor_node* te,
+                                                     const text_editor_visual_row* row,
+                                                     const char* line_text,
+                                                     float target_x,
+                                                     croft_text_editor_caret_affinity* out_affinity) {
+    uint32_t best_offset;
+    uint32_t offset;
+    float best_distance;
+    croft_text_editor_caret_affinity best_affinity;
+
+    if (!row) {
+        if (out_affinity) {
+            *out_affinity = CROFT_TEXT_EDITOR_CARET_AFFINITY_LEADING;
+        }
+        return 0u;
+    }
+
+    best_offset = row->start_offset;
+    best_distance = target_x < 0.0f ? -target_x : target_x;
+    best_affinity = text_editor_affinity_for_row_offset(row, best_offset);
+    for (offset = row->start_offset; offset <= row->end_offset; offset++) {
+        float width = line_text
+            ? text_editor_visual_row_prefix_width(te, row, line_text, offset)
+            : 0.0f;
+        float distance = width >= target_x ? (width - target_x) : (target_x - width);
+
+        if (offset == row->start_offset || distance <= best_distance) {
+            best_distance = distance;
+            best_offset = offset;
+            best_affinity = text_editor_affinity_for_row_offset(row, offset);
+        }
+    }
+
+    if (out_affinity) {
+        *out_affinity = best_affinity;
+    }
+    return best_offset;
 }
 
 static uint32_t text_editor_current_line_number(const text_editor_node* te) {
@@ -1102,6 +1201,42 @@ static int32_t text_editor_toggle_fold_line(text_editor_node* te, uint32_t line_
     return text_editor_fold_line(te, line_number);
 }
 
+static void text_editor_normalize_decorations(text_editor_node* te) {
+    uint32_t max_offset;
+    uint32_t read_index;
+    uint32_t write_index = 0u;
+
+    if (!te || te->decoration_count == 0u || !te->decorations) {
+        return;
+    }
+
+    max_offset = croft_editor_text_model_codepoint_length(&te->text_model);
+    for (read_index = 0u; read_index < te->decoration_count; read_index++) {
+        croft_text_editor_decoration decoration = te->decorations[read_index];
+
+        if (decoration.end_offset < decoration.start_offset) {
+            uint32_t tmp = decoration.start_offset;
+            decoration.start_offset = decoration.end_offset;
+            decoration.end_offset = tmp;
+        }
+        if (decoration.start_offset > max_offset) {
+            decoration.start_offset = max_offset;
+        }
+        if (decoration.end_offset > max_offset) {
+            decoration.end_offset = max_offset;
+        }
+        if (decoration.end_offset <= decoration.start_offset) {
+            continue;
+        }
+        if (decoration.style != CROFT_TEXT_EDITOR_DECORATION_STYLE_UNDERLINE) {
+            decoration.style = CROFT_TEXT_EDITOR_DECORATION_STYLE_BACKGROUND;
+        }
+        te->decorations[write_index++] = decoration;
+    }
+
+    te->decoration_count = write_index;
+}
+
 static void text_editor_sync_selection(text_editor_node *te) {
     uint32_t max_offset = croft_editor_text_model_codepoint_length(&te->text_model);
     uint32_t fold_index = 0u;
@@ -1114,6 +1249,8 @@ static void text_editor_sync_selection(text_editor_node *te) {
     }
 
     te->selection = croft_editor_selection_from_offsets(&te->text_model, te->sel_start, te->sel_end);
+    te->caret_affinity = text_editor_normalize_caret_affinity(te->caret_affinity);
+    text_editor_normalize_decorations(te);
     while (text_editor_find_fold_containing_index(te, te->selection.position_line_number, &fold_index)) {
         text_editor_remove_fold_at_index(te, fold_index);
     }
@@ -1167,12 +1304,14 @@ static void text_editor_sync_cache(text_editor_node *te) {
         te->utf8_len = 0;
         te->sel_start = 0;
         te->sel_end = 0;
+        te->caret_affinity = CROFT_TEXT_EDITOR_CARET_AFFINITY_LEADING;
         te->preferred_column = 0;
         te->preferred_visual_x = 0.0f;
         te->selection = croft_editor_selection_create(
             croft_editor_position_create(1, 1),
             croft_editor_position_create(1, 1)
         );
+        text_editor_normalize_decorations(te);
         text_editor_invalidate_visual_layout(te);
         return;
     }
@@ -1218,13 +1357,40 @@ static void text_editor_sync_cache(text_editor_node *te) {
     }
 }
 
+static void text_editor_set_selection_with_affinity(text_editor_node* te,
+                                                    uint32_t anchor_offset,
+                                                    uint32_t active_offset,
+                                                    croft_text_editor_caret_affinity affinity,
+                                                    int reset_preferred_column) {
+    te->sel_start = anchor_offset;
+    te->sel_end = active_offset;
+    te->caret_affinity = text_editor_normalize_caret_affinity(affinity);
+    if (reset_preferred_column) {
+        te->preferred_column = 0;
+        te->preferred_visual_x = 0.0f;
+    }
+    text_editor_sync_selection(te);
+}
+
 static void text_editor_set_selection(text_editor_node* te,
                                       uint32_t anchor_offset,
                                       uint32_t active_offset,
                                       int reset_preferred_column) {
-    te->sel_start = anchor_offset;
-    te->sel_end = active_offset;
-    if (reset_preferred_column) {
+    text_editor_set_selection_with_affinity(te,
+                                            anchor_offset,
+                                            active_offset,
+                                            CROFT_TEXT_EDITOR_CARET_AFFINITY_LEADING,
+                                            reset_preferred_column);
+}
+
+static void text_editor_collapse_selection_with_affinity(text_editor_node* te,
+                                                         uint32_t offset,
+                                                         croft_text_editor_caret_affinity affinity,
+                                                         int preserve_preferred_column) {
+    te->sel_start = offset;
+    te->sel_end = offset;
+    te->caret_affinity = text_editor_normalize_caret_affinity(affinity);
+    if (!preserve_preferred_column) {
         te->preferred_column = 0;
         te->preferred_visual_x = 0.0f;
     }
@@ -1234,13 +1400,10 @@ static void text_editor_set_selection(text_editor_node* te,
 static void text_editor_collapse_selection(text_editor_node* te,
                                            uint32_t offset,
                                            int preserve_preferred_column) {
-    te->sel_start = offset;
-    te->sel_end = offset;
-    if (!preserve_preferred_column) {
-        te->preferred_column = 0;
-        te->preferred_visual_x = 0.0f;
-    }
-    text_editor_sync_selection(te);
+    text_editor_collapse_selection_with_affinity(te,
+                                                 offset,
+                                                 CROFT_TEXT_EDITOR_CARET_AFFINITY_LEADING,
+                                                 preserve_preferred_column);
 }
 
 static void text_editor_selection_bounds(const text_editor_node* te,
@@ -1742,7 +1905,9 @@ static void text_editor_ensure_cursor_visible(text_editor_node* te)
         return;
     }
 
-    visible_line_number = text_editor_visual_row_number_for_offset(te, te->sel_end, 1);
+    visible_line_number = text_editor_visual_row_number_for_affinity(te,
+                                                                     te->sel_end,
+                                                                     te->caret_affinity);
     if (visible_line_number == 0u) {
         visible_line_number = 1u;
     }
@@ -1797,7 +1962,11 @@ static int32_t text_editor_apply_search_match(text_editor_node* te,
         return -1;
     }
 
-    text_editor_set_selection(te, match->start_offset, match->end_offset, 1);
+    text_editor_set_selection_with_affinity(te,
+                                            match->start_offset,
+                                            match->end_offset,
+                                            CROFT_TEXT_EDITOR_CARET_AFFINITY_TRAILING,
+                                            1);
     text_editor_ensure_cursor_visible(te);
     return 0;
 }
@@ -2039,7 +2208,11 @@ static int32_t text_editor_replace_selection_with_search_query(text_editor_node*
 
     text_editor_sync_cache(te);
     *out_replacement_end = start_offset + replacement_codepoints;
-    text_editor_set_selection(te, start_offset, *out_replacement_end, 1);
+    text_editor_set_selection_with_affinity(te,
+                                            start_offset,
+                                            *out_replacement_end,
+                                            CROFT_TEXT_EDITOR_CARET_AFFINITY_TRAILING,
+                                            1);
     text_editor_ensure_cursor_visible(te);
     return 0;
 }
@@ -2082,7 +2255,11 @@ static int32_t text_editor_replace_next_internal(text_editor_node* te)
     }
 
     if (text_editor_find_next_from(te, replacement_end, 1) != 0) {
-        text_editor_set_selection(te, match.start_offset, replacement_end, 1);
+        text_editor_set_selection_with_affinity(te,
+                                                match.start_offset,
+                                                replacement_end,
+                                                CROFT_TEXT_EDITOR_CARET_AFFINITY_TRAILING,
+                                                1);
         text_editor_ensure_cursor_visible(te);
     }
     return 0;
@@ -2145,10 +2322,11 @@ static int32_t text_editor_replace_all_internal(text_editor_node* te)
                                         CROFT_EDITOR_EDIT_REPLACE_ALL);
     if (rc == 0) {
         text_editor_sync_cache(te);
-        text_editor_set_selection(te,
-                                  first_match.start_offset,
-                                  first_match.start_offset + replacement_codepoints,
-                                  1);
+        text_editor_set_selection_with_affinity(te,
+                                                first_match.start_offset,
+                                                first_match.start_offset + replacement_codepoints,
+                                                CROFT_TEXT_EDITOR_CARET_AFFINITY_TRAILING,
+                                                1);
         text_editor_ensure_cursor_visible(te);
     }
 
@@ -2249,6 +2427,91 @@ static void text_editor_draw_codepoint_highlight(const text_editor_node* te,
     }
 
     text_editor_draw_range_highlight(te, layout, offset, offset + 1u, color_rgba);
+}
+
+static void text_editor_draw_range_underline(const text_editor_node* te,
+                                             const text_editor_layout* layout,
+                                             uint32_t start_offset,
+                                             uint32_t end_offset,
+                                             uint32_t color_rgba) {
+    uint32_t visible_line_number;
+
+    if (!te || !layout || start_offset >= end_offset) {
+        return;
+    }
+
+    for (visible_line_number = 1u; visible_line_number <= te->visual_row_count; visible_line_number++) {
+        const text_editor_visual_row* row =
+            text_editor_visual_row_at_visible_line(te, visible_line_number);
+
+        if (row
+                && start_offset < row->end_offset
+                && end_offset > row->start_offset
+                && row->model_line_number <= croft_editor_text_model_line_count(&te->text_model)) {
+            uint32_t underline_start = start_offset > row->start_offset ? start_offset : row->start_offset;
+            uint32_t underline_end = end_offset < row->end_offset ? end_offset : row->end_offset;
+            uint32_t line_len_bytes = 0u;
+            const char* line_text =
+                croft_editor_text_model_line_utf8(&te->text_model, row->model_line_number, &line_len_bytes);
+            float line_top = text_editor_row_top(te, visible_line_number);
+            float baseline_y = text_editor_row_baseline(te, visible_line_number);
+            float x1 = 0.0f;
+            float x2 = 0.0f;
+            float underline_y;
+
+            if (line_top + te->line_height + te->scroll_y < 0.0f
+                    || line_top + te->scroll_y > layout->content_height) {
+                continue;
+            }
+            text_editor_visual_row_range_bounds(te,
+                                                layout,
+                                                row,
+                                                line_text,
+                                                underline_start,
+                                                underline_end,
+                                                &x1,
+                                                &x2);
+            underline_y = baseline_y + te->font_probe.descender + 1.0f;
+            if (underline_y > line_top + te->line_height - 2.0f) {
+                underline_y = line_top + te->line_height - 2.0f;
+            }
+            if (x2 <= x1) {
+                x2 = x1 + 1.0f;
+            }
+            host_render_draw_rect(x1, underline_y, x2 - x1, 1.5f, color_rgba);
+        }
+    }
+}
+
+static void text_editor_draw_decorations(const text_editor_node* te,
+                                         const text_editor_layout* layout,
+                                         croft_text_editor_decoration_style style) {
+    uint32_t index;
+
+    if (!te || !layout || te->decoration_count == 0u || !te->decorations) {
+        return;
+    }
+
+    for (index = 0u; index < te->decoration_count; index++) {
+        const croft_text_editor_decoration* decoration = &te->decorations[index];
+
+        if ((croft_text_editor_decoration_style)decoration->style != style) {
+            continue;
+        }
+        if (style == CROFT_TEXT_EDITOR_DECORATION_STYLE_UNDERLINE) {
+            text_editor_draw_range_underline(te,
+                                             layout,
+                                             decoration->start_offset,
+                                             decoration->end_offset,
+                                             decoration->color_rgba);
+        } else {
+            text_editor_draw_range_highlight(te,
+                                             layout,
+                                             decoration->start_offset,
+                                             decoration->end_offset,
+                                             decoration->color_rgba);
+        }
+    }
 }
 
 static void text_editor_draw_whitespace_marker(const text_editor_node* te,
@@ -2629,7 +2892,11 @@ static void text_editor_draw_composition_overlay(const text_editor_node* te,
     }
 
     text_editor_selection_bounds(te, &anchor_offset, NULL);
-    row_number = text_editor_visual_row_number_for_offset(te, anchor_offset, 1);
+    row_number = text_editor_visual_row_number_for_affinity(te,
+                                                            anchor_offset,
+                                                            te->sel_start == te->sel_end
+                                                                ? te->caret_affinity
+                                                                : CROFT_TEXT_EDITOR_CARET_AFFINITY_LEADING);
     row = text_editor_visual_row_at_visible_line(te, row_number);
     if (!row) {
         return;
@@ -2728,7 +2995,9 @@ static void text_editor_draw(scene_node *n, render_ctx *rc) {
     text_editor_selection_bounds(te, &selection_min, &selection_max);
     line_count = croft_editor_text_model_line_count(&te->text_model);
     if (selection_min == selection_max) {
-        cursor_row_number = text_editor_visual_row_number_for_offset(te, cursor_offset, 1);
+        cursor_row_number = text_editor_visual_row_number_for_affinity(te,
+                                                                       cursor_offset,
+                                                                       te->caret_affinity);
     }
 
     {
@@ -2763,6 +3032,7 @@ static void text_editor_draw(scene_node *n, render_ctx *rc) {
         }
     }
 
+    text_editor_draw_decorations(te, &layout, CROFT_TEXT_EDITOR_DECORATION_STYLE_BACKGROUND);
     text_editor_draw_search_matches(te, &layout);
     text_editor_draw_bracket_pair(te, &layout);
 
@@ -2859,6 +3129,7 @@ static void text_editor_draw(scene_node *n, render_ctx *rc) {
             }
         }
     }
+    text_editor_draw_decorations(te, &layout, CROFT_TEXT_EDITOR_DECORATION_STYLE_UNDERLINE);
     text_editor_draw_composition_overlay(te, &layout);
     host_render_restore();
 
@@ -2956,7 +3227,10 @@ static void text_editor_update_accessibility(scene_node *n) {
     // Phase 4 will map this to ROLE_TEXT_AREA
 }
 
-static uint32_t text_editor_hit_index(text_editor_node *te, float lx, float ly) {
+static uint32_t text_editor_hit_index_at_point(text_editor_node *te,
+                                               float lx,
+                                               float ly,
+                                               croft_text_editor_caret_affinity* out_affinity) {
     croft_text_editor_profile_snapshot* stats = text_editor_profile_stats_mut(te);
     uint64_t start_usec = text_editor_profile_begin(te);
     text_editor_layout layout;
@@ -2964,12 +3238,10 @@ static uint32_t text_editor_hit_index(text_editor_node *te, float lx, float ly) 
     uint32_t visible_line_number;
     uint32_t line_len_bytes = 0u;
     const char* line_text = NULL;
-    uint32_t best_offset;
-    uint32_t offset;
-    float best_distance;
     uint64_t offsets_scanned = 0u;
     float doc_x;
     float doc_y;
+    uint32_t hit_offset;
 
     if (text_editor_prepare_layout(te, te->base.sx, te->base.sy, &layout) != CROFT_EDITOR_OK) {
         return 0u;
@@ -2995,20 +3267,8 @@ static uint32_t text_editor_hit_index(text_editor_node *te, float lx, float ly) 
                                                       &line_len_bytes);
     }
 
-    best_offset = row->start_offset;
-    best_distance = doc_x < 0.0f ? -doc_x : doc_x;
-    for (offset = row->start_offset; offset <= row->end_offset; offset++) {
-        float width = line_text
-            ? text_editor_visual_row_prefix_width(te, row, line_text, offset)
-            : 0.0f;
-        float distance = width >= doc_x ? (width - doc_x) : (doc_x - width);
-
-        offsets_scanned++;
-        if (offset == row->start_offset || distance <= best_distance) {
-            best_distance = distance;
-            best_offset = offset;
-        }
-    }
+    offsets_scanned = (uint64_t)(row->end_offset - row->start_offset + 1u);
+    hit_offset = text_editor_pick_offset_in_row_for_x(te, row, line_text, doc_x, out_affinity);
 
     if (stats) {
         stats->hit_index_offsets_scanned += offsets_scanned;
@@ -3017,7 +3277,11 @@ static uint32_t text_editor_hit_index(text_editor_node *te, float lx, float ly) 
                                  &stats->hit_index_total_usec,
                                  start_usec);
     }
-    return best_offset;
+    return hit_offset;
+}
+
+static uint32_t text_editor_hit_index(text_editor_node *te, float lx, float ly) {
+    return text_editor_hit_index_at_point(te, lx, ly, NULL);
 }
 
 static void text_editor_move_wrapped_vertical(text_editor_node* te,
@@ -3032,14 +3296,15 @@ static void text_editor_move_wrapped_vertical(text_editor_node* te,
     const char* target_line_text = NULL;
     uint32_t line_len_bytes = 0u;
     uint32_t best_offset;
-    uint32_t offset;
-    float best_distance;
+    croft_text_editor_caret_affinity target_affinity = CROFT_TEXT_EDITOR_CARET_AFFINITY_LEADING;
 
     if (!te || text_editor_prepare_layout(te, te->base.sx, te->base.sy, &layout) != CROFT_EDITOR_OK) {
         return;
     }
 
-    current_row_number = text_editor_visual_row_number_for_offset(te, te->sel_end, 1);
+    current_row_number = text_editor_visual_row_number_for_affinity(te,
+                                                                    te->sel_end,
+                                                                    te->caret_affinity);
     if (current_row_number == 0u) {
         current_row_number = 1u;
     }
@@ -3075,24 +3340,11 @@ static void text_editor_move_wrapped_vertical(text_editor_node* te,
                                                              &line_len_bytes);
     }
 
-    best_offset = target_row->start_offset;
-    best_distance = te->preferred_visual_x;
-    if (best_distance < 0.0f) {
-        best_distance = -best_distance;
-    }
-    for (offset = target_row->start_offset; offset <= target_row->end_offset; offset++) {
-        float width = target_line_text
-            ? text_editor_visual_row_prefix_width(te, target_row, target_line_text, offset)
-            : 0.0f;
-        float distance = width >= te->preferred_visual_x
-            ? (width - te->preferred_visual_x)
-            : (te->preferred_visual_x - width);
-
-        if (offset == target_row->start_offset || distance <= best_distance) {
-            best_distance = distance;
-            best_offset = offset;
-        }
-    }
+    best_offset = text_editor_pick_offset_in_row_for_x(te,
+                                                       target_row,
+                                                       target_line_text,
+                                                       te->preferred_visual_x,
+                                                       &target_affinity);
 
     if (selecting) {
         te->sel_end = best_offset;
@@ -3100,6 +3352,7 @@ static void text_editor_move_wrapped_vertical(text_editor_node* te,
         te->sel_start = best_offset;
         te->sel_end = best_offset;
     }
+    te->caret_affinity = target_affinity;
     text_editor_sync_selection(te);
 }
 
@@ -3142,13 +3395,20 @@ static void text_editor_mouse_event(scene_node *n, int action, float local_x, fl
     }
 
     if (action == 1) { // Down
-        uint32_t hit_index = text_editor_hit_index(te, local_x, local_y);
+        uint32_t hit_index;
+        croft_text_editor_caret_affinity hit_affinity = CROFT_TEXT_EDITOR_CARET_AFFINITY_LEADING;
+
+        hit_index = text_editor_hit_index_at_point(te, local_x, local_y, &hit_affinity);
         text_editor_break_coalescing(te);
         te->is_selecting = 1;
-        text_editor_set_selection(te, hit_index, hit_index, 1);
+        text_editor_collapse_selection_with_affinity(te, hit_index, hit_affinity, 0);
     } else if (action == 3 && te->is_selecting) { // Drag
+        uint32_t hit_index;
+        croft_text_editor_caret_affinity hit_affinity = CROFT_TEXT_EDITOR_CARET_AFFINITY_LEADING;
+
+        hit_index = text_editor_hit_index_at_point(te, local_x, local_y, &hit_affinity);
         text_editor_break_coalescing(te);
-        text_editor_set_selection(te, te->sel_start, text_editor_hit_index(te, local_x, local_y), 1);
+        text_editor_set_selection_with_affinity(te, te->sel_start, hit_index, hit_affinity, 1);
     } else if (action == 0 || action == 2) { // Up
         te->is_selecting = 0;
     }
@@ -3459,6 +3719,7 @@ static void text_editor_key_event(scene_node *n, int key, int action) {
         if (te->preferred_column == 0u) {
             te->preferred_visual_x = 0.0f;
         }
+        te->caret_affinity = CROFT_TEXT_EDITOR_CARET_AFFINITY_TRAILING;
         text_editor_sync_selection(te);
     } else if (key == CROFT_KEY_RIGHT) {
         text_editor_break_coalescing(te);
@@ -3484,6 +3745,7 @@ static void text_editor_key_event(scene_node *n, int key, int action) {
         if (te->preferred_column == 0u) {
             te->preferred_visual_x = 0.0f;
         }
+        te->caret_affinity = CROFT_TEXT_EDITOR_CARET_AFFINITY_LEADING;
         text_editor_sync_selection(te);
     } else if (key == CROFT_KEY_UP || key == CROFT_KEY_DOWN) {
         text_editor_break_coalescing(te);
@@ -3503,6 +3765,7 @@ static void text_editor_key_event(scene_node *n, int key, int action) {
                                                &te->preferred_column,
                                                selecting);
             }
+            te->caret_affinity = CROFT_TEXT_EDITOR_CARET_AFFINITY_LEADING;
             text_editor_sync_selection(te);
         }
     } else if (key == CROFT_KEY_HOME) {
@@ -3515,6 +3778,7 @@ static void text_editor_key_event(scene_node *n, int key, int action) {
         if (te->preferred_column == 0u) {
             te->preferred_visual_x = 0.0f;
         }
+        te->caret_affinity = CROFT_TEXT_EDITOR_CARET_AFFINITY_LEADING;
         text_editor_sync_selection(te);
     } else if (key == CROFT_KEY_END) {
         text_editor_break_coalescing(te);
@@ -3526,6 +3790,7 @@ static void text_editor_key_event(scene_node *n, int key, int action) {
         if (te->preferred_column == 0u) {
             te->preferred_visual_x = 0.0f;
         }
+        te->caret_affinity = CROFT_TEXT_EDITOR_CARET_AFFINITY_TRAILING;
         text_editor_sync_selection(te);
     } else if (key == CROFT_KEY_ENTER
             || key == CROFT_KEY_KP_ENTER_OLD
@@ -3558,6 +3823,7 @@ void text_editor_node_init(text_editor_node *n, struct SapEnv *env, float x, flo
     n->line_height = 21.0f;
     n->sel_start = 0;
     n->sel_end = 0;
+    n->caret_affinity = CROFT_TEXT_EDITOR_CARET_AFFINITY_LEADING;
     n->preferred_column = 0;
     n->preferred_visual_x = 0.0f;
     n->modifiers = 0u;
@@ -3587,6 +3853,9 @@ void text_editor_node_init(text_editor_node *n, struct SapEnv *env, float x, flo
     n->composition_capacity = 0u;
     n->composition_selection_start = 0u;
     n->composition_selection_end = 0u;
+    n->decorations = NULL;
+    n->decoration_count = 0u;
+    n->decoration_capacity = 0u;
     n->profiling_enabled = 0u;
     memset(&n->profile_stats, 0, sizeof(n->profile_stats));
     croft_editor_text_model_init(&n->text_model);
@@ -3679,6 +3948,62 @@ void text_editor_node_get_metrics(const text_editor_node *n,
     out_snapshot->text_inset_y = (float)TEXT_EDITOR_TEXT_INSET_Y;
 }
 
+void text_editor_node_set_caret_affinity(text_editor_node *n,
+                                         croft_text_editor_caret_affinity affinity) {
+    if (!n) {
+        return;
+    }
+    n->caret_affinity = text_editor_normalize_caret_affinity(affinity);
+}
+
+croft_text_editor_caret_affinity text_editor_node_get_caret_affinity(const text_editor_node *n) {
+    if (!n) {
+        return CROFT_TEXT_EDITOR_CARET_AFFINITY_LEADING;
+    }
+    return text_editor_normalize_caret_affinity(n->caret_affinity);
+}
+
+int32_t text_editor_node_set_decorations(text_editor_node *n,
+                                         const croft_text_editor_decoration *decorations,
+                                         uint32_t decoration_count) {
+    if (!n || (!decorations && decoration_count > 0u)) {
+        return CROFT_EDITOR_ERR_INVALID;
+    }
+    if (decoration_count > 0u) {
+        int32_t rc = text_editor_reserve_decorations(n, decoration_count);
+        if (rc != CROFT_EDITOR_OK) {
+            return rc;
+        }
+        memcpy(n->decorations,
+               decorations,
+               sizeof(croft_text_editor_decoration) * (size_t)decoration_count);
+    }
+    n->decoration_count = decoration_count;
+    text_editor_normalize_decorations(n);
+    return CROFT_EDITOR_OK;
+}
+
+void text_editor_node_clear_decorations(text_editor_node *n) {
+    if (!n) {
+        return;
+    }
+    n->decoration_count = 0u;
+}
+
+uint32_t text_editor_node_decoration_count(const text_editor_node *n) {
+    return n ? n->decoration_count : 0u;
+}
+
+int32_t text_editor_node_get_decoration(const text_editor_node *n,
+                                        uint32_t index,
+                                        croft_text_editor_decoration *out_decoration) {
+    if (!n || !out_decoration || index >= n->decoration_count || !n->decorations) {
+        return CROFT_EDITOR_ERR_INVALID;
+    }
+    *out_decoration = n->decorations[index];
+    return CROFT_EDITOR_OK;
+}
+
 void text_editor_node_set_text(text_editor_node *n, struct Text *text_tree) {
     n->text_tree = text_tree;
     text_editor_sync_cache(n);
@@ -3713,10 +4038,11 @@ void text_editor_node_select_all(text_editor_node *n) {
     if (!n) {
         return;
     }
-    text_editor_set_selection(n,
-                              0u,
-                              croft_editor_text_model_codepoint_length(&n->text_model),
-                              1);
+    text_editor_set_selection_with_affinity(n,
+                                            0u,
+                                            croft_editor_text_model_codepoint_length(&n->text_model),
+                                            CROFT_TEXT_EDITOR_CARET_AFFINITY_TRAILING,
+                                            1);
 }
 
 int text_editor_node_is_find_active(const text_editor_node *n) {
@@ -4064,12 +4390,14 @@ uint32_t text_editor_node_visible_line_count_for_bounds(text_editor_node *n,
     return n->visual_row_count > 0u ? n->visual_row_count : 1u;
 }
 
-int32_t text_editor_node_offset_to_local_position(text_editor_node *n,
-                                                  float width,
-                                                  float height,
-                                                  uint32_t offset,
-                                                  float *out_x,
-                                                  float *out_y) {
+int32_t text_editor_node_offset_to_local_position_with_affinity(
+    text_editor_node *n,
+    float width,
+    float height,
+    uint32_t offset,
+    croft_text_editor_caret_affinity affinity,
+    float *out_x,
+    float *out_y) {
     text_editor_layout layout;
     uint32_t row_number;
     const text_editor_visual_row* row;
@@ -4080,7 +4408,7 @@ int32_t text_editor_node_offset_to_local_position(text_editor_node *n,
         return -1;
     }
 
-    row_number = text_editor_visual_row_number_for_offset(n, offset, 1);
+    row_number = text_editor_visual_row_number_for_affinity(n, offset, affinity);
     row = text_editor_visual_row_at_visible_line(n, row_number);
     if (!row) {
         return -1;
@@ -4097,20 +4425,34 @@ int32_t text_editor_node_offset_to_local_position(text_editor_node *n,
     return 0;
 }
 
-int32_t text_editor_node_hit_test_offset(text_editor_node *n,
-                                         float width,
-                                         float height,
-                                         float local_x,
-                                         float local_y,
-                                         uint32_t *out_offset) {
+int32_t text_editor_node_offset_to_local_position(text_editor_node *n,
+                                                  float width,
+                                                  float height,
+                                                  uint32_t offset,
+                                                  float *out_x,
+                                                  float *out_y) {
+    return text_editor_node_offset_to_local_position_with_affinity(n,
+                                                                   width,
+                                                                   height,
+                                                                   offset,
+                                                                   CROFT_TEXT_EDITOR_CARET_AFFINITY_LEADING,
+                                                                   out_x,
+                                                                   out_y);
+}
+
+int32_t text_editor_node_hit_test_offset_with_affinity(
+    text_editor_node *n,
+    float width,
+    float height,
+    float local_x,
+    float local_y,
+    uint32_t *out_offset,
+    croft_text_editor_caret_affinity *out_affinity) {
     text_editor_layout layout;
     const text_editor_visual_row* row;
     const char* line_text = NULL;
     uint32_t visible_line_number;
     uint32_t line_len_bytes = 0u;
-    uint32_t best_offset;
-    uint32_t offset;
-    float best_distance;
     float doc_x;
     float doc_y;
 
@@ -4122,6 +4464,9 @@ int32_t text_editor_node_hit_test_offset(text_editor_node *n,
     doc_y = local_y - layout.text_inset_y - n->scroll_y;
     if (doc_y < 0.0f) {
         *out_offset = 0u;
+        if (out_affinity) {
+            *out_affinity = CROFT_TEXT_EDITOR_CARET_AFFINITY_LEADING;
+        }
         return 0;
     }
 
@@ -4138,22 +4483,23 @@ int32_t text_editor_node_hit_test_offset(text_editor_node *n,
                                                       &line_len_bytes);
     }
 
-    best_offset = row->start_offset;
-    best_distance = doc_x < 0.0f ? -doc_x : doc_x;
-    for (offset = row->start_offset; offset <= row->end_offset; offset++) {
-        float width_at_offset = line_text
-            ? text_editor_visual_row_prefix_width(n, row, line_text, offset)
-            : 0.0f;
-        float distance = width_at_offset >= doc_x ? (width_at_offset - doc_x) : (doc_x - width_at_offset);
-
-        if (offset == row->start_offset || distance <= best_distance) {
-            best_distance = distance;
-            best_offset = offset;
-        }
-    }
-
-    *out_offset = best_offset;
+    *out_offset = text_editor_pick_offset_in_row_for_x(n, row, line_text, doc_x, out_affinity);
     return 0;
+}
+
+int32_t text_editor_node_hit_test_offset(text_editor_node *n,
+                                         float width,
+                                         float height,
+                                         float local_x,
+                                         float local_y,
+                                         uint32_t *out_offset) {
+    return text_editor_node_hit_test_offset_with_affinity(n,
+                                                          width,
+                                                          height,
+                                                          local_x,
+                                                          local_y,
+                                                          out_offset,
+                                                          NULL);
 }
 
 void text_editor_node_dispose(text_editor_node *n) {
@@ -4169,6 +4515,7 @@ void text_editor_node_dispose(text_editor_node *n) {
     n->utf8_len = 0;
     n->sel_start = 0;
     n->sel_end = 0;
+    n->caret_affinity = CROFT_TEXT_EDITOR_CARET_AFFINITY_LEADING;
     n->preferred_column = 0;
     n->preferred_visual_x = 0.0f;
     n->modifiers = 0u;
@@ -4199,6 +4546,10 @@ void text_editor_node_dispose(text_editor_node *n) {
     free(n->composition_utf8);
     n->composition_utf8 = NULL;
     n->composition_capacity = 0u;
+    free(n->decorations);
+    n->decorations = NULL;
+    n->decoration_count = 0u;
+    n->decoration_capacity = 0u;
     croft_editor_line_cache_dispose(&n->line_cache);
     n->profiling_enabled = 0u;
     memset(&n->profile_stats, 0, sizeof(n->profile_stats));

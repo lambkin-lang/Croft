@@ -146,6 +146,23 @@ typedef struct croft_text_editor_metrics_snapshot {
     float text_inset_y;
 } croft_text_editor_metrics_snapshot;
 
+typedef enum croft_text_editor_caret_affinity {
+    CROFT_TEXT_EDITOR_CARET_AFFINITY_LEADING = 0,
+    CROFT_TEXT_EDITOR_CARET_AFFINITY_TRAILING = 1
+} croft_text_editor_caret_affinity;
+
+typedef enum croft_text_editor_decoration_style {
+    CROFT_TEXT_EDITOR_DECORATION_STYLE_BACKGROUND = 0,
+    CROFT_TEXT_EDITOR_DECORATION_STYLE_UNDERLINE = 1
+} croft_text_editor_decoration_style;
+
+typedef struct croft_text_editor_decoration {
+    uint32_t start_offset;
+    uint32_t end_offset;
+    uint32_t color_rgba;
+    uint8_t style;
+} croft_text_editor_decoration;
+
 typedef struct text_editor_node {
     scene_node base;
     struct SapEnv *env;
@@ -160,6 +177,7 @@ typedef struct text_editor_node {
     float line_height;
     uint32_t sel_start;
     uint32_t sel_end;
+    croft_text_editor_caret_affinity caret_affinity;
     uint32_t preferred_column;
     float preferred_visual_x;
     uint32_t modifiers;
@@ -197,6 +215,9 @@ typedef struct text_editor_node {
     uint32_t composition_capacity;
     uint32_t composition_selection_start;
     uint32_t composition_selection_end;
+    croft_text_editor_decoration* decorations;
+    uint32_t decoration_count;
+    uint32_t decoration_capacity;
     uint32_t profiling_enabled;
     croft_text_editor_profile_snapshot profile_stats;
 } text_editor_node;
@@ -213,6 +234,17 @@ void text_editor_node_get_profile(const text_editor_node *n,
                                   croft_text_editor_profile_snapshot *out_snapshot);
 void text_editor_node_get_metrics(const text_editor_node *n,
                                   croft_text_editor_metrics_snapshot *out_snapshot);
+void text_editor_node_set_caret_affinity(text_editor_node *n,
+                                         croft_text_editor_caret_affinity affinity);
+croft_text_editor_caret_affinity text_editor_node_get_caret_affinity(const text_editor_node *n);
+int32_t text_editor_node_set_decorations(text_editor_node *n,
+                                         const croft_text_editor_decoration *decorations,
+                                         uint32_t decoration_count);
+void text_editor_node_clear_decorations(text_editor_node *n);
+uint32_t text_editor_node_decoration_count(const text_editor_node *n);
+int32_t text_editor_node_get_decoration(const text_editor_node *n,
+                                        uint32_t index,
+                                        croft_text_editor_decoration *out_decoration);
 void text_editor_node_select_all(text_editor_node *n);
 int text_editor_node_is_find_active(const text_editor_node *n);
 int text_editor_node_is_replace_active(const text_editor_node *n);
@@ -254,12 +286,28 @@ int32_t text_editor_node_redo(text_editor_node *n);
 uint32_t text_editor_node_visible_line_count_for_bounds(text_editor_node *n,
                                                         float width,
                                                         float height);
+int32_t text_editor_node_offset_to_local_position_with_affinity(
+    text_editor_node *n,
+    float width,
+    float height,
+    uint32_t offset,
+    croft_text_editor_caret_affinity affinity,
+    float *out_x,
+    float *out_y);
 int32_t text_editor_node_offset_to_local_position(text_editor_node *n,
                                                   float width,
                                                   float height,
                                                   uint32_t offset,
                                                   float *out_x,
                                                   float *out_y);
+int32_t text_editor_node_hit_test_offset_with_affinity(
+    text_editor_node *n,
+    float width,
+    float height,
+    float local_x,
+    float local_y,
+    uint32_t *out_offset,
+    croft_text_editor_caret_affinity *out_affinity);
 int32_t text_editor_node_hit_test_offset(text_editor_node *n,
                                          float width,
                                          float height,

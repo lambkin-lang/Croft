@@ -69,3 +69,85 @@ int test_editor_wrap_layout_geometry(void)
     croft_editor_document_destroy(document);
     return 0;
 }
+
+int test_editor_wrap_layout_affinity(void)
+{
+    const char* initial = "abcdefghij\nsecond line";
+    croft_editor_document* document =
+        croft_editor_document_create((const uint8_t*)initial, strlen(initial));
+    text_editor_node editor = {0};
+    float x0 = 0.0f;
+    float y0 = 0.0f;
+    float x_leading = 0.0f;
+    float y_leading = 0.0f;
+    float x_trailing = 0.0f;
+    float y_trailing = 0.0f;
+    uint32_t wrap_offset = 0u;
+    uint32_t hit_offset = 0u;
+    uint32_t offset;
+    croft_text_editor_caret_affinity hit_affinity = CROFT_TEXT_EDITOR_CARET_AFFINITY_LEADING;
+
+    ASSERT_WRAP(document != NULL);
+    text_editor_node_init(&editor, NULL, 0.0f, 0.0f, 100.0f, 220.0f, NULL);
+    text_editor_node_bind_document(&editor, document);
+    text_editor_node_set_wrap_enabled(&editor, 1);
+
+    ASSERT_WRAP(text_editor_node_offset_to_local_position(&editor,
+                                                          100.0f,
+                                                          220.0f,
+                                                          0u,
+                                                          &x0,
+                                                          &y0) == 0);
+    for (offset = 1u; offset <= croft_editor_text_model_codepoint_length(&editor.text_model); offset++) {
+        ASSERT_WRAP(text_editor_node_offset_to_local_position(&editor,
+                                                              100.0f,
+                                                              220.0f,
+                                                              offset,
+                                                              &x_leading,
+                                                              &y_leading) == 0);
+        if (y_leading > y0 + (editor.line_height * 0.5f)) {
+            wrap_offset = offset;
+            break;
+        }
+    }
+
+    ASSERT_WRAP(wrap_offset > 0u);
+    ASSERT_WRAP(text_editor_node_offset_to_local_position_with_affinity(
+                    &editor,
+                    100.0f,
+                    220.0f,
+                    wrap_offset,
+                    CROFT_TEXT_EDITOR_CARET_AFFINITY_TRAILING,
+                    &x_trailing,
+                    &y_trailing) == 0);
+    ASSERT_WRAP(y_leading > y_trailing + (editor.line_height * 0.5f));
+
+    ASSERT_WRAP(text_editor_node_hit_test_offset_with_affinity(
+                    &editor,
+                    100.0f,
+                    220.0f,
+                    x_trailing - 1.0f,
+                    y_trailing + (editor.line_height * 0.2f),
+                    &hit_offset,
+                    &hit_affinity) == 0);
+    ASSERT_WRAP(hit_offset == wrap_offset);
+    ASSERT_WRAP(hit_affinity == CROFT_TEXT_EDITOR_CARET_AFFINITY_TRAILING);
+
+    ASSERT_WRAP(text_editor_node_hit_test_offset_with_affinity(
+                    &editor,
+                    100.0f,
+                    220.0f,
+                    x_leading + 1.0f,
+                    y_leading + (editor.line_height * 0.2f),
+                    &hit_offset,
+                    &hit_affinity) == 0);
+    ASSERT_WRAP(hit_offset == wrap_offset);
+    ASSERT_WRAP(hit_affinity == CROFT_TEXT_EDITOR_CARET_AFFINITY_LEADING);
+
+    text_editor_node_set_caret_affinity(&editor, CROFT_TEXT_EDITOR_CARET_AFFINITY_TRAILING);
+    ASSERT_WRAP(text_editor_node_get_caret_affinity(&editor) == CROFT_TEXT_EDITOR_CARET_AFFINITY_TRAILING);
+
+    text_editor_node_dispose(&editor);
+    croft_editor_document_destroy(document);
+    return 0;
+}
