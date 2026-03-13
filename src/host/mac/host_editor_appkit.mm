@@ -875,6 +875,14 @@ static NSColor* croft_editor_appkit_color_for_syntax_token(croft_editor_syntax_t
     [showFindItem setTag:NSTextFinderActionShowFindInterface];
     [findMenu addItem:showFindItem];
 
+    NSMenuItem* showReplaceItem = [[NSMenuItem alloc] initWithTitle:@"Replace..."
+                                                             action:@selector(performTextFinderAction:)
+                                                      keyEquivalent:@"f"];
+    [showReplaceItem setTarget:_textView];
+    [showReplaceItem setTag:NSTextFinderActionShowReplaceInterface];
+    [showReplaceItem setKeyEquivalentModifierMask:NSEventModifierFlagCommand | NSEventModifierFlagOption];
+    [findMenu addItem:showReplaceItem];
+
     NSMenuItem* findNextItem = [[NSMenuItem alloc] initWithTitle:@"Find Next"
                                                           action:@selector(performTextFinderAction:)
                                                    keyEquivalent:@"g"];
@@ -888,6 +896,20 @@ static NSColor* croft_editor_appkit_color_for_syntax_token(croft_editor_syntax_t
     [findPreviousItem setTarget:_textView];
     [findPreviousItem setTag:NSTextFinderActionPreviousMatch];
     [findMenu addItem:findPreviousItem];
+
+    NSMenuItem* replaceNextItem = [[NSMenuItem alloc] initWithTitle:@"Replace Next"
+                                                             action:@selector(performTextFinderAction:)
+                                                      keyEquivalent:@""];
+    [replaceNextItem setTarget:_textView];
+    [replaceNextItem setTag:NSTextFinderActionReplaceAndFind];
+    [findMenu addItem:replaceNextItem];
+
+    NSMenuItem* replaceAllItem = [[NSMenuItem alloc] initWithTitle:@"Replace All"
+                                                            action:@selector(performTextFinderAction:)
+                                                     keyEquivalent:@""];
+    [replaceAllItem setTarget:_textView];
+    [replaceAllItem setTag:NSTextFinderActionReplaceAll];
+    [findMenu addItem:replaceAllItem];
 
     [findItem setSubmenu:findMenu];
     [editMenu addItem:findItem];
@@ -922,6 +944,15 @@ static NSColor* croft_editor_appkit_color_for_syntax_token(croft_editor_syntax_t
     NSMenuItem* findItem = [[NSMenuItem alloc] initWithTitle:@"Find..."
                                                       action:@selector(performTextFinderAction:)
                                                keyEquivalent:@""];
+    NSMenuItem* replaceItem = [[NSMenuItem alloc] initWithTitle:@"Replace..."
+                                                         action:@selector(performTextFinderAction:)
+                                                  keyEquivalent:@""];
+    NSMenuItem* replaceNextItem = [[NSMenuItem alloc] initWithTitle:@"Replace Next"
+                                                             action:@selector(performTextFinderAction:)
+                                                      keyEquivalent:@""];
+    NSMenuItem* replaceAllItem = [[NSMenuItem alloc] initWithTitle:@"Replace All"
+                                                            action:@selector(performTextFinderAction:)
+                                                     keyEquivalent:@""];
     NSMenuItem* indentItem = [[NSMenuItem alloc] initWithTitle:@"Indent Line"
                                                         action:@selector(indentSelection:)
                                                  keyEquivalent:@""];
@@ -944,6 +975,12 @@ static NSColor* croft_editor_appkit_color_for_syntax_token(croft_editor_syntax_t
     [selectAllItem setTarget:_textView];
     [findItem setTarget:_textView];
     [findItem setTag:NSTextFinderActionShowFindInterface];
+    [replaceItem setTarget:_textView];
+    [replaceItem setTag:NSTextFinderActionShowReplaceInterface];
+    [replaceNextItem setTarget:_textView];
+    [replaceNextItem setTag:NSTextFinderActionReplaceAndFind];
+    [replaceAllItem setTarget:_textView];
+    [replaceAllItem setTag:NSTextFinderActionReplaceAll];
     [indentItem setTarget:self];
     [outdentItem setTarget:self];
     [foldItem setTarget:self];
@@ -959,6 +996,9 @@ static NSColor* croft_editor_appkit_color_for_syntax_token(croft_editor_syntax_t
     [menu addItem:selectAllItem];
     [menu addItem:[NSMenuItem separatorItem]];
     [menu addItem:findItem];
+    [menu addItem:replaceItem];
+    [menu addItem:replaceNextItem];
+    [menu addItem:replaceAllItem];
     [menu addItem:indentItem];
     [menu addItem:outdentItem];
     [menu addItem:foldItem];

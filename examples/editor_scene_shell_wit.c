@@ -191,6 +191,11 @@ static editor_action_result dispatch_editor_menu_action(
         request_redraw();
         return EDITOR_ACTION_APPLIED;
     }
+    if (action_id == CROFT_EDITOR_MENU_REPLACE) {
+        text_editor_node_replace_activate(&g_editor);
+        request_redraw();
+        return EDITOR_ACTION_APPLIED;
+    }
     if (action_id == CROFT_EDITOR_MENU_FIND_NEXT) {
         return text_editor_node_find_next(&g_editor) == 0
             ? EDITOR_ACTION_APPLIED
@@ -198,6 +203,16 @@ static editor_action_result dispatch_editor_menu_action(
     }
     if (action_id == CROFT_EDITOR_MENU_FIND_PREVIOUS) {
         return text_editor_node_find_previous(&g_editor) == 0
+            ? EDITOR_ACTION_APPLIED
+            : EDITOR_ACTION_NOOP;
+    }
+    if (action_id == CROFT_EDITOR_MENU_REPLACE_NEXT) {
+        return text_editor_node_replace_next(&g_editor) == 0
+            ? EDITOR_ACTION_APPLIED
+            : EDITOR_ACTION_NOOP;
+    }
+    if (action_id == CROFT_EDITOR_MENU_REPLACE_ALL) {
+        return text_editor_node_replace_all(&g_editor) == 0
             ? EDITOR_ACTION_APPLIED
             : EDITOR_ACTION_NOOP;
     }
@@ -267,8 +282,11 @@ static void show_editor_context_menu(croft_wit_host_popup_menu_runtime* popup_ru
             || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_SELECT_ALL, "Select All", 1u, 0u)
             || !popup_add_item(popup_runtime, &reply, 0, NULL, 0u, 1u)
             || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_FIND, "Find...", 1u, 0u)
+            || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_REPLACE, "Replace...", 1u, 0u)
             || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_FIND_NEXT, "Find Next", 1u, 0u)
             || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_FIND_PREVIOUS, "Find Previous", 1u, 0u)
+            || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_REPLACE_NEXT, "Replace Next", 1u, 0u)
+            || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_REPLACE_ALL, "Replace All", 1u, 0u)
             || !popup_add_item(popup_runtime, &reply, 0, NULL, 0u, 1u)
             || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_INDENT, "Indent Line", 1u, 0u)
             || !popup_add_item(popup_runtime, &reply, CROFT_EDITOR_MENU_OUTDENT, "Outdent Line", 1u, 0u)
@@ -667,11 +685,18 @@ static int editor_install_menu(croft_wit_host_menu_runtime* runtime)
                               SAP_WIT_HOST_MENU_MODIFIERS_CMD | SAP_WIT_HOST_MENU_MODIFIERS_ALT)
             || !menu_add_item(runtime, &reply, CROFT_EDITOR_MENU_FIND, CROFT_EDITOR_MENU_EDIT_ROOT,
                               "Find", "f", SAP_WIT_HOST_MENU_MODIFIERS_CMD)
+            || !menu_add_item(runtime, &reply, CROFT_EDITOR_MENU_REPLACE, CROFT_EDITOR_MENU_EDIT_ROOT,
+                              "Replace", "f",
+                              SAP_WIT_HOST_MENU_MODIFIERS_CMD | SAP_WIT_HOST_MENU_MODIFIERS_ALT)
             || !menu_add_item(runtime, &reply, CROFT_EDITOR_MENU_FIND_NEXT, CROFT_EDITOR_MENU_EDIT_ROOT,
                               "Find Next", "g", SAP_WIT_HOST_MENU_MODIFIERS_CMD)
             || !menu_add_item(runtime, &reply, CROFT_EDITOR_MENU_FIND_PREVIOUS, CROFT_EDITOR_MENU_EDIT_ROOT,
                               "Find Previous", "g",
-                              SAP_WIT_HOST_MENU_MODIFIERS_CMD | SAP_WIT_HOST_MENU_MODIFIERS_SHIFT)) {
+                              SAP_WIT_HOST_MENU_MODIFIERS_CMD | SAP_WIT_HOST_MENU_MODIFIERS_SHIFT)
+            || !menu_add_item(runtime, &reply, CROFT_EDITOR_MENU_REPLACE_NEXT, CROFT_EDITOR_MENU_EDIT_ROOT,
+                              "Replace Next", NULL, 0u)
+            || !menu_add_item(runtime, &reply, CROFT_EDITOR_MENU_REPLACE_ALL, CROFT_EDITOR_MENU_EDIT_ROOT,
+                              "Replace All", NULL, 0u)) {
         return 0;
     }
 

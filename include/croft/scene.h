@@ -148,8 +148,12 @@ typedef struct text_editor_node {
     uint32_t modifiers;
     int is_selecting;
     int find_active;
+    int replace_active;
+    uint32_t search_focus_field;
     char find_query[128];
     uint32_t find_query_len;
+    char replace_query[128];
+    uint32_t replace_query_len;
     uint32_t folded_region_count;
     struct {
         uint32_t start_line_number;
@@ -172,10 +176,20 @@ void text_editor_node_get_profile(const text_editor_node *n,
                                   croft_text_editor_profile_snapshot *out_snapshot);
 void text_editor_node_select_all(text_editor_node *n);
 int text_editor_node_is_find_active(const text_editor_node *n);
+int text_editor_node_is_replace_active(const text_editor_node *n);
 void text_editor_node_find_activate(text_editor_node *n);
+void text_editor_node_replace_activate(text_editor_node *n);
 void text_editor_node_find_close(text_editor_node *n);
+int32_t text_editor_node_set_find_query_utf8(text_editor_node *n,
+                                             const char *utf8,
+                                             size_t utf8_len);
+int32_t text_editor_node_set_replace_query_utf8(text_editor_node *n,
+                                                const char *utf8,
+                                                size_t utf8_len);
 int32_t text_editor_node_find_next(text_editor_node *n);
 int32_t text_editor_node_find_previous(text_editor_node *n);
+int32_t text_editor_node_replace_next(text_editor_node *n);
+int32_t text_editor_node_replace_all(text_editor_node *n);
 int32_t text_editor_node_fold(text_editor_node *n);
 int32_t text_editor_node_unfold(text_editor_node *n);
 int32_t text_editor_node_toggle_fold(text_editor_node *n);

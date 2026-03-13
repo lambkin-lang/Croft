@@ -27,6 +27,20 @@ int32_t croft_editor_search_previous(const croft_editor_text_model* model,
                                      uint32_t before_offset,
                                      croft_editor_search_match* out_match);
 
+int32_t croft_editor_search_count_matches(const croft_editor_text_model* model,
+                                          const char* needle_utf8,
+                                          size_t needle_utf8_len,
+                                          uint32_t* out_match_count);
+
+int32_t croft_editor_search_replace_all_utf8(const croft_editor_text_model* model,
+                                             const char* needle_utf8,
+                                             size_t needle_utf8_len,
+                                             const char* replacement_utf8,
+                                             size_t replacement_utf8_len,
+                                             char** out_utf8,
+                                             size_t* out_utf8_len,
+                                             uint32_t* out_match_count);
+
 #ifdef __cplusplus
 }
 #endif

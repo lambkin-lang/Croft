@@ -1,6 +1,7 @@
 #include "croft/editor_search.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define ASSERT_SEARCH(cond)                                                \
@@ -86,6 +87,69 @@ int test_editor_search_invalid_queries(void)
     ASSERT_SEARCH(croft_editor_search_next(&model, "", 0u, 0u, &match) == CROFT_EDITOR_ERR_INVALID);
     ASSERT_SEARCH(croft_editor_search_next(&model, "z", 1u, 0u, &match) == CROFT_EDITOR_ERR_INVALID);
     ASSERT_SEARCH(croft_editor_search_previous(&model, "alpha", 5u, 0u, &match) == CROFT_EDITOR_ERR_INVALID);
+    croft_editor_text_model_dispose(&model);
+    return 0;
+}
+
+int test_editor_search_count_matches_non_overlapping(void)
+{
+    croft_editor_text_model model;
+    uint32_t match_count = 0u;
+
+    croft_editor_text_model_init(&model);
+    ASSERT_SEARCH(croft_editor_text_model_set_text(&model, "aaaa", 4u) == CROFT_EDITOR_OK);
+
+    ASSERT_SEARCH(croft_editor_search_count_matches(&model, "aa", 2u, &match_count)
+                  == CROFT_EDITOR_OK);
+    ASSERT_SEARCH(match_count == 2u);
+
+    ASSERT_SEARCH(croft_editor_search_count_matches(&model, "aaaaa", 5u, &match_count)
+                  == CROFT_EDITOR_OK);
+    ASSERT_SEARCH(match_count == 0u);
+
+    croft_editor_text_model_dispose(&model);
+    return 0;
+}
+
+int test_editor_search_replace_all_utf8(void)
+{
+    croft_editor_text_model model;
+    char* replaced = NULL;
+    size_t replaced_len = 0u;
+    uint32_t match_count = 0u;
+
+    croft_editor_text_model_init(&model);
+    ASSERT_SEARCH(croft_editor_text_model_set_text(&model, "alpha beta alpha", 16u)
+                  == CROFT_EDITOR_OK);
+
+    ASSERT_SEARCH(croft_editor_search_replace_all_utf8(&model,
+                                                       "alpha",
+                                                       5u,
+                                                       "omega",
+                                                       5u,
+                                                       &replaced,
+                                                       &replaced_len,
+                                                       &match_count) == CROFT_EDITOR_OK);
+    ASSERT_SEARCH(match_count == 2u);
+    ASSERT_SEARCH(replaced != NULL);
+    ASSERT_SEARCH(replaced_len == strlen("omega beta omega"));
+    ASSERT_SEARCH(strcmp(replaced, "omega beta omega") == 0);
+    free(replaced);
+    replaced = NULL;
+
+    ASSERT_SEARCH(croft_editor_search_replace_all_utf8(&model,
+                                                       "missing",
+                                                       7u,
+                                                       "",
+                                                       0u,
+                                                       &replaced,
+                                                       &replaced_len,
+                                                       &match_count) == CROFT_EDITOR_OK);
+    ASSERT_SEARCH(match_count == 0u);
+    ASSERT_SEARCH(replaced != NULL);
+    ASSERT_SEARCH(strcmp(replaced, "alpha beta alpha") == 0);
+    free(replaced);
+
     croft_editor_text_model_dispose(&model);
     return 0;
 }

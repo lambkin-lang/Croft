@@ -243,6 +243,8 @@ extern int test_editor_whitespace_invalid_inputs(void);
 extern int test_editor_search_next_previous(void);
 extern int test_editor_search_multibyte(void);
 extern int test_editor_search_invalid_queries(void);
+extern int test_editor_search_count_matches_non_overlapping(void);
+extern int test_editor_search_replace_all_utf8(void);
 extern int test_editor_status_line_number_digits(void);
 extern int test_editor_status_format(void);
 extern int test_editor_document_undo_redo_coalesced_insert(void);
@@ -263,6 +265,8 @@ extern int test_editor_commands_outdent_lines(void);
 extern int test_editor_scene_runtime_bounds_invalidate(void);
 extern int test_editor_scene_runtime_cursor_blink_invalidate(void);
 extern int test_editor_scene_runtime_auto_close(void);
+extern int test_editor_find_replace_next(void);
+extern int test_editor_find_replace_all_undo(void);
 extern int test_wit_resource_open_command_roundtrip(void);
 extern int test_wit_resource_handle_roundtrip(void);
 extern int test_wit_text_runtime_roundtrip(void);
@@ -384,6 +388,8 @@ int main(void)
     RUN_TEST(test_editor_search_next_previous);
     RUN_TEST(test_editor_search_multibyte);
     RUN_TEST(test_editor_search_invalid_queries);
+    RUN_TEST(test_editor_search_count_matches_non_overlapping);
+    RUN_TEST(test_editor_search_replace_all_utf8);
 
     printf("\n[editor_status]\n");
     RUN_TEST(test_editor_status_line_number_digits);
@@ -412,6 +418,8 @@ int main(void)
     RUN_TEST(test_editor_scene_runtime_bounds_invalidate);
     RUN_TEST(test_editor_scene_runtime_cursor_blink_invalidate);
     RUN_TEST(test_editor_scene_runtime_auto_close);
+    RUN_TEST(test_editor_find_replace_next);
+    RUN_TEST(test_editor_find_replace_all_undo);
 
     printf("\n[wit_common_core]\n");
     RUN_TEST(test_wit_resource_open_command_roundtrip);

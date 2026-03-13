@@ -219,12 +219,23 @@ static editor_action_result editor_apply_menu_action(int32_t action_id) {
         case CROFT_EDITOR_MENU_FIND:
             text_editor_node_find_activate(&g_editor);
             return EDITOR_ACTION_APPLIED;
+        case CROFT_EDITOR_MENU_REPLACE:
+            text_editor_node_replace_activate(&g_editor);
+            return EDITOR_ACTION_APPLIED;
         case CROFT_EDITOR_MENU_FIND_NEXT:
             return text_editor_node_find_next(&g_editor) == 0
                 ? EDITOR_ACTION_APPLIED
                 : EDITOR_ACTION_NOOP;
         case CROFT_EDITOR_MENU_FIND_PREVIOUS:
             return text_editor_node_find_previous(&g_editor) == 0
+                ? EDITOR_ACTION_APPLIED
+                : EDITOR_ACTION_NOOP;
+        case CROFT_EDITOR_MENU_REPLACE_NEXT:
+            return text_editor_node_replace_next(&g_editor) == 0
+                ? EDITOR_ACTION_APPLIED
+                : EDITOR_ACTION_NOOP;
+        case CROFT_EDITOR_MENU_REPLACE_ALL:
+            return text_editor_node_replace_all(&g_editor) == 0
                 ? EDITOR_ACTION_APPLIED
                 : EDITOR_ACTION_NOOP;
         case CROFT_EDITOR_MENU_INDENT:
@@ -272,8 +283,11 @@ static void show_editor_context_menu(float x, float y) {
         { CROFT_EDITOR_MENU_SELECT_ALL, "Select All", 1u, 0u },
         { 0, NULL, 0u, 1u },
         { CROFT_EDITOR_MENU_FIND, "Find...", 1u, 0u },
+        { CROFT_EDITOR_MENU_REPLACE, "Replace...", 1u, 0u },
         { CROFT_EDITOR_MENU_FIND_NEXT, "Find Next", 1u, 0u },
         { CROFT_EDITOR_MENU_FIND_PREVIOUS, "Find Previous", 1u, 0u },
+        { CROFT_EDITOR_MENU_REPLACE_NEXT, "Replace Next", 1u, 0u },
+        { CROFT_EDITOR_MENU_REPLACE_ALL, "Replace All", 1u, 0u },
         { 0, NULL, 0u, 1u },
         { CROFT_EDITOR_MENU_INDENT, "Indent Line", 1u, 0u },
         { CROFT_EDITOR_MENU_OUTDENT, "Outdent Line", 1u, 0u },

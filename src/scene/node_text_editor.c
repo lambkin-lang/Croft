@@ -1056,13 +1056,59 @@ static int32_t text_editor_apply_tab_edit(text_editor_node* te, int outdent)
     return rc;
 }
 
-static void text_editor_find_query_clear(text_editor_node* te)
+enum {
+    TEXT_EDITOR_SEARCH_FIELD_FIND = 0u,
+    TEXT_EDITOR_SEARCH_FIELD_REPLACE = 1u
+};
+
+static char* text_editor_search_query_buffer(text_editor_node* te, uint32_t field)
 {
     if (!te) {
+        return NULL;
+    }
+    return field == TEXT_EDITOR_SEARCH_FIELD_REPLACE ? te->replace_query : te->find_query;
+}
+
+static const char* text_editor_search_query_buffer_const(const text_editor_node* te, uint32_t field)
+{
+    if (!te) {
+        return NULL;
+    }
+    return field == TEXT_EDITOR_SEARCH_FIELD_REPLACE ? te->replace_query : te->find_query;
+}
+
+static uint32_t* text_editor_search_query_length_mut(text_editor_node* te, uint32_t field)
+{
+    if (!te) {
+        return NULL;
+    }
+    return field == TEXT_EDITOR_SEARCH_FIELD_REPLACE ? &te->replace_query_len : &te->find_query_len;
+}
+
+static uint32_t text_editor_search_query_length(const text_editor_node* te, uint32_t field)
+{
+    if (!te) {
+        return 0u;
+    }
+    return field == TEXT_EDITOR_SEARCH_FIELD_REPLACE ? te->replace_query_len : te->find_query_len;
+}
+
+static void text_editor_search_query_clear(text_editor_node* te, uint32_t field)
+{
+    char* buffer = text_editor_search_query_buffer(te, field);
+    uint32_t* length = text_editor_search_query_length_mut(te, field);
+
+    if (!buffer || !length) {
         return;
     }
-    te->find_query[0] = '\0';
-    te->find_query_len = 0u;
+
+    buffer[0] = '\0';
+    *length = 0u;
+}
+
+static void text_editor_find_query_clear(text_editor_node* te)
+{
+    text_editor_search_query_clear(te, TEXT_EDITOR_SEARCH_FIELD_FIND);
 }
 
 static int text_editor_find_query_is_single_line(const char* utf8, uint32_t utf8_len)
@@ -1085,13 +1131,44 @@ static int text_editor_find_set_query_utf8(text_editor_node* te,
                                            const char* utf8,
                                            uint32_t utf8_len)
 {
-    if (!te || !utf8 || utf8_len >= sizeof(te->find_query)) {
+    char* buffer = text_editor_search_query_buffer(te, TEXT_EDITOR_SEARCH_FIELD_FIND);
+    uint32_t* length = text_editor_search_query_length_mut(te, TEXT_EDITOR_SEARCH_FIELD_FIND);
+
+    if (!buffer || !length || (!utf8 && utf8_len > 0u) || utf8_len >= sizeof(te->find_query)) {
         return 0;
     }
 
-    memcpy(te->find_query, utf8, utf8_len);
-    te->find_query[utf8_len] = '\0';
-    te->find_query_len = utf8_len;
+    if (utf8_len > 0u && !text_editor_find_query_is_single_line(utf8, utf8_len)) {
+        return 0;
+    }
+
+    if (utf8_len > 0u) {
+        memcpy(buffer, utf8, utf8_len);
+    }
+    buffer[utf8_len] = '\0';
+    *length = utf8_len;
+    return 1;
+}
+
+static int text_editor_replace_set_query_utf8(text_editor_node* te,
+                                              const char* utf8,
+                                              uint32_t utf8_len)
+{
+    char* buffer = text_editor_search_query_buffer(te, TEXT_EDITOR_SEARCH_FIELD_REPLACE);
+    uint32_t* length = text_editor_search_query_length_mut(te, TEXT_EDITOR_SEARCH_FIELD_REPLACE);
+
+    if (!buffer || !length || (!utf8 && utf8_len > 0u) || utf8_len >= sizeof(te->replace_query)) {
+        return 0;
+    }
+    if (utf8_len > 0u && !text_editor_find_query_is_single_line(utf8, utf8_len)) {
+        return 0;
+    }
+
+    if (utf8_len > 0u) {
+        memcpy(buffer, utf8, utf8_len);
+    }
+    buffer[utf8_len] = '\0';
+    *length = utf8_len;
     return 1;
 }
 
@@ -1128,6 +1205,17 @@ static int text_editor_copy_selection_into_find_query(text_editor_node* te)
 static int text_editor_find_has_query(const text_editor_node* te)
 {
     return te && te->find_query_len > 0u;
+}
+
+static uint32_t text_editor_active_search_field(const text_editor_node* te)
+{
+    if (!te) {
+        return TEXT_EDITOR_SEARCH_FIELD_FIND;
+    }
+    if (te->replace_active && te->search_focus_field == TEXT_EDITOR_SEARCH_FIELD_REPLACE) {
+        return TEXT_EDITOR_SEARCH_FIELD_REPLACE;
+    }
+    return TEXT_EDITOR_SEARCH_FIELD_FIND;
 }
 
 static int text_editor_selection_matches_query(const text_editor_node* te)
@@ -1306,47 +1394,286 @@ static void text_editor_find_refresh_from_cursor(text_editor_node* te)
     text_editor_find_next_from(te, selection_min, 1);
 }
 
-static int text_editor_find_query_backspace(text_editor_node* te)
+static int text_editor_count_matches_before_offset(const text_editor_node* te,
+                                                   uint32_t before_offset,
+                                                   uint32_t* out_count)
 {
+    croft_editor_search_match match = {0};
+    uint32_t count = 0u;
+    uint32_t search_from = 0u;
+
+    if (!te || !out_count || !text_editor_find_has_query(te)) {
+        return -1;
+    }
+
+    while (croft_editor_search_next(&te->text_model,
+                                    te->find_query,
+                                    te->find_query_len,
+                                    search_from,
+                                    &match) == CROFT_EDITOR_OK) {
+        if (match.start_offset >= before_offset) {
+            break;
+        }
+        count++;
+        search_from = match.end_offset;
+    }
+
+    *out_count = count;
+    return 0;
+}
+
+static void text_editor_find_match_stats(const text_editor_node* te,
+                                         uint32_t* out_current_index,
+                                         uint32_t* out_total_count)
+{
+    uint32_t total_count = 0u;
+    uint32_t current_index = 0u;
+    uint32_t selection_min = 0u;
+
+    if (out_current_index) {
+        *out_current_index = 0u;
+    }
+    if (out_total_count) {
+        *out_total_count = 0u;
+    }
+    if (!te || !text_editor_find_has_query(te)) {
+        return;
+    }
+
+    if (croft_editor_search_count_matches(&te->text_model,
+                                          te->find_query,
+                                          te->find_query_len,
+                                          &total_count) != CROFT_EDITOR_OK) {
+        return;
+    }
+    if (text_editor_selection_matches_query(te)) {
+        text_editor_selection_bounds(te, &selection_min, NULL);
+        if (text_editor_count_matches_before_offset(te, selection_min, &current_index) == 0) {
+            current_index++;
+        }
+    }
+
+    if (out_current_index) {
+        *out_current_index = current_index;
+    }
+    if (out_total_count) {
+        *out_total_count = total_count;
+    }
+}
+
+static int text_editor_search_query_backspace(text_editor_node* te, uint32_t field)
+{
+    char* buffer = text_editor_search_query_buffer(te, field);
+    uint32_t* length = text_editor_search_query_length_mut(te, field);
     uint32_t len;
 
-    if (!te || te->find_query_len == 0u) {
+    if (!buffer || !length || *length == 0u) {
         return 0;
     }
 
-    len = te->find_query_len;
+    len = *length;
     while (len > 0u) {
         len--;
-        if ((((unsigned char)te->find_query[len]) & 0xC0u) != 0x80u) {
-            te->find_query[len] = '\0';
-            te->find_query_len = len;
+        if ((((unsigned char)buffer[len]) & 0xC0u) != 0x80u) {
+            buffer[len] = '\0';
+            *length = len;
             return 1;
         }
     }
 
-    text_editor_find_query_clear(te);
+    text_editor_search_query_clear(te, field);
     return 1;
 }
 
-static int text_editor_find_query_append_codepoint(text_editor_node* te, uint32_t codepoint)
+static int text_editor_find_query_backspace(text_editor_node* te)
 {
+    return text_editor_search_query_backspace(te, TEXT_EDITOR_SEARCH_FIELD_FIND);
+}
+
+static int text_editor_replace_query_backspace(text_editor_node* te)
+{
+    return text_editor_search_query_backspace(te, TEXT_EDITOR_SEARCH_FIELD_REPLACE);
+}
+
+static int text_editor_search_query_append_codepoint(text_editor_node* te,
+                                                     uint32_t field,
+                                                     uint32_t codepoint)
+{
+    char* buffer = text_editor_search_query_buffer(te, field);
+    uint32_t* length = text_editor_search_query_length_mut(te, field);
     char encoded[4];
     uint32_t encoded_len = 0u;
 
-    if (!te || codepoint < 0x20u || codepoint == 0x7Fu) {
+    if (!buffer || !length || codepoint < 0x20u || codepoint == 0x7Fu) {
         return 0;
     }
     if (text_editor_utf8_encode_codepoint(codepoint, encoded, &encoded_len) != 0) {
         return 0;
     }
-    if (te->find_query_len + encoded_len >= sizeof(te->find_query)) {
+    if (*length + encoded_len >= sizeof(te->find_query)) {
         return 0;
     }
 
-    memcpy(te->find_query + te->find_query_len, encoded, encoded_len);
-    te->find_query_len += encoded_len;
-    te->find_query[te->find_query_len] = '\0';
+    memcpy(buffer + *length, encoded, encoded_len);
+    *length += encoded_len;
+    buffer[*length] = '\0';
     return 1;
+}
+
+static int text_editor_find_query_append_codepoint(text_editor_node* te, uint32_t codepoint)
+{
+    return text_editor_search_query_append_codepoint(te, TEXT_EDITOR_SEARCH_FIELD_FIND, codepoint);
+}
+
+static int text_editor_replace_query_append_codepoint(text_editor_node* te, uint32_t codepoint)
+{
+    return text_editor_search_query_append_codepoint(te, TEXT_EDITOR_SEARCH_FIELD_REPLACE, codepoint);
+}
+
+static int32_t text_editor_replace_selection_with_search_query(text_editor_node* te,
+                                                               uint32_t start_offset,
+                                                               uint32_t end_offset,
+                                                               croft_editor_document_edit_kind edit_kind,
+                                                               uint32_t* out_replacement_end)
+{
+    const char* replacement = text_editor_search_query_buffer_const(te, TEXT_EDITOR_SEARCH_FIELD_REPLACE);
+    uint32_t replacement_len = text_editor_search_query_length(te, TEXT_EDITOR_SEARCH_FIELD_REPLACE);
+    uint32_t replacement_codepoints = 0u;
+
+    if (!te || !replacement || !out_replacement_end) {
+        return -1;
+    }
+    if (text_editor_utf8_codepoint_count((const uint8_t*)replacement,
+                                         replacement_len,
+                                         &replacement_codepoints) != 0) {
+        return -1;
+    }
+    if (text_editor_replace_range_utf8(te,
+                                       start_offset,
+                                       end_offset,
+                                       (const uint8_t*)replacement,
+                                       replacement_len,
+                                       edit_kind) != 0) {
+        return -1;
+    }
+
+    text_editor_sync_cache(te);
+    *out_replacement_end = start_offset + replacement_codepoints;
+    text_editor_set_selection(te, start_offset, *out_replacement_end, 1);
+    text_editor_ensure_cursor_visible(te);
+    return 0;
+}
+
+static int32_t text_editor_replace_next_internal(text_editor_node* te)
+{
+    croft_editor_search_match match = {0};
+    uint32_t selection_min = 0u;
+    uint32_t selection_max = 0u;
+    uint32_t replacement_end = 0u;
+
+    if (!te || !text_editor_find_has_query(te)) {
+        return -1;
+    }
+
+    text_editor_selection_bounds(te, &selection_min, &selection_max);
+    if (text_editor_selection_matches_query(te)) {
+        match.start_offset = selection_min;
+        match.end_offset = selection_max;
+    } else if (croft_editor_search_next(&te->text_model,
+                                        te->find_query,
+                                        te->find_query_len,
+                                        selection_min,
+                                        &match) != CROFT_EDITOR_OK
+            && croft_editor_search_next(&te->text_model,
+                                        te->find_query,
+                                        te->find_query_len,
+                                        0u,
+                                        &match) != CROFT_EDITOR_OK) {
+        return -1;
+    }
+
+    text_editor_break_coalescing(te);
+    if (text_editor_replace_selection_with_search_query(te,
+                                                        match.start_offset,
+                                                        match.end_offset,
+                                                        CROFT_EDITOR_EDIT_INSERT,
+                                                        &replacement_end) != 0) {
+        return -1;
+    }
+
+    if (text_editor_find_next_from(te, replacement_end, 1) != 0) {
+        text_editor_set_selection(te, match.start_offset, replacement_end, 1);
+        text_editor_ensure_cursor_visible(te);
+    }
+    return 0;
+}
+
+static int32_t text_editor_replace_all_internal(text_editor_node* te)
+{
+    croft_editor_search_match first_match = {0};
+    char* replaced_utf8 = NULL;
+    size_t replaced_len = 0u;
+    uint32_t match_count = 0u;
+    uint32_t replacement_codepoints = 0u;
+    int32_t rc;
+
+    if (!te || !text_editor_find_has_query(te)) {
+        return -1;
+    }
+    if (croft_editor_search_next(&te->text_model,
+                                 te->find_query,
+                                 te->find_query_len,
+                                 0u,
+                                 &first_match) != CROFT_EDITOR_OK) {
+        return -1;
+    }
+
+    rc = croft_editor_search_replace_all_utf8(&te->text_model,
+                                              te->find_query,
+                                              te->find_query_len,
+                                              text_editor_search_query_buffer_const(
+                                                  te,
+                                                  TEXT_EDITOR_SEARCH_FIELD_REPLACE),
+                                              text_editor_search_query_length(
+                                                  te,
+                                                  TEXT_EDITOR_SEARCH_FIELD_REPLACE),
+                                              &replaced_utf8,
+                                              &replaced_len,
+                                              &match_count);
+    if (rc != CROFT_EDITOR_OK || match_count == 0u || !replaced_utf8) {
+        free(replaced_utf8);
+        return -1;
+    }
+
+    if (text_editor_utf8_codepoint_count((const uint8_t*)text_editor_search_query_buffer_const(
+                                             te,
+                                             TEXT_EDITOR_SEARCH_FIELD_REPLACE),
+                                         text_editor_search_query_length(
+                                             te,
+                                             TEXT_EDITOR_SEARCH_FIELD_REPLACE),
+                                         &replacement_codepoints) != 0) {
+        free(replaced_utf8);
+        return -1;
+    }
+
+    text_editor_break_coalescing(te);
+    rc = text_editor_replace_range_utf8(te,
+                                        0u,
+                                        croft_editor_text_model_codepoint_length(&te->text_model),
+                                        (const uint8_t*)replaced_utf8,
+                                        replaced_len,
+                                        CROFT_EDITOR_EDIT_REPLACE_ALL);
+    if (rc == 0) {
+        text_editor_sync_cache(te);
+        text_editor_set_selection(te,
+                                  first_match.start_offset,
+                                  first_match.start_offset + replacement_codepoints,
+                                  1);
+        text_editor_ensure_cursor_visible(te);
+    }
+
+    free(replaced_utf8);
+    return rc;
 }
 
 static void text_editor_draw_search_match(const text_editor_node* te,
@@ -1688,7 +2015,7 @@ static void text_editor_draw_search_matches(text_editor_node* te,
         if (match.start_offset == match.end_offset) {
             break;
         }
-        search_from = match.start_offset + 1u;
+        search_from = match.end_offset;
         if (search_from >= croft_editor_text_model_codepoint_length(&te->text_model)) {
             break;
         }
@@ -1702,17 +2029,46 @@ static void text_editor_draw_search_matches(text_editor_node* te,
     }
 }
 
+static void text_editor_draw_search_overlay_field(float x,
+                                                  float y,
+                                                  float width,
+                                                  const char* label,
+                                                  const char* value,
+                                                  uint32_t value_len,
+                                                  int focused,
+                                                  int empty)
+{
+    uint32_t border_color = focused ? 0x3F7EE8FF : 0xD6DCE4FF;
+    uint32_t fill_color = focused ? 0xF7FAFFFF : 0xFFFFFFFF;
+    uint32_t text_color = empty ? 0x7A8694FF : 0x1E2A38FF;
+
+    host_render_draw_rect(x, y, width, 32.0f, fill_color);
+    host_render_draw_rect(x, y, width, 1.0f, border_color);
+    host_render_draw_rect(x, y + 31.0f, width, 1.0f, border_color);
+    host_render_draw_rect(x, y, 1.0f, 32.0f, border_color);
+    host_render_draw_rect(x + width - 1.0f, y, 1.0f, 32.0f, border_color);
+    host_render_draw_text(x + 8.0f, y + 11.0f, label, (uint32_t)strlen(label), 10.5f, 0x667484FF);
+    host_render_draw_text(x + 60.0f, y + 22.0f, value, value_len, 13.0f, text_color);
+}
+
 static void text_editor_draw_find_overlay(const text_editor_node* te,
                                           const text_editor_layout* layout,
                                           float node_width)
 {
-    const char* query_text = (te && te->find_query_len > 0u) ? te->find_query : "Find...";
-    uint32_t query_color = (te && te->find_query_len > 0u) ? 0x1E2A38FF : 0x7A8694FF;
-    uint32_t query_len = (uint32_t)strlen(query_text);
-    float box_width = 220.0f;
-    float box_height = 42.0f;
+    char status_text[48];
+    const char* find_text;
+    const char* replace_text;
+    uint32_t find_len;
+    uint32_t replace_len;
+    uint32_t current_index = 0u;
+    uint32_t total_count = 0u;
+    float box_width = 292.0f;
+    float box_height;
     float x = node_width - box_width - 12.0f;
     float y = 12.0f;
+    float field_x = x + 10.0f;
+    float field_width = box_width - 20.0f;
+    float status_y;
 
     (void)layout;
 
@@ -1720,13 +2076,55 @@ static void text_editor_draw_find_overlay(const text_editor_node* te,
         return;
     }
 
+    box_height = te->replace_active ? 98.0f : 58.0f;
+    find_text = (te->find_query_len > 0u) ? te->find_query : "Find";
+    replace_text = (te->replace_query_len > 0u) ? te->replace_query : "Replace";
+    find_len = (uint32_t)strlen(find_text);
+    replace_len = (uint32_t)strlen(replace_text);
+    text_editor_find_match_stats(te, &current_index, &total_count);
+    if (!text_editor_find_has_query(te)) {
+        snprintf(status_text, sizeof(status_text), "Type to search");
+    } else if (total_count == 0u) {
+        snprintf(status_text, sizeof(status_text), "No results");
+    } else if (current_index > 0u) {
+        snprintf(status_text, sizeof(status_text), "%u of %u", current_index, total_count);
+    } else {
+        snprintf(status_text, sizeof(status_text), "%u results", total_count);
+    }
+    status_y = y + box_height - 8.0f;
+
     host_render_draw_rect(x, y, box_width, box_height, 0xFFFFFFFF);
     host_render_draw_rect(x, y, box_width, 1.0f, 0xD6DCE4FF);
     host_render_draw_rect(x, y + box_height - 1.0f, box_width, 1.0f, 0xD6DCE4FF);
     host_render_draw_rect(x, y, 1.0f, box_height, 0xD6DCE4FF);
     host_render_draw_rect(x + box_width - 1.0f, y, 1.0f, box_height, 0xD6DCE4FF);
-    host_render_draw_text(x + 10.0f, y + 14.0f, "Find", 4u, 11.0f, 0x667484FF);
-    host_render_draw_text(x + 10.0f, y + 31.0f, query_text, query_len, 13.0f, query_color);
+
+    text_editor_draw_search_overlay_field(field_x,
+                                          y + 8.0f,
+                                          field_width,
+                                          "Find",
+                                          find_text,
+                                          find_len,
+                                          text_editor_active_search_field(te) == TEXT_EDITOR_SEARCH_FIELD_FIND,
+                                          te->find_query_len == 0u);
+    if (te->replace_active) {
+        text_editor_draw_search_overlay_field(field_x,
+                                              y + 46.0f,
+                                              field_width,
+                                              "Replace",
+                                              replace_text,
+                                              replace_len,
+                                              text_editor_active_search_field(te)
+                                                  == TEXT_EDITOR_SEARCH_FIELD_REPLACE,
+                                              te->replace_query_len == 0u);
+    }
+
+    host_render_draw_text(x + 12.0f,
+                          status_y,
+                          status_text,
+                          (uint32_t)strlen(status_text),
+                          11.0f,
+                          0x667484FF);
 }
 
 static void text_editor_draw(scene_node *n, render_ctx *rc) {
@@ -2145,7 +2543,9 @@ static void text_editor_char_event(scene_node *n, uint32_t codepoint) {
         if (codepoint == '\n' || codepoint == '\r') {
             return;
         }
-        if (text_editor_find_query_append_codepoint(te, codepoint)) {
+        if (text_editor_active_search_field(te) == TEXT_EDITOR_SEARCH_FIELD_REPLACE) {
+            (void)text_editor_replace_query_append_codepoint(te, codepoint);
+        } else if (text_editor_find_query_append_codepoint(te, codepoint)) {
             text_editor_find_refresh_from_cursor(te);
         }
         return;
@@ -2221,13 +2621,28 @@ static void text_editor_key_event(scene_node *n, int key, int action) {
             return;
         }
         if (command_mode && key == CROFT_KEY_F) {
-            text_editor_node_find_activate(te);
+            if ((te->modifiers & CROFT_UI_MOD_ALT) != 0u) {
+                text_editor_node_replace_activate(te);
+            } else {
+                text_editor_node_find_activate(te);
+            }
             return;
         }
-        if ((key == CROFT_KEY_ENTER
-                    || key == CROFT_KEY_KP_ENTER_OLD
-                    || key == CROFT_KEY_KP_ENTER
-                    || (command_mode && key == CROFT_KEY_G))) {
+        if (key == CROFT_KEY_TAB && te->replace_active) {
+            te->search_focus_field = te->search_focus_field == TEXT_EDITOR_SEARCH_FIELD_REPLACE
+                ? TEXT_EDITOR_SEARCH_FIELD_FIND
+                : TEXT_EDITOR_SEARCH_FIELD_REPLACE;
+            return;
+        }
+        if (command_mode && (key == CROFT_KEY_ENTER
+                || key == CROFT_KEY_KP_ENTER_OLD
+                || key == CROFT_KEY_KP_ENTER)) {
+            if (te->replace_active) {
+                (void)text_editor_node_replace_all(te);
+            }
+            return;
+        }
+        if (command_mode && key == CROFT_KEY_G) {
             if (selecting) {
                 text_editor_node_find_previous(te);
             } else {
@@ -2235,8 +2650,23 @@ static void text_editor_key_event(scene_node *n, int key, int action) {
             }
             return;
         }
+        if (key == CROFT_KEY_ENTER
+                || key == CROFT_KEY_KP_ENTER_OLD
+                || key == CROFT_KEY_KP_ENTER) {
+            if (te->replace_active
+                    && text_editor_active_search_field(te) == TEXT_EDITOR_SEARCH_FIELD_REPLACE) {
+                (void)text_editor_node_replace_next(te);
+            } else if (selecting) {
+                text_editor_node_find_previous(te);
+            } else {
+                text_editor_node_find_next(te);
+            }
+            return;
+        }
         if (key == CROFT_KEY_BACKSPACE || key == CROFT_KEY_DELETE) {
-            if (text_editor_find_query_backspace(te)) {
+            if (text_editor_active_search_field(te) == TEXT_EDITOR_SEARCH_FIELD_REPLACE) {
+                (void)text_editor_replace_query_backspace(te);
+            } else if (text_editor_find_query_backspace(te)) {
                 if (text_editor_find_has_query(te)) {
                     text_editor_find_refresh_from_cursor(te);
                 }
@@ -2246,6 +2676,12 @@ static void text_editor_key_event(scene_node *n, int key, int action) {
         return;
     }
 
+    if (command_mode
+            && (te->modifiers & CROFT_UI_MOD_ALT) != 0u
+            && key == CROFT_KEY_F) {
+        text_editor_node_replace_activate(te);
+        return;
+    }
     if (command_mode && key == CROFT_KEY_F) {
         text_editor_node_find_activate(te);
         return;
@@ -2480,8 +2916,12 @@ void text_editor_node_init(text_editor_node *n, struct SapEnv *env, float x, flo
     n->modifiers = 0u;
     n->is_selecting = 0;
     n->find_active = 0;
+    n->replace_active = 0;
+    n->search_focus_field = TEXT_EDITOR_SEARCH_FIELD_FIND;
     n->find_query[0] = '\0';
     n->find_query_len = 0u;
+    n->replace_query[0] = '\0';
+    n->replace_query_len = 0u;
     n->folded_region_count = 0u;
     n->profiling_enabled = 0u;
     memset(&n->profile_stats, 0, sizeof(n->profile_stats));
@@ -2574,14 +3014,37 @@ int text_editor_node_is_find_active(const text_editor_node *n) {
     return n ? n->find_active : 0;
 }
 
+int text_editor_node_is_replace_active(const text_editor_node *n) {
+    return n ? n->replace_active : 0;
+}
+
 void text_editor_node_find_activate(text_editor_node *n) {
     if (!n) {
         return;
     }
     n->find_active = 1;
+    n->replace_active = 0;
+    n->search_focus_field = TEXT_EDITOR_SEARCH_FIELD_FIND;
     if (!text_editor_copy_selection_into_find_query(n) && !text_editor_find_has_query(n)) {
         text_editor_find_query_clear(n);
     }
+    if (text_editor_find_has_query(n)) {
+        text_editor_find_refresh_from_cursor(n);
+    }
+}
+
+void text_editor_node_replace_activate(text_editor_node *n) {
+    if (!n) {
+        return;
+    }
+    n->find_active = 1;
+    n->replace_active = 1;
+    if (!text_editor_copy_selection_into_find_query(n) && !text_editor_find_has_query(n)) {
+        text_editor_find_query_clear(n);
+    }
+    n->search_focus_field = text_editor_find_has_query(n)
+        ? TEXT_EDITOR_SEARCH_FIELD_REPLACE
+        : TEXT_EDITOR_SEARCH_FIELD_FIND;
     if (text_editor_find_has_query(n)) {
         text_editor_find_refresh_from_cursor(n);
     }
@@ -2592,6 +3055,32 @@ void text_editor_node_find_close(text_editor_node *n) {
         return;
     }
     n->find_active = 0;
+    n->replace_active = 0;
+    n->search_focus_field = TEXT_EDITOR_SEARCH_FIELD_FIND;
+}
+
+int32_t text_editor_node_set_find_query_utf8(text_editor_node *n,
+                                             const char *utf8,
+                                             size_t utf8_len) {
+    if (!n) {
+        return -1;
+    }
+    if (!text_editor_find_set_query_utf8(n, utf8, (uint32_t)utf8_len)) {
+        return -1;
+    }
+    if (n->find_active && text_editor_find_has_query(n)) {
+        text_editor_find_refresh_from_cursor(n);
+    }
+    return 0;
+}
+
+int32_t text_editor_node_set_replace_query_utf8(text_editor_node *n,
+                                                const char *utf8,
+                                                size_t utf8_len) {
+    if (!n) {
+        return -1;
+    }
+    return text_editor_replace_set_query_utf8(n, utf8, (uint32_t)utf8_len) ? 0 : -1;
 }
 
 int32_t text_editor_node_find_next(text_editor_node *n) {
@@ -2606,6 +3095,9 @@ int32_t text_editor_node_find_next(text_editor_node *n) {
         return -1;
     }
     n->find_active = 1;
+    if (!n->replace_active) {
+        n->search_focus_field = TEXT_EDITOR_SEARCH_FIELD_FIND;
+    }
     text_editor_selection_bounds(n, &selection_min, &selection_max);
     start_offset = text_editor_selection_matches_query(n) ? selection_max : selection_min;
     return text_editor_find_next_from(n, start_offset, 1);
@@ -2621,8 +3113,37 @@ int32_t text_editor_node_find_previous(text_editor_node *n) {
         return -1;
     }
     n->find_active = 1;
+    if (!n->replace_active) {
+        n->search_focus_field = TEXT_EDITOR_SEARCH_FIELD_FIND;
+    }
     text_editor_selection_bounds(n, &selection_min, NULL);
     return text_editor_find_previous_before(n, selection_min, 1);
+}
+
+int32_t text_editor_node_replace_next(text_editor_node *n) {
+    if (!n) {
+        return -1;
+    }
+    if (!text_editor_find_has_query(n) && !text_editor_copy_selection_into_find_query(n)) {
+        return -1;
+    }
+    n->find_active = 1;
+    n->replace_active = 1;
+    n->search_focus_field = TEXT_EDITOR_SEARCH_FIELD_REPLACE;
+    return text_editor_replace_next_internal(n);
+}
+
+int32_t text_editor_node_replace_all(text_editor_node *n) {
+    if (!n) {
+        return -1;
+    }
+    if (!text_editor_find_has_query(n) && !text_editor_copy_selection_into_find_query(n)) {
+        return -1;
+    }
+    n->find_active = 1;
+    n->replace_active = 1;
+    n->search_focus_field = TEXT_EDITOR_SEARCH_FIELD_REPLACE;
+    return text_editor_replace_all_internal(n);
 }
 
 int32_t text_editor_node_fold(text_editor_node *n) {
@@ -2681,17 +3202,17 @@ int32_t text_editor_node_replace_selection_utf8(text_editor_node *n,
     uint32_t selection_max = 0;
     uint32_t inserted_count = 0u;
 
-    if (!n || !n->document) {
+    if (!n || (!n->document && (!n->text_tree || !n->env))) {
         return -1;
     }
 
     text_editor_selection_bounds(n, &selection_min, &selection_max);
-    if (croft_editor_document_replace_range_with_utf8(n->document,
-                                                      selection_min,
-                                                      selection_max,
-                                                      utf8,
-                                                      utf8_len,
-                                                      CROFT_EDITOR_EDIT_INSERT) != 0) {
+    if (text_editor_replace_range_utf8(n,
+                                       selection_min,
+                                       selection_max,
+                                       utf8,
+                                       utf8_len,
+                                       CROFT_EDITOR_EDIT_INSERT) != 0) {
         return -1;
     }
     if (text_editor_utf8_codepoint_count(utf8, utf8_len, &inserted_count) != 0) {
@@ -2777,8 +3298,12 @@ void text_editor_node_dispose(text_editor_node *n) {
     n->preferred_column = 0;
     n->modifiers = 0u;
     n->find_active = 0;
+    n->replace_active = 0;
+    n->search_focus_field = TEXT_EDITOR_SEARCH_FIELD_FIND;
     n->find_query[0] = '\0';
     n->find_query_len = 0u;
+    n->replace_query[0] = '\0';
+    n->replace_query_len = 0u;
     n->folded_region_count = 0u;
     n->profiling_enabled = 0u;
     memset(&n->profile_stats, 0, sizeof(n->profile_stats));
