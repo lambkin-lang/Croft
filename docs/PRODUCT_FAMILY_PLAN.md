@@ -365,11 +365,15 @@ Explicit non-goals for the editor line:
 Current implemented editor baseline:
 
 - line numbers, current-line highlight, and status strip
-- find, next/previous match navigation, and selection-occurrence highlight
+- incremental token/fold caching for syntax and fold queries
+- find/replace, next/previous match navigation, replace-all, and
+  selection-occurrence highlight
 - tab policy plus indent/outdent behavior
 - bracket matching
 - whitespace markers and indent guides
 - folding
+- wrapped-line layout with row-aware hit testing, viewport mapping, and caret
+  movement in the scene editor family
 - syntax highlighting for JavaScript/TypeScript, JSON, YAML, Markdown, Python,
   Lambkin, WIT/WAT, CSS, HTML, and XML
 - file open/save/save-as plus native context menus in the AppKit and scene
@@ -380,16 +384,11 @@ Current implemented editor baseline:
 The next editor capabilities should focus on the hard, high-value portions of a
 VS Code-like document editor that do not require the extension/LSP ecosystem:
 
-1. an incremental line-state/token cache so highlighting and folding do not
-   devolve into full-buffer rescans
-2. replace and replace-all with honest undo/coalescing semantics
-3. wrapped-line layout, viewport mapping, and caret/selection geometry that
-   stay correct under proportional host metrics and custom-rendered metrics
-4. line-height, baseline, and inset policy that make the direct-Metal editor
+1. line-height, baseline, and inset policy that make the direct-Metal editor
    converge more honestly toward AppKit where that is appropriate
-5. IME/composition, selection affinity, and text-input correctness for the
+2. IME/composition, selection affinity, and text-input correctness for the
    custom-rendered editor families
-6. decoration plumbing for diagnostics, search results, active ranges, and
+3. decoration plumbing for diagnostics, search results, active ranges, and
    syntax-driven styling without forcing one rendering strategy across families
 
 The spatial-workspace line should not move into larger implementation work until
@@ -463,11 +462,11 @@ host-boundary pressure points instead of broadening the system indiscriminately.
 2. Keep WIT/codegen refactors broad: schema-shape changes should sweep
    `src/runtime`, `examples`, and `tests`, then build and smoke-check the
    example matrix instead of stopping at the first green target.
-3. Tighten the direct-Metal editor around text metrics, wrapped layout,
-   IME/composition, and accessibility so the hard native-editor seams become
+3. Tighten the direct-Metal editor around text metrics, IME/composition, and
+   accessibility so the hard native-editor seams become
    explicit instead of hiding inside one renderer-centric module.
-4. Add the incremental token/line-state cache plus replace/replace-all on top
-   of the current highlighting/search work.
+4. Keep the incremental cache and wrapped-row geometry covered by focused
+   editor/scene tests so later refactors do not regress quietly.
 5. Keep AppKit as the CPU-native contrast case and tgfx as the scene-rendered
    comparison control while favoring direct Metal for the custom-rendered editor
    line.
@@ -513,17 +512,14 @@ implementation tasks:
 
 The next concrete implementation work should happen in this order:
 
-1. Add the incremental token/line-state cache that the current highlighting pass
-   needs to stay responsive as documents grow.
-2. Add replace and replace-all on top of the current search path with honest
-   undo/coalescing behavior across the editor families.
-3. Push direct-Metal editor work into wrapped-line layout, caret geometry,
-   line-height/baseline policy, IME,
+1. Push direct-Metal editor work into line-height/baseline policy, IME,
    and accessibility seams rather than more shell-level chrome.
-4. Keep AppKit and tgfx alive as contrast cases while treating the native
+2. Keep AppKit and tgfx alive as contrast cases while treating the native
    direct-Metal editor as the main custom-rendered reference path.
-5. Keep `make test-examples` and the example smoke path honest whenever WIT
+3. Keep `make test-examples` and the example smoke path honest whenever WIT
    schemas, codegen, or host mix-in signatures change.
+4. Keep the new wrapped-row geometry pinned with unit coverage before adding
+   richer editor decorations or IME state.
 6. Refine `tools/wit_codegen.c` further around remaining exact-tail helpers
    and how rename/trace manifests should feed Lambkin.
 7. Read `docs/LAMBKIN_XPI_JOURNAL.md` before expanding host/editor surface area

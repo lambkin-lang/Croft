@@ -296,6 +296,10 @@ Two current GUI product lines matter most in that ladder:
   `example_editor_text_metal_native` are document-centric editor families
 - `example_zoom_canvas` is the separate spatial/zoomable workspace probe
 
+The scene-editor family now includes incremental syntax/fold caching, shared
+find/replace flows, and wrapped-row layout with `Alt+Z` word-wrap toggling in
+the custom-rendered shells.
+
 The current scene-editor shells no longer own pinch-to-zoom or camera
 behavior. Those now belong to the workspace line rather than the editor line.
 The workspace-planning questions for that separate line live in

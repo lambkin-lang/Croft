@@ -3,6 +3,7 @@
 #include "croft/editor_commands.h"
 #include "croft/editor_document.h"
 #include "croft/editor_folding.h"
+#include "croft/editor_line_cache.h"
 #include "croft/editor_search.h"
 #include "croft/editor_status.h"
 #include "croft/editor_syntax.h"
@@ -48,6 +49,31 @@ typedef struct text_editor_layout {
     float status_height;
     float status_font_size;
 } text_editor_layout;
+
+typedef struct text_editor_visual_row {
+    uint32_t model_line_number;
+    uint32_t line_start_offset;
+    uint32_t line_end_offset;
+    uint32_t start_offset;
+    uint32_t end_offset;
+    uint32_t line_start_byte;
+    uint32_t start_byte;
+    uint32_t end_byte;
+    uint8_t is_first_in_line;
+    uint8_t is_last_in_line;
+    uint8_t is_folded_header;
+} text_editor_visual_row;
+
+static void text_editor_invalidate_visual_layout(text_editor_node* te) {
+    if (!te) {
+        return;
+    }
+    te->visual_layout_dirty = 1u;
+}
+
+static int text_editor_find_fold_header_index(const text_editor_node* te,
+                                              uint32_t line_number,
+                                              uint32_t* out_index);
 
 static croft_text_editor_profile_snapshot* text_editor_profile_stats_mut(const text_editor_node* te) {
     return te ? &((text_editor_node*)te)->profile_stats : NULL;
@@ -195,6 +221,331 @@ static void text_editor_compute_layout(const text_editor_node* te,
     }
 }
 
+static int32_t text_editor_reserve_visual_rows(text_editor_node* te, uint32_t capacity) {
+    text_editor_visual_row* resized;
+
+    if (!te) {
+        return CROFT_EDITOR_ERR_INVALID;
+    }
+    if (capacity <= te->visual_row_capacity) {
+        return CROFT_EDITOR_OK;
+    }
+
+    resized = (text_editor_visual_row*)realloc(te->visual_rows,
+                                               sizeof(text_editor_visual_row) * (size_t)capacity);
+    if (!resized) {
+        return CROFT_EDITOR_ERR_OOM;
+    }
+
+    te->visual_rows = resized;
+    te->visual_row_capacity = capacity;
+    return CROFT_EDITOR_OK;
+}
+
+static int32_t text_editor_reserve_line_row_maps(text_editor_node* te, uint32_t line_count) {
+    uint32_t* first_rows;
+    uint32_t* row_counts;
+
+    if (!te) {
+        return CROFT_EDITOR_ERR_INVALID;
+    }
+    if (line_count <= te->line_visible_row_capacity) {
+        if (line_count > 0u) {
+            memset(te->line_first_visible_rows, 0, sizeof(uint32_t) * (size_t)line_count);
+            memset(te->line_visible_row_counts, 0, sizeof(uint32_t) * (size_t)line_count);
+        }
+        return CROFT_EDITOR_OK;
+    }
+
+    first_rows = (uint32_t*)malloc(sizeof(uint32_t) * (size_t)line_count);
+    if (!first_rows) {
+        return CROFT_EDITOR_ERR_OOM;
+    }
+    row_counts = (uint32_t*)malloc(sizeof(uint32_t) * (size_t)line_count);
+    if (!row_counts) {
+        free(first_rows);
+        return CROFT_EDITOR_ERR_OOM;
+    }
+
+    free(te->line_first_visible_rows);
+    free(te->line_visible_row_counts);
+    te->line_first_visible_rows = first_rows;
+    te->line_visible_row_counts = row_counts;
+    te->line_visible_row_capacity = line_count;
+    memset(te->line_first_visible_rows, 0, sizeof(uint32_t) * (size_t)line_count);
+    memset(te->line_visible_row_counts, 0, sizeof(uint32_t) * (size_t)line_count);
+    return CROFT_EDITOR_OK;
+}
+
+static int32_t text_editor_append_visual_row(text_editor_node* te,
+                                             uint32_t model_line_number,
+                                             uint32_t line_start_offset,
+                                             uint32_t line_end_offset,
+                                             uint32_t line_start_byte,
+                                             uint32_t start_offset,
+                                             uint32_t end_offset,
+                                             uint32_t is_first_in_line,
+                                             uint32_t is_last_in_line,
+                                             uint32_t is_folded_header) {
+    text_editor_visual_row* row;
+
+    if (!te) {
+        return CROFT_EDITOR_ERR_INVALID;
+    }
+    if (te->visual_row_count == te->visual_row_capacity
+            && text_editor_reserve_visual_rows(
+                   te,
+                   te->visual_row_capacity > 0u ? te->visual_row_capacity * 2u : 16u)
+                != CROFT_EDITOR_OK) {
+        return CROFT_EDITOR_ERR_OOM;
+    }
+
+    row = &te->visual_rows[te->visual_row_count++];
+    row->model_line_number = model_line_number;
+    row->line_start_offset = line_start_offset;
+    row->line_end_offset = line_end_offset;
+    row->start_offset = start_offset;
+    row->end_offset = end_offset;
+    row->line_start_byte = line_start_byte;
+    row->start_byte = croft_editor_text_model_byte_offset_at(&te->text_model, start_offset) - line_start_byte;
+    row->end_byte = croft_editor_text_model_byte_offset_at(&te->text_model, end_offset) - line_start_byte;
+    row->is_first_in_line = (uint8_t)(is_first_in_line ? 1u : 0u);
+    row->is_last_in_line = (uint8_t)(is_last_in_line ? 1u : 0u);
+    row->is_folded_header = (uint8_t)(is_folded_header ? 1u : 0u);
+    return CROFT_EDITOR_OK;
+}
+
+static uint32_t text_editor_wrap_segment_end(const text_editor_node* te,
+                                             const char* line_text,
+                                             uint32_t line_start_byte,
+                                             uint32_t start_offset,
+                                             uint32_t line_end_offset,
+                                             float wrap_width) {
+    uint32_t low;
+    uint32_t high;
+    uint32_t best;
+    uint32_t start_byte;
+
+    if (!te || !line_text || line_end_offset <= start_offset) {
+        return line_end_offset;
+    }
+
+    start_byte = croft_editor_text_model_byte_offset_at(&te->text_model, start_offset) - line_start_byte;
+    low = start_offset + 1u;
+    high = line_end_offset;
+    best = low;
+    while (low <= high) {
+        uint32_t mid = low + ((high - low) / 2u);
+        uint32_t end_byte = croft_editor_text_model_byte_offset_at(&te->text_model, mid) - line_start_byte;
+        float width = text_editor_measure_text(te,
+                                               line_text + start_byte,
+                                               end_byte - start_byte,
+                                               te->font_size);
+
+        if (width <= wrap_width || mid == start_offset + 1u) {
+            best = mid;
+            low = mid + 1u;
+        } else {
+            if (mid == 0u) {
+                break;
+            }
+            high = mid - 1u;
+        }
+    }
+    if (best <= start_offset) {
+        best = start_offset + 1u;
+    }
+    if (best > line_end_offset) {
+        best = line_end_offset;
+    }
+    return best;
+}
+
+static int32_t text_editor_rebuild_visual_layout(text_editor_node* te,
+                                                 const text_editor_layout* layout) {
+    uint32_t line_count;
+    uint32_t line_number;
+    float wrap_width;
+
+    if (!te || !layout) {
+        return CROFT_EDITOR_ERR_INVALID;
+    }
+
+    line_count = croft_editor_text_model_line_count(&te->text_model);
+    if (text_editor_reserve_line_row_maps(te, line_count) != CROFT_EDITOR_OK) {
+        return CROFT_EDITOR_ERR_OOM;
+    }
+
+    te->visual_row_count = 0u;
+    wrap_width = layout->content_width - layout->text_inset_x - 12.0f;
+    if (wrap_width < te->font_size * 0.75f) {
+        wrap_width = te->font_size * 0.75f;
+    }
+
+    if (line_count == 0u) {
+        if (text_editor_append_visual_row(te, 1u, 0u, 0u, 0u, 0u, 0u, 1u, 1u, 0u)
+                != CROFT_EDITOR_OK) {
+            return CROFT_EDITOR_ERR_OOM;
+        }
+        te->visual_layout_width = layout->content_width;
+        te->visual_layout_dirty = 0u;
+        return CROFT_EDITOR_OK;
+    }
+
+    for (line_number = 1u; line_number <= line_count;) {
+        uint32_t line_start_offset;
+        uint32_t line_end_offset;
+        uint32_t line_start_byte;
+        uint32_t first_row = te->visual_row_count + 1u;
+        uint32_t fold_index = 0u;
+        uint32_t is_folded = (uint32_t)text_editor_find_fold_header_index(te, line_number, &fold_index);
+        uint32_t search_offset;
+        uint32_t end_byte;
+        uint32_t line_len_bytes = 0u;
+        const char* line_text =
+            croft_editor_text_model_line_utf8(&te->text_model, line_number, &line_len_bytes);
+
+        line_start_offset = croft_editor_text_model_line_start_offset(&te->text_model, line_number);
+        line_end_offset = croft_editor_text_model_line_end_offset(&te->text_model, line_number);
+        line_start_byte = croft_editor_text_model_byte_offset_at(&te->text_model, line_start_offset);
+        end_byte = croft_editor_text_model_byte_offset_at(&te->text_model, line_end_offset) - line_start_byte;
+
+        if (!te->wrap_enabled || line_end_offset <= line_start_offset) {
+            if (text_editor_append_visual_row(te,
+                                              line_number,
+                                              line_start_offset,
+                                              line_end_offset,
+                                              line_start_byte,
+                                              line_start_offset,
+                                              line_end_offset,
+                                              1u,
+                                              1u,
+                                              is_folded) != CROFT_EDITOR_OK) {
+                return CROFT_EDITOR_ERR_OOM;
+            }
+        } else {
+            search_offset = line_start_offset;
+            while (search_offset < line_end_offset) {
+                uint32_t start_byte =
+                    croft_editor_text_model_byte_offset_at(&te->text_model, search_offset) - line_start_byte;
+                uint32_t segment_end = line_end_offset;
+                float segment_width = text_editor_measure_text(te,
+                                                               line_text + start_byte,
+                                                               end_byte - start_byte,
+                                                               te->font_size);
+
+                if (segment_width > wrap_width) {
+                    segment_end = text_editor_wrap_segment_end(te,
+                                                               line_text,
+                                                               line_start_byte,
+                                                               search_offset,
+                                                               line_end_offset,
+                                                               wrap_width);
+                }
+                if (text_editor_append_visual_row(te,
+                                                  line_number,
+                                                  line_start_offset,
+                                                  line_end_offset,
+                                                  line_start_byte,
+                                                  search_offset,
+                                                  segment_end,
+                                                  search_offset == line_start_offset,
+                                                  segment_end >= line_end_offset,
+                                                  is_folded && segment_end >= line_end_offset)
+                        != CROFT_EDITOR_OK) {
+                    return CROFT_EDITOR_ERR_OOM;
+                }
+                search_offset = segment_end;
+            }
+        }
+
+        te->line_first_visible_rows[line_number - 1u] = first_row;
+        te->line_visible_row_counts[line_number - 1u] = te->visual_row_count - (first_row - 1u);
+
+        if (is_folded) {
+            line_number = te->folded_regions[fold_index].end_line_number + 1u;
+        } else {
+            line_number++;
+        }
+    }
+
+    te->visual_layout_width = layout->content_width;
+    te->visual_layout_dirty = 0u;
+    return CROFT_EDITOR_OK;
+}
+
+static int32_t text_editor_prepare_layout(text_editor_node* te,
+                                          float node_width,
+                                          float node_height,
+                                          text_editor_layout* out_layout) {
+    if (!te || !out_layout) {
+        return CROFT_EDITOR_ERR_INVALID;
+    }
+
+    text_editor_compute_layout(te, node_width, node_height, out_layout);
+    if (te->visual_layout_dirty
+            || te->visual_rows == NULL
+            || te->visual_layout_width != out_layout->content_width) {
+        return text_editor_rebuild_visual_layout(te, out_layout);
+    }
+    return CROFT_EDITOR_OK;
+}
+
+static const text_editor_visual_row* text_editor_visual_row_at_visible_line(const text_editor_node* te,
+                                                                            uint32_t visible_line_number) {
+    if (!te || !te->visual_rows || visible_line_number == 0u || visible_line_number > te->visual_row_count) {
+        return NULL;
+    }
+    return &te->visual_rows[visible_line_number - 1u];
+}
+
+static uint32_t text_editor_visual_row_number_for_offset(const text_editor_node* te,
+                                                         uint32_t offset,
+                                                         int prefer_leading_edge) {
+    croft_editor_position position;
+    uint32_t first_row;
+    uint32_t row_count;
+    uint32_t index;
+
+    if (!te || te->visual_row_count == 0u) {
+        return 1u;
+    }
+
+    if (croft_editor_text_model_line_count(&te->text_model) == 0u) {
+        return 1u;
+    }
+
+    if (offset > croft_editor_text_model_codepoint_length(&te->text_model)) {
+        offset = croft_editor_text_model_codepoint_length(&te->text_model);
+    }
+
+    position = croft_editor_text_model_get_position_at(&te->text_model, offset);
+    if (position.line_number == 0u || position.line_number > croft_editor_text_model_line_count(&te->text_model)) {
+        return te->visual_row_count;
+    }
+
+    first_row = te->line_first_visible_rows[position.line_number - 1u];
+    row_count = te->line_visible_row_counts[position.line_number - 1u];
+    if (first_row == 0u || row_count == 0u) {
+        return 0u;
+    }
+
+    for (index = 0u; index < row_count; index++) {
+        const text_editor_visual_row* row = &te->visual_rows[(first_row - 1u) + index];
+
+        if (prefer_leading_edge) {
+            if (!row->is_last_in_line && offset == row->end_offset) {
+                continue;
+            }
+        }
+        if (offset >= row->start_offset && offset <= row->end_offset) {
+            return first_row + index;
+        }
+    }
+
+    return first_row + row_count - 1u;
+}
+
 static uint32_t text_editor_current_line_number(const text_editor_node* te) {
     if (!te) {
         return 1u;
@@ -280,32 +631,67 @@ static uint32_t text_editor_syntax_color(croft_editor_syntax_token_kind kind, ui
     }
 }
 
-static void text_editor_draw_text_segment(const text_editor_node* te,
-                                          const text_editor_layout* layout,
-                                          const char* line_text,
-                                          uint32_t line_start_byte,
-                                          uint32_t segment_start_offset,
-                                          uint32_t segment_end_offset,
-                                          float current_y,
-                                          uint32_t color_rgba) {
+static float text_editor_visual_row_prefix_width(const text_editor_node* te,
+                                                 const text_editor_visual_row* row,
+                                                 const char* line_text,
+                                                 uint32_t offset) {
+    uint32_t target_byte;
+
+    if (!te || !row || !line_text) {
+        return 0.0f;
+    }
+
+    if (offset < row->start_offset) {
+        offset = row->start_offset;
+    }
+    if (offset > row->end_offset) {
+        offset = row->end_offset;
+    }
+
+    target_byte = croft_editor_text_model_byte_offset_at(&te->text_model, offset) - row->line_start_byte;
+    if (target_byte < row->start_byte) {
+        target_byte = row->start_byte;
+    }
+
+    return text_editor_measure_text(te,
+                                    line_text + row->start_byte,
+                                    target_byte - row->start_byte,
+                                    te->font_size);
+}
+
+static void text_editor_draw_visual_row_text_segment(const text_editor_node* te,
+                                                     const text_editor_layout* layout,
+                                                     const text_editor_visual_row* row,
+                                                     const char* line_text,
+                                                     uint32_t segment_start_offset,
+                                                     uint32_t segment_end_offset,
+                                                     float current_y,
+                                                     uint32_t color_rgba) {
     uint32_t segment_start_byte;
     uint32_t segment_end_byte;
     float x;
 
-    if (!te || !layout || !line_text || segment_end_offset <= segment_start_offset) {
+    if (!te || !layout || !row || !line_text || segment_end_offset <= segment_start_offset) {
         return;
     }
 
+    if (segment_start_offset < row->start_offset) {
+        segment_start_offset = row->start_offset;
+    }
+    if (segment_end_offset > row->end_offset) {
+        segment_end_offset = row->end_offset;
+    }
+
     segment_start_byte =
-        croft_editor_text_model_byte_offset_at(&te->text_model, segment_start_offset) - line_start_byte;
+        croft_editor_text_model_byte_offset_at(&te->text_model, segment_start_offset) - row->line_start_byte;
     segment_end_byte =
-        croft_editor_text_model_byte_offset_at(&te->text_model, segment_end_offset) - line_start_byte;
+        croft_editor_text_model_byte_offset_at(&te->text_model, segment_end_offset) - row->line_start_byte;
     if (segment_end_byte <= segment_start_byte) {
         return;
     }
 
     x = layout->text_inset_x
-        + text_editor_measure_text(te, line_text, segment_start_byte, te->font_size);
+        + text_editor_visual_row_prefix_width(te, row, line_text, segment_start_offset);
     host_render_draw_text(x,
                           current_y,
                           line_text + segment_start_byte,
@@ -314,74 +700,85 @@ static void text_editor_draw_text_segment(const text_editor_node* te,
                           color_rgba);
 }
 
-static void text_editor_draw_line_text(const text_editor_node* te,
-                                       const text_editor_layout* layout,
-                                       const char* line_text,
-                                       uint32_t line_start_offset,
-                                       uint32_t line_end_offset,
-                                       uint32_t line_start_byte,
-                                       float current_y,
-                                       uint32_t default_color) {
-    uint32_t draw_offset = line_start_offset;
+static void text_editor_draw_visual_row_text(const text_editor_node* te,
+                                             const text_editor_layout* layout,
+                                             const text_editor_visual_row* row,
+                                             const char* line_text,
+                                             float current_y,
+                                             uint32_t default_color) {
+    const croft_editor_syntax_token* tokens = NULL;
+    uint32_t token_count = 0u;
+    uint32_t token_index = 0u;
+    uint32_t draw_offset;
 
-    if (!te || !layout || !line_text || line_end_offset <= line_start_offset) {
+    if (!te || !layout || !row || !line_text || row->end_offset <= row->start_offset) {
         return;
     }
 
-    if (te->syntax_language == CROFT_EDITOR_SYNTAX_LANGUAGE_PLAIN_TEXT) {
-        text_editor_draw_text_segment(te,
-                                      layout,
-                                      line_text,
-                                      line_start_byte,
-                                      line_start_offset,
-                                      line_end_offset,
-                                      current_y,
-                                      default_color);
+    draw_offset = row->start_offset;
+    if (croft_editor_line_cache_tokens_for_line(&((text_editor_node*)te)->line_cache,
+                                                &te->text_model,
+                                                row->model_line_number,
+                                                &tokens,
+                                                &token_count) != CROFT_EDITOR_OK
+            || token_count == 0u) {
+        text_editor_draw_visual_row_text_segment(te,
+                                                 layout,
+                                                 row,
+                                                 line_text,
+                                                 row->start_offset,
+                                                 row->end_offset,
+                                                 current_y,
+                                                 default_color);
         return;
     }
 
-    while (draw_offset < line_end_offset) {
-        croft_editor_syntax_token token = {0};
+    while (token_index < token_count && draw_offset < row->end_offset) {
+        const croft_editor_syntax_token* token = &tokens[token_index++];
+        uint32_t overlap_start;
+        uint32_t overlap_end;
 
-        if (croft_editor_syntax_next_token(&te->text_model,
-                                           te->syntax_language,
-                                           draw_offset,
-                                           line_end_offset,
-                                           &token) != CROFT_EDITOR_OK
-                || token.end_offset <= token.start_offset) {
+        if (token->end_offset <= row->start_offset) {
+            continue;
+        }
+        if (token->start_offset >= row->end_offset) {
             break;
         }
 
-        if (token.start_offset > draw_offset) {
-            text_editor_draw_text_segment(te,
-                                          layout,
-                                          line_text,
-                                          line_start_byte,
-                                          draw_offset,
-                                          token.start_offset,
-                                          current_y,
-                                          default_color);
+        overlap_start = token->start_offset > row->start_offset ? token->start_offset : row->start_offset;
+        overlap_end = token->end_offset < row->end_offset ? token->end_offset : row->end_offset;
+        if (draw_offset < overlap_start) {
+            text_editor_draw_visual_row_text_segment(te,
+                                                     layout,
+                                                     row,
+                                                     line_text,
+                                                     draw_offset,
+                                                     overlap_start,
+                                                     current_y,
+                                                     default_color);
         }
-        text_editor_draw_text_segment(te,
-                                      layout,
-                                      line_text,
-                                      line_start_byte,
-                                      token.start_offset,
-                                      token.end_offset,
-                                      current_y,
-                                      text_editor_syntax_color(token.kind, default_color));
-        draw_offset = token.end_offset;
+        if (overlap_end > overlap_start) {
+            text_editor_draw_visual_row_text_segment(te,
+                                                     layout,
+                                                     row,
+                                                     line_text,
+                                                     overlap_start,
+                                                     overlap_end,
+                                                     current_y,
+                                                     text_editor_syntax_color(token->kind, default_color));
+            draw_offset = overlap_end;
+        }
     }
 
-    if (draw_offset < line_end_offset) {
-        text_editor_draw_text_segment(te,
-                                      layout,
-                                      line_text,
-                                      line_start_byte,
-                                      draw_offset,
-                                      line_end_offset,
-                                      current_y,
-                                      default_color);
+    if (draw_offset < row->end_offset) {
+        text_editor_draw_visual_row_text_segment(te,
+                                                 layout,
+                                                 row,
+                                                 line_text,
+                                                 draw_offset,
+                                                 row->end_offset,
+                                                 current_y,
+                                                 default_color);
     }
 }
 
@@ -402,6 +799,7 @@ static void text_editor_clear_folds(text_editor_node* te) {
         return;
     }
     te->folded_region_count = 0u;
+    text_editor_invalidate_visual_layout(te);
 }
 
 static int text_editor_find_fold_header_index(const text_editor_node* te,
@@ -458,22 +856,19 @@ static void text_editor_remove_fold_at_index(text_editor_node* te, uint32_t inde
         te->folded_regions[next - 1u] = te->folded_regions[next];
     }
     te->folded_region_count--;
+    text_editor_invalidate_visual_layout(te);
 }
 
 static int text_editor_fold_region_from_model(const text_editor_node* te,
                                               uint32_t line_number,
                                               croft_editor_fold_region* out_region) {
-    croft_editor_tab_settings settings;
-
     if (!te || !out_region) {
         return 0;
     }
-
-    croft_editor_tab_settings_default(&settings);
-    return croft_editor_fold_region_for_line(&te->text_model,
-                                             line_number,
-                                             &settings,
-                                             out_region) == CROFT_EDITOR_OK;
+    return croft_editor_line_cache_fold_region_for_line(&((text_editor_node*)te)->line_cache,
+                                                        &te->text_model,
+                                                        line_number,
+                                                        out_region) == CROFT_EDITOR_OK;
 }
 
 static int text_editor_line_is_hidden(const text_editor_node* te, uint32_t line_number) {
@@ -483,39 +878,19 @@ static int text_editor_line_is_hidden(const text_editor_node* te, uint32_t line_
 static uint32_t text_editor_visible_line_count(const text_editor_node* te) {
     croft_text_editor_profile_snapshot* stats = text_editor_profile_stats_mut(te);
     uint64_t start_usec = text_editor_profile_begin(te);
-    uint32_t line_count;
-    uint32_t visible_count = 0u;
-    uint32_t line_number = 1u;
-    uint32_t fold_index = 0u;
-    uint64_t steps = 0u;
+    uint32_t visible_count = 1u;
 
     if (!te) {
         return 1u;
     }
-
-    line_count = croft_editor_text_model_line_count(&te->text_model);
-    if (line_count == 0u) {
-        if (stats) {
-            text_editor_profile_note(stats,
-                                     &stats->visible_line_count_calls,
-                                     &stats->visible_line_count_total_usec,
-                                     start_usec);
-        }
-        return 1u;
-    }
-
-    while (line_number <= line_count) {
-        steps++;
-        visible_count++;
-        if (text_editor_find_fold_header_index(te, line_number, &fold_index)) {
-            line_number = te->folded_regions[fold_index].end_line_number + 1u;
-        } else {
-            line_number++;
-        }
+    if (text_editor_prepare_layout((text_editor_node*)te, te->base.sx, te->base.sy, &(text_editor_layout){0})
+            == CROFT_EDITOR_OK
+            && te->visual_row_count > 0u) {
+        visible_count = te->visual_row_count;
     }
 
     if (stats) {
-        stats->visible_line_count_steps += steps;
+        stats->visible_line_count_steps += visible_count;
         text_editor_profile_note(stats,
                                  &stats->visible_line_count_calls,
                                  &stats->visible_line_count_total_usec,
@@ -528,60 +903,19 @@ static uint32_t text_editor_visible_line_number_for_model_line(const text_editor
                                                                uint32_t model_line_number) {
     croft_text_editor_profile_snapshot* stats = text_editor_profile_stats_mut(te);
     uint64_t start_usec = text_editor_profile_begin(te);
-    uint32_t line_count;
     uint32_t visible_line_number = 0u;
-    uint32_t line_number = 1u;
-    uint32_t fold_index = 0u;
-    uint64_t steps = 0u;
 
     if (!te || model_line_number == 0u) {
         return 0u;
     }
-
-    line_count = croft_editor_text_model_line_count(&te->text_model);
-    if (line_count == 0u || model_line_number > line_count) {
-        if (stats) {
-            text_editor_profile_note(stats,
-                                     &stats->visible_line_lookup_calls,
-                                     &stats->visible_line_lookup_total_usec,
-                                     start_usec);
-        }
-        return 0u;
-    }
-
-    while (line_number <= line_count) {
-        steps++;
-        visible_line_number++;
-        if (line_number == model_line_number) {
-            if (stats) {
-                stats->visible_line_lookup_steps += steps;
-                text_editor_profile_note(stats,
-                                         &stats->visible_line_lookup_calls,
-                                         &stats->visible_line_lookup_total_usec,
-                                         start_usec);
-            }
-            return visible_line_number;
-        }
-        if (text_editor_find_fold_header_index(te, line_number, &fold_index)) {
-            if (model_line_number > line_number
-                    && model_line_number <= te->folded_regions[fold_index].end_line_number) {
-                if (stats) {
-                    stats->visible_line_lookup_steps += steps;
-                    text_editor_profile_note(stats,
-                                             &stats->visible_line_lookup_calls,
-                                             &stats->visible_line_lookup_total_usec,
-                                             start_usec);
-                }
-                return 0u;
-            }
-            line_number = te->folded_regions[fold_index].end_line_number + 1u;
-        } else {
-            line_number++;
-        }
+    if (text_editor_prepare_layout((text_editor_node*)te, te->base.sx, te->base.sy, &(text_editor_layout){0})
+            == CROFT_EDITOR_OK
+            && model_line_number <= te->line_visible_row_capacity) {
+        visible_line_number = te->line_first_visible_rows[model_line_number - 1u];
     }
 
     if (stats) {
-        stats->visible_line_lookup_steps += steps;
+        stats->visible_line_lookup_steps += visible_line_number > 0u ? 1u : 0u;
         text_editor_profile_note(stats,
                                  &stats->visible_line_lookup_calls,
                                  &stats->visible_line_lookup_total_usec,
@@ -594,55 +928,31 @@ static uint32_t text_editor_model_line_number_for_visible_line(const text_editor
                                                                uint32_t visible_line_number) {
     croft_text_editor_profile_snapshot* stats = text_editor_profile_stats_mut(te);
     uint64_t start_usec = text_editor_profile_begin(te);
-    uint32_t line_count;
-    uint32_t current_visible_line = 0u;
+    const text_editor_visual_row* row = NULL;
     uint32_t line_number = 1u;
-    uint32_t fold_index = 0u;
-    uint64_t steps = 0u;
 
     if (!te || visible_line_number == 0u) {
         return 1u;
     }
-
-    line_count = croft_editor_text_model_line_count(&te->text_model);
-    if (line_count == 0u) {
-        if (stats) {
-            text_editor_profile_note(stats,
-                                     &stats->model_line_lookup_calls,
-                                     &stats->model_line_lookup_total_usec,
-                                     start_usec);
+    if (text_editor_prepare_layout((text_editor_node*)te, te->base.sx, te->base.sy, &(text_editor_layout){0})
+            == CROFT_EDITOR_OK) {
+        if (visible_line_number > te->visual_row_count) {
+            visible_line_number = te->visual_row_count;
         }
-        return 1u;
-    }
-
-    while (line_number <= line_count) {
-        steps++;
-        current_visible_line++;
-        if (current_visible_line == visible_line_number) {
-            if (stats) {
-                stats->model_line_lookup_steps += steps;
-                text_editor_profile_note(stats,
-                                         &stats->model_line_lookup_calls,
-                                         &stats->model_line_lookup_total_usec,
-                                         start_usec);
-            }
-            return line_number;
-        }
-        if (text_editor_find_fold_header_index(te, line_number, &fold_index)) {
-            line_number = te->folded_regions[fold_index].end_line_number + 1u;
-        } else {
-            line_number++;
+        row = text_editor_visual_row_at_visible_line(te, visible_line_number);
+        if (row) {
+            line_number = row->model_line_number;
         }
     }
 
     if (stats) {
-        stats->model_line_lookup_steps += steps;
+        stats->model_line_lookup_steps += row ? 1u : 0u;
         text_editor_profile_note(stats,
                                  &stats->model_line_lookup_calls,
                                  &stats->model_line_lookup_total_usec,
                                  start_usec);
     }
-    return line_count;
+    return line_number;
 }
 
 static int32_t text_editor_fold_line(text_editor_node* te, uint32_t line_number) {
@@ -670,6 +980,7 @@ static int32_t text_editor_fold_line(text_editor_node* te, uint32_t line_number)
     te->folded_regions[insert_index].start_line_number = region.start_line_number;
     te->folded_regions[insert_index].end_line_number = region.end_line_number;
     te->folded_region_count++;
+    text_editor_invalidate_visual_layout(te);
     text_editor_ensure_cursor_visible(te);
     return 0;
 }
@@ -731,25 +1042,44 @@ static Text* text_editor_live_text(text_editor_node* te) {
 static void text_editor_refresh_cache(text_editor_node *te) {
     te->utf8_cache = te->text_model.utf8;
     te->utf8_len = croft_editor_text_model_length(&te->text_model);
+    text_editor_invalidate_visual_layout(te);
     text_editor_sync_selection(te);
 }
 
 static void text_editor_sync_cache(text_editor_node *te) {
+    croft_editor_text_model next_model;
+    croft_editor_tab_settings tab_settings;
+    int32_t sync_rc = CROFT_EDITOR_OK;
+
+    croft_editor_text_model_init(&next_model);
+    croft_editor_tab_settings_default(&tab_settings);
     te->text_tree = text_editor_live_text(te);
     text_editor_refresh_syntax_language(te);
     text_editor_clear_folds(te);
 
     if (!te->text_tree) {
+        sync_rc = croft_editor_line_cache_sync(&te->line_cache,
+                                               &te->text_model,
+                                               &next_model,
+                                               te->syntax_language,
+                                               &tab_settings);
+        if (sync_rc != CROFT_EDITOR_OK) {
+            croft_editor_text_model_dispose(&next_model);
+            return;
+        }
         croft_editor_text_model_dispose(&te->text_model);
+        te->text_model = next_model;
         te->utf8_cache = NULL;
         te->utf8_len = 0;
         te->sel_start = 0;
         te->sel_end = 0;
         te->preferred_column = 0;
+        te->preferred_visual_x = 0.0f;
         te->selection = croft_editor_selection_create(
             croft_editor_position_create(1, 1),
             croft_editor_position_create(1, 1)
         );
+        text_editor_invalidate_visual_layout(te);
         return;
     }
 
@@ -770,11 +1100,25 @@ static void text_editor_sync_cache(text_editor_node *te) {
                          utf8_len_out + 1u,
                          &utf8_len_out) != 0) {
             free(new_cache);
+            croft_editor_text_model_dispose(&next_model);
             return;
         }
         new_cache[utf8_len_out] = '\0';
-        if (croft_editor_text_model_set_text(&te->text_model, new_cache, utf8_len_out) == CROFT_EDITOR_OK) {
+        if (croft_editor_text_model_set_text(&next_model, new_cache, utf8_len_out) == CROFT_EDITOR_OK) {
+            sync_rc = croft_editor_line_cache_sync(&te->line_cache,
+                                                   &te->text_model,
+                                                   &next_model,
+                                                   te->syntax_language,
+                                                   &tab_settings);
+        } else {
+            sync_rc = CROFT_EDITOR_ERR_OOM;
+        }
+        if (sync_rc == CROFT_EDITOR_OK) {
+            croft_editor_text_model_dispose(&te->text_model);
+            te->text_model = next_model;
             text_editor_refresh_cache(te);
+        } else {
+            croft_editor_text_model_dispose(&next_model);
         }
         free(new_cache);
     }
@@ -788,6 +1132,7 @@ static void text_editor_set_selection(text_editor_node* te,
     te->sel_end = active_offset;
     if (reset_preferred_column) {
         te->preferred_column = 0;
+        te->preferred_visual_x = 0.0f;
     }
     text_editor_sync_selection(te);
 }
@@ -799,6 +1144,7 @@ static void text_editor_collapse_selection(text_editor_node* te,
     te->sel_end = offset;
     if (!preserve_preferred_column) {
         te->preferred_column = 0;
+        te->preferred_visual_x = 0.0f;
     }
     text_editor_sync_selection(te);
 }
@@ -1250,27 +1596,26 @@ static void text_editor_ensure_cursor_visible(text_editor_node* te)
     croft_text_editor_profile_snapshot* stats = text_editor_profile_stats_mut(te);
     uint64_t start_usec = text_editor_profile_begin(te);
     text_editor_layout layout;
-    croft_editor_position position;
+    const text_editor_visual_row* row;
     uint32_t visible_line_number;
-    uint32_t line_start_offset;
-    uint32_t line_start_byte;
-    uint32_t cursor_byte;
-    uint32_t line_len_bytes = 0u;
-    const char* line_text;
     float line_top;
     float visible_top;
     float visible_bottom;
     float cursor_doc_x;
     float visible_left;
     float visible_right;
+    uint32_t line_len_bytes = 0u;
+    const char* line_text = NULL;
 
     if (!te) {
         return;
     }
 
-    text_editor_compute_layout(te, te->base.sx, te->base.sy, &layout);
-    position = croft_editor_text_model_get_position_at(&te->text_model, te->sel_end);
-    visible_line_number = text_editor_visible_line_number_for_model_line(te, position.line_number);
+    if (text_editor_prepare_layout(te, te->base.sx, te->base.sy, &layout) != CROFT_EDITOR_OK) {
+        return;
+    }
+
+    visible_line_number = text_editor_visual_row_number_for_offset(te, te->sel_end, 1);
     if (visible_line_number == 0u) {
         visible_line_number = 1u;
     }
@@ -1286,17 +1631,25 @@ static void text_editor_ensure_cursor_visible(text_editor_node* te)
         te->scroll_y = 0.0f;
     }
 
-    line_start_offset = croft_editor_text_model_line_start_offset(&te->text_model, position.line_number);
-    line_start_byte = croft_editor_text_model_byte_offset_at(&te->text_model, line_start_offset);
-    cursor_byte = croft_editor_text_model_byte_offset_at(&te->text_model, te->sel_end) - line_start_byte;
-    line_text = croft_editor_text_model_line_utf8(&te->text_model, position.line_number, &line_len_bytes);
-    cursor_doc_x = layout.text_inset_x + text_editor_measure_text(te, line_text, cursor_byte, te->font_size);
-    visible_left = -te->scroll_x;
-    visible_right = visible_left + layout.content_width;
-    if (cursor_doc_x < visible_left + layout.text_inset_x) {
-        te->scroll_x = -(cursor_doc_x - layout.text_inset_x);
-    } else if (cursor_doc_x > visible_right - 24.0f) {
-        te->scroll_x = -(cursor_doc_x - (layout.content_width - 24.0f));
+    row = text_editor_visual_row_at_visible_line(te, visible_line_number);
+    if (row && croft_editor_text_model_line_count(&te->text_model) > 0u) {
+        line_text = croft_editor_text_model_line_utf8(&te->text_model,
+                                                      row->model_line_number,
+                                                      &line_len_bytes);
+    }
+
+    if (te->wrap_enabled) {
+        te->scroll_x = 0.0f;
+    } else if (row && line_text) {
+        cursor_doc_x =
+            layout.text_inset_x + text_editor_visual_row_prefix_width(te, row, line_text, te->sel_end);
+        visible_left = -te->scroll_x;
+        visible_right = visible_left + layout.content_width;
+        if (cursor_doc_x < visible_left + layout.text_inset_x) {
+            te->scroll_x = -(cursor_doc_x - layout.text_inset_x);
+        } else if (cursor_doc_x > visible_right - 24.0f) {
+            te->scroll_x = -(cursor_doc_x - (layout.content_width - 24.0f));
+        }
     }
     if (te->scroll_x > 0.0f) {
         te->scroll_x = 0.0f;
@@ -1676,54 +2029,85 @@ static int32_t text_editor_replace_all_internal(text_editor_node* te)
     return rc;
 }
 
+static void text_editor_visual_row_range_bounds(const text_editor_node* te,
+                                                const text_editor_layout* layout,
+                                                const text_editor_visual_row* row,
+                                                const char* line_text,
+                                                uint32_t start_offset,
+                                                uint32_t end_offset,
+                                                float* out_x1,
+                                                float* out_x2)
+{
+    if (!te || !layout || !row || !line_text || !out_x1 || !out_x2) {
+        return;
+    }
+
+    *out_x1 = layout->text_inset_x
+        + text_editor_visual_row_prefix_width(te, row, line_text, start_offset);
+    *out_x2 = layout->text_inset_x
+        + text_editor_visual_row_prefix_width(te, row, line_text, end_offset);
+}
+
+static void text_editor_draw_range_highlight(const text_editor_node* te,
+                                             const text_editor_layout* layout,
+                                             uint32_t start_offset,
+                                             uint32_t end_offset,
+                                             uint32_t color_rgba)
+{
+    uint32_t visible_line_number;
+
+    if (!te || !layout || start_offset >= end_offset) {
+        return;
+    }
+
+    for (visible_line_number = 1u; visible_line_number <= te->visual_row_count; visible_line_number++) {
+        const text_editor_visual_row* row =
+            text_editor_visual_row_at_visible_line(te, visible_line_number);
+
+        if (row
+                && start_offset < row->end_offset
+                && end_offset > row->start_offset
+                && row->model_line_number <= croft_editor_text_model_line_count(&te->text_model)) {
+            uint32_t highlight_start = start_offset > row->start_offset ? start_offset : row->start_offset;
+            uint32_t highlight_end = end_offset < row->end_offset ? end_offset : row->end_offset;
+            uint32_t line_len_bytes = 0u;
+            const char* line_text =
+                croft_editor_text_model_line_utf8(&te->text_model, row->model_line_number, &line_len_bytes);
+            float current_y = te->font_size + ((float)(visible_line_number - 1u) * te->line_height);
+            float x1 = 0.0f;
+            float x2 = 0.0f;
+
+            if (current_y + te->scroll_y < 0.0f
+                    || current_y - te->font_size + te->scroll_y > layout->content_height) {
+                continue;
+            }
+            text_editor_visual_row_range_bounds(te,
+                                                layout,
+                                                row,
+                                                line_text,
+                                                highlight_start,
+                                                highlight_end,
+                                                &x1,
+                                                &x2);
+            host_render_draw_rect(x1, current_y - te->font_size, x2 - x1, te->line_height, color_rgba);
+        }
+    }
+}
+
 static void text_editor_draw_search_match(const text_editor_node* te,
                                           const text_editor_layout* layout,
                                           const croft_editor_search_match* match,
                                           uint32_t color_rgba)
 {
-    croft_editor_position start_position;
-    croft_editor_position end_position;
-    uint32_t visible_line_number;
-    uint32_t line_start_offset;
-    uint32_t line_start_byte;
-    uint32_t start_byte;
-    uint32_t end_byte;
-    uint32_t line_len_bytes = 0u;
-    const char* line_text;
-    float current_y;
-    float x1;
-    float x2;
-
     if (!te || !layout || !match) {
         return;
     }
 
-    start_position = croft_editor_text_model_get_position_at(&te->text_model, match->start_offset);
-    end_position = croft_editor_text_model_get_position_at(&te->text_model, match->end_offset);
-    if (start_position.line_number != end_position.line_number) {
-        return;
-    }
-
-    visible_line_number =
-        text_editor_visible_line_number_for_model_line(te, start_position.line_number);
-    if (visible_line_number == 0u) {
-        return;
-    }
-
-    current_y = te->font_size + ((float)(visible_line_number - 1u) * te->line_height);
-    if (current_y + te->scroll_y < 0.0f
-            || current_y - te->font_size + te->scroll_y > layout->content_height) {
-        return;
-    }
-
-    line_start_offset = croft_editor_text_model_line_start_offset(&te->text_model, start_position.line_number);
-    line_start_byte = croft_editor_text_model_byte_offset_at(&te->text_model, line_start_offset);
-    start_byte = croft_editor_text_model_byte_offset_at(&te->text_model, match->start_offset) - line_start_byte;
-    end_byte = croft_editor_text_model_byte_offset_at(&te->text_model, match->end_offset) - line_start_byte;
-    line_text = croft_editor_text_model_line_utf8(&te->text_model, start_position.line_number, &line_len_bytes);
-    x1 = layout->text_inset_x + text_editor_measure_text(te, line_text, start_byte, te->font_size);
-    x2 = layout->text_inset_x + text_editor_measure_text(te, line_text, end_byte, te->font_size);
-    host_render_draw_rect(x1, current_y - te->font_size, x2 - x1, te->line_height, color_rgba);
+    text_editor_draw_range_highlight(te,
+                                     layout,
+                                     match->start_offset,
+                                     match->end_offset,
+                                     color_rgba);
 }
 
 static void text_editor_draw_codepoint_highlight(const text_editor_node* te,
@@ -1731,65 +2115,12 @@ static void text_editor_draw_codepoint_highlight(const text_editor_node* te,
                                                  uint32_t offset,
                                                  uint32_t color_rgba)
 {
-    croft_editor_position position;
-    uint32_t visible_line_number;
-    uint32_t line_start_offset;
-    uint32_t line_start_byte;
-    uint32_t start_byte;
-    uint32_t end_byte;
-    uint32_t line_len_bytes = 0u;
-    const char* line_text;
-    float current_y;
-    float x1;
-    float x2;
-
     if (!te || !layout
             || offset >= croft_editor_text_model_codepoint_length(&te->text_model)) {
         return;
     }
 
-    position = croft_editor_text_model_get_position_at(&te->text_model, offset);
-    visible_line_number =
-        text_editor_visible_line_number_for_model_line(te, position.line_number);
-    if (visible_line_number == 0u) {
-        return;
-    }
-
-    current_y = te->font_size + ((float)(visible_line_number - 1u) * te->line_height);
-    if (current_y + te->scroll_y < 0.0f
-            || current_y - te->font_size + te->scroll_y > layout->content_height) {
-        return;
-    }
-
-    line_start_offset = croft_editor_text_model_line_start_offset(&te->text_model, position.line_number);
-    line_start_byte = croft_editor_text_model_byte_offset_at(&te->text_model, line_start_offset);
-    start_byte = croft_editor_text_model_byte_offset_at(&te->text_model, offset) - line_start_byte;
-    end_byte = croft_editor_text_model_byte_offset_at(&te->text_model, offset + 1u) - line_start_byte;
-    line_text = croft_editor_text_model_line_utf8(&te->text_model, position.line_number, &line_len_bytes);
-    x1 = layout->text_inset_x + text_editor_measure_text(te, line_text, start_byte, te->font_size);
-    x2 = layout->text_inset_x + text_editor_measure_text(te, line_text, end_byte, te->font_size);
-    host_render_draw_rect(x1, current_y - te->font_size, x2 - x1, te->line_height, color_rgba);
-}
-
-static void text_editor_whitespace_marker_bounds(const text_editor_node* te,
-                                                 const text_editor_layout* layout,
-                                                 const char* line_text,
-                                                 uint32_t line_start_byte,
-                                                 const croft_editor_visible_whitespace* marker,
-                                                 float* out_x1,
-                                                 float* out_x2)
-{
-    uint32_t start_byte;
-    uint32_t end_byte;
-
-    if (!te || !layout || !line_text || !marker || !out_x1 || !out_x2) {
-        return;
-    }
-
-    start_byte = croft_editor_text_model_byte_offset_at(&te->text_model, marker->offset) - line_start_byte;
-    end_byte = croft_editor_text_model_byte_offset_at(&te->text_model, marker->offset + 1u) - line_start_byte;
-    *out_x1 = layout->text_inset_x + text_editor_measure_text(te, line_text, start_byte, te->font_size);
-    *out_x2 = layout->text_inset_x + text_editor_measure_text(te, line_text, end_byte, te->font_size);
+    text_editor_draw_range_highlight(te, layout, offset, offset + 1u, color_rgba);
 }
 
 static void text_editor_draw_whitespace_marker(const text_editor_node* te,
@@ -1871,13 +2202,31 @@ static void text_editor_draw_indent_guides_for_line(const text_editor_node* te,
             break;
         }
         if ((visual_end % settings.tab_size) == 0u) {
+            text_editor_visual_row row = {0};
             float x1 = 0.0f;
             float x2 = 0.0f;
             float width;
             float unit_width;
             float guide_x;
 
-            text_editor_whitespace_marker_bounds(te, layout, line_text, line_start_byte, &marker, &x1, &x2);
+            row.model_line_number = line_number;
+            row.line_start_offset = line.line_start_offset;
+            row.line_end_offset = line.line_end_offset;
+            row.start_offset = line.line_start_offset;
+            row.end_offset = line.line_end_offset;
+            row.line_start_byte = line_start_byte;
+            row.start_byte = 0u;
+            row.end_byte = line_len_bytes;
+            row.is_first_in_line = 1u;
+            row.is_last_in_line = 1u;
+            text_editor_visual_row_range_bounds(te,
+                                                layout,
+                                                &row,
+                                                line_text,
+                                                marker.offset,
+                                                marker.offset + 1u,
+                                                &x1,
+                                                &x2);
             width = x2 - x1;
             if (width > 0.0f) {
                 unit_width = width / (float)marker.visual_width;
@@ -1894,43 +2243,48 @@ static void text_editor_draw_indent_guides_for_line(const text_editor_node* te,
     }
 }
 
-static void text_editor_draw_whitespace_markers_for_line(const text_editor_node* te,
-                                                         const text_editor_layout* layout,
-                                                         uint32_t line_number,
-                                                         float current_y)
+static void text_editor_draw_whitespace_markers_for_row(const text_editor_node* te,
+                                                        const text_editor_layout* layout,
+                                                        const text_editor_visual_row* row,
+                                                        float current_y)
 {
     croft_editor_tab_settings settings;
     croft_editor_visible_whitespace marker = {0};
-    uint32_t line_start_offset;
-    uint32_t line_end_offset;
-    uint32_t line_start_byte;
     uint32_t line_len_bytes = 0u;
     const char* line_text;
     uint32_t search_offset;
 
-    if (!te || !layout) {
+    if (!te || !layout || !row) {
         return;
     }
 
     croft_editor_tab_settings_default(&settings);
-    line_start_offset = croft_editor_text_model_line_start_offset(&te->text_model, line_number);
-    line_end_offset = croft_editor_text_model_line_end_offset(&te->text_model, line_number);
-    line_start_byte = croft_editor_text_model_byte_offset_at(&te->text_model, line_start_offset);
-    line_text = croft_editor_text_model_line_utf8(&te->text_model, line_number, &line_len_bytes);
-    search_offset = line_start_offset;
+    line_text = croft_editor_text_model_line_utf8(&te->text_model, row->model_line_number, &line_len_bytes);
+    search_offset = row->start_offset;
     while (croft_editor_whitespace_find_in_line(&te->text_model,
-                                                line_number,
+                                                row->model_line_number,
                                                 &settings,
                                                 search_offset,
                                                 &marker) == CROFT_EDITOR_OK) {
         float x1 = 0.0f;
         float x2 = 0.0f;
 
-        if (marker.offset >= line_end_offset) {
+        if (marker.offset >= row->end_offset) {
             break;
         }
+        if (marker.offset < row->start_offset) {
+            search_offset = marker.offset + 1u;
+            continue;
+        }
 
-        text_editor_whitespace_marker_bounds(te, layout, line_text, line_start_byte, &marker, &x1, &x2);
+        text_editor_visual_row_range_bounds(te,
+                                            layout,
+                                            row,
+                                            line_text,
+                                            marker.offset,
+                                            marker.offset + 1u,
+                                            &x1,
+                                            &x2);
         text_editor_draw_whitespace_marker(te, x1, x2, current_y, marker.kind);
         search_offset = marker.offset + 1u;
     }
@@ -2139,11 +2493,13 @@ static void text_editor_draw(scene_node *n, render_ctx *rc) {
     uint32_t selection_max = 0;
     uint32_t cursor_offset = te->sel_end;
     uint32_t current_line = text_editor_current_line_number(te);
-    uint32_t line_number;
     uint32_t first_visible_line = 1u;
     uint32_t last_visible_line = 1u;
+    uint32_t cursor_row_number = 0u;
 
-    text_editor_compute_layout(te, n->sx, n->sy, &layout);
+    if (text_editor_prepare_layout(te, n->sx, n->sy, &layout) != CROFT_EDITOR_OK) {
+        return;
+    }
     text_editor_visible_line_window(te, &layout, &first_visible_line, &last_visible_line);
     status_snapshot = text_editor_status_snapshot_from_node(te);
     if (croft_editor_status_format(&status_snapshot, status_text, sizeof(status_text)) != 0) {
@@ -2171,33 +2527,26 @@ static void text_editor_draw(scene_node *n, render_ctx *rc) {
 
     text_editor_selection_bounds(te, &selection_min, &selection_max);
     line_count = croft_editor_text_model_line_count(&te->text_model);
+    if (selection_min == selection_max) {
+        cursor_row_number = text_editor_visual_row_number_for_offset(te, cursor_offset, 1);
+    }
 
     {
-        uint32_t visible_line_number = 0u;
+        uint32_t visible_line_number;
 
-        for (line_number = 1; line_number <= line_count;) {
+        for (visible_line_number = first_visible_line;
+             visible_line_number <= last_visible_line && visible_line_number <= te->visual_row_count;
+             visible_line_number++) {
+            const text_editor_visual_row* row =
+                text_editor_visual_row_at_visible_line(te, visible_line_number);
             float current_y;
-            uint32_t fold_index = 0u;
-
-            visible_line_number++;
-            if (visible_line_number < first_visible_line) {
-                if (text_editor_find_fold_header_index(te, line_number, &fold_index)) {
-                    line_number = te->folded_regions[fold_index].end_line_number + 1u;
-                } else {
-                    line_number++;
-                }
-                continue;
-            }
-            if (visible_line_number > last_visible_line) {
-                break;
-            }
 
             if (stats) {
                 stats->background_pass_lines++;
             }
             current_y = te->font_size + ((float)(visible_line_number - 1u) * te->line_height);
 
-            if (line_number == current_line) {
+            if (row && row->model_line_number == current_line) {
                 host_render_draw_rect(-te->scroll_x,
                                       current_y - te->font_size,
                                       layout.content_width,
@@ -2205,12 +2554,11 @@ static void text_editor_draw(scene_node *n, render_ctx *rc) {
                                       0xE2ECF8FF);
             }
             host_render_draw_rect(-te->scroll_x, current_y, layout.content_width, 1.0f, 0x00000012);
-            text_editor_draw_indent_guides_for_line(te, &layout, line_number, current_y);
-
-            if (text_editor_find_fold_header_index(te, line_number, &fold_index)) {
-                line_number = te->folded_regions[fold_index].end_line_number + 1u;
-            } else {
-                line_number++;
+            if (row && row->is_first_in_line && row->model_line_number <= line_count) {
+                text_editor_draw_indent_guides_for_line(te,
+                                                        &layout,
+                                                        row->model_line_number,
+                                                        current_y);
             }
         }
     }
@@ -2219,72 +2567,63 @@ static void text_editor_draw(scene_node *n, render_ctx *rc) {
     text_editor_draw_bracket_pair(te, &layout);
 
     {
-        uint32_t visible_line_number = 0u;
+        uint32_t visible_line_number;
 
-        for (line_number = 1; line_number <= line_count;) {
-            uint32_t line_start_offset =
-                croft_editor_text_model_line_start_offset(&te->text_model, line_number);
-            uint32_t line_end_offset =
-                croft_editor_text_model_line_end_offset(&te->text_model, line_number);
-            uint32_t line_start_byte =
-                croft_editor_text_model_byte_offset_at(&te->text_model, line_start_offset);
-            uint32_t line_len_bytes = 0;
-            const char* line_text =
-                croft_editor_text_model_line_utf8(&te->text_model, line_number, &line_len_bytes);
+        for (visible_line_number = first_visible_line;
+             visible_line_number <= last_visible_line && visible_line_number <= te->visual_row_count;
+             visible_line_number++) {
+            const text_editor_visual_row* row =
+                text_editor_visual_row_at_visible_line(te, visible_line_number);
+            uint32_t line_len_bytes = 0u;
+            const char* line_text = NULL;
             float current_y;
-            uint32_t fold_index = 0u;
-            int is_folded = text_editor_find_fold_header_index(te, line_number, &fold_index);
-
-            visible_line_number++;
-            if (visible_line_number < first_visible_line) {
-                if (is_folded) {
-                    line_number = te->folded_regions[fold_index].end_line_number + 1u;
-                } else {
-                    line_number++;
-                }
-                continue;
-            }
-            if (visible_line_number > last_visible_line) {
-                break;
-            }
 
             if (stats) {
                 stats->text_pass_lines++;
             }
             current_y = te->font_size + ((float)(visible_line_number - 1u) * te->line_height);
+            if (row && row->model_line_number <= line_count) {
+                line_text = croft_editor_text_model_line_utf8(&te->text_model,
+                                                              row->model_line_number,
+                                                              &line_len_bytes);
+            }
 
-            if (selection_min != selection_max
-                    && selection_min < line_end_offset
-                    && selection_max > line_start_offset) {
+            if (row
+                    && line_text
+                    && selection_min != selection_max
+                    && selection_min < row->end_offset
+                    && selection_max > row->start_offset) {
                 uint32_t highlight_start =
-                    selection_min > line_start_offset ? selection_min : line_start_offset;
+                    selection_min > row->start_offset ? selection_min : row->start_offset;
                 uint32_t highlight_end =
-                    selection_max < line_end_offset ? selection_max : line_end_offset;
-                uint32_t highlight_start_bytes =
-                    croft_editor_text_model_byte_offset_at(&te->text_model, highlight_start)
-                    - line_start_byte;
-                uint32_t highlight_end_bytes =
-                    croft_editor_text_model_byte_offset_at(&te->text_model, highlight_end)
-                    - line_start_byte;
-                float x1 = layout.text_inset_x
-                    + text_editor_measure_text(te, line_text, highlight_start_bytes, te->font_size);
-                float x2 = layout.text_inset_x
-                    + text_editor_measure_text(te, line_text, highlight_end_bytes, te->font_size);
+                    selection_max < row->end_offset ? selection_max : row->end_offset;
+                float x1 = 0.0f;
+                float x2 = 0.0f;
+
+                text_editor_visual_row_range_bounds(te,
+                                                    &layout,
+                                                    row,
+                                                    line_text,
+                                                    highlight_start,
+                                                    highlight_end,
+                                                    &x1,
+                                                    &x2);
                 host_render_draw_rect(x1, current_y - te->font_size, x2 - x1, te->line_height, 0x5B9FE0CC);
             }
 
-            text_editor_draw_whitespace_markers_for_line(te, &layout, line_number, current_y);
+            if (row && line_text) {
+                text_editor_draw_whitespace_markers_for_row(te, &layout, row, current_y);
+            }
 
-            if (selection_min == selection_max
-                    && cursor_offset >= line_start_offset
-                    && cursor_offset <= line_end_offset) {
+            if (row
+                    && line_text
+                    && selection_min == selection_max
+                    && visible_line_number == cursor_row_number) {
                 int millis = (int)(rc->time * 1000.0);
+
                 if ((millis / 500) % 2 == 0) {
-                    uint32_t cursor_bytes =
-                        croft_editor_text_model_byte_offset_at(&te->text_model, cursor_offset)
-                        - line_start_byte;
                     float cursor_x = layout.text_inset_x
-                        + text_editor_measure_text(te, line_text, cursor_bytes, te->font_size);
+                        + text_editor_visual_row_prefix_width(te, row, line_text, cursor_offset);
                     host_render_draw_rect(cursor_x,
                                           current_y - te->font_size,
                                           2.0f,
@@ -2293,31 +2632,25 @@ static void text_editor_draw(scene_node *n, render_ctx *rc) {
                 }
             }
 
-            if (line_len_bytes > 0u) {
-                text_editor_draw_line_text(te,
-                                           &layout,
-                                           line_text,
-                                           line_start_offset,
-                                           line_end_offset,
-                                           line_start_byte,
-                                           current_y,
-                                           rc->fg_color);
+            if (row && line_text && row->end_offset > row->start_offset) {
+                text_editor_draw_visual_row_text(te,
+                                                 &layout,
+                                                 row,
+                                                 line_text,
+                                                 current_y,
+                                                 rc->fg_color);
             }
-            if (is_folded) {
-                float line_width =
-                    text_editor_measure_text(te, line_text, line_len_bytes, te->font_size);
+            if (row && row->is_folded_header && row->is_last_in_line && line_text) {
+                float line_width = text_editor_measure_text(te,
+                                                            line_text + row->start_byte,
+                                                            row->end_byte - row->start_byte,
+                                                            te->font_size);
                 float fold_x = layout.text_inset_x + line_width + 12.0f;
 
                 if (fold_x > layout.content_width - 28.0f) {
                     fold_x = layout.content_width - 28.0f;
                 }
                 host_render_draw_text(fold_x, current_y, "...", 3u, te->font_size - 1.0f, 0x7D8794FF);
-            }
-
-            if (is_folded) {
-                line_number = te->folded_regions[fold_index].end_line_number + 1u;
-            } else {
-                line_number++;
             }
         }
     }
@@ -2327,31 +2660,32 @@ static void text_editor_draw(scene_node *n, render_ctx *rc) {
     host_render_clip_rect(0, 0, layout.gutter_width, layout.content_height);
     host_render_translate(0.0f, layout.text_inset_y + te->scroll_y);
     {
-        uint32_t visible_line_number = 0u;
+        uint32_t visible_line_number;
 
-        for (line_number = 1; line_number <= line_count;) {
+        for (visible_line_number = first_visible_line;
+             visible_line_number <= last_visible_line && visible_line_number <= te->visual_row_count;
+             visible_line_number++) {
+            const text_editor_visual_row* row =
+                text_editor_visual_row_at_visible_line(te, visible_line_number);
             char line_label[16];
             int line_label_len;
             float current_y;
             float label_width;
-            uint32_t color = (line_number == current_line) ? 0x17385EFF : 0x798493FF;
+            uint32_t line_number;
+            uint32_t color;
             croft_editor_fold_region region = {0};
             uint32_t fold_index = 0u;
-            int is_folded = text_editor_find_fold_header_index(te, line_number, &fold_index);
-            int is_foldable = is_folded || text_editor_fold_region_from_model(te, line_number, &region);
+            int is_folded;
+            int is_foldable;
 
-            visible_line_number++;
-            if (visible_line_number < first_visible_line) {
-                if (is_folded) {
-                    line_number = te->folded_regions[fold_index].end_line_number + 1u;
-                } else {
-                    line_number++;
-                }
+            if (!row || !row->is_first_in_line) {
                 continue;
             }
-            if (visible_line_number > last_visible_line) {
-                break;
-            }
+
+            line_number = row->model_line_number;
+            color = (line_number == current_line) ? 0x17385EFF : 0x798493FF;
+            is_folded = text_editor_find_fold_header_index(te, line_number, &fold_index);
+            is_foldable = is_folded || text_editor_fold_region_from_model(te, line_number, &region);
 
             if (stats) {
                 stats->gutter_pass_lines++;
@@ -2381,12 +2715,6 @@ static void text_editor_draw(scene_node *n, render_ctx *rc) {
                                       (uint32_t)line_label_len,
                                       layout.gutter_font_size,
                                       color);
-            }
-
-            if (is_folded) {
-                line_number = te->folded_regions[fold_index].end_line_number + 1u;
-            } else {
-                line_number++;
             }
         }
     }
@@ -2426,50 +2754,51 @@ static uint32_t text_editor_hit_index(text_editor_node *te, float lx, float ly) 
     croft_text_editor_profile_snapshot* stats = text_editor_profile_stats_mut(te);
     uint64_t start_usec = text_editor_profile_begin(te);
     text_editor_layout layout;
+    const text_editor_visual_row* row;
     uint32_t visible_line_number;
-    uint32_t line_number;
-    uint32_t line_start_offset;
-    uint32_t line_end_offset;
-    uint32_t line_start_byte;
-    uint32_t line_len_bytes = 0;
-    const char* line_text;
+    uint32_t line_len_bytes = 0u;
+    const char* line_text = NULL;
     uint32_t best_offset;
     uint32_t offset;
     float best_distance;
     uint64_t offsets_scanned = 0u;
-
     float doc_x;
     float doc_y;
 
-    text_editor_compute_layout(te, te->base.sx, te->base.sy, &layout);
+    if (text_editor_prepare_layout(te, te->base.sx, te->base.sy, &layout) != CROFT_EDITOR_OK) {
+        return 0u;
+    }
     doc_x = lx - layout.gutter_width - te->scroll_x - layout.text_inset_x;
     doc_y = ly - layout.text_inset_y - te->scroll_y;
 
     if (doc_y < 0.0f) {
-        return 0;
+        return 0u;
     }
 
     visible_line_number = (uint32_t)(doc_y / te->line_height) + 1u;
     visible_line_number = text_editor_clamp_u32(visible_line_number,
                                                 1u,
                                                 text_editor_visible_line_count(te));
-    line_number = text_editor_model_line_number_for_visible_line(te, visible_line_number);
-    line_start_offset = croft_editor_text_model_line_start_offset(&te->text_model, line_number);
-    line_end_offset = croft_editor_text_model_line_end_offset(&te->text_model, line_number);
-    line_start_byte = croft_editor_text_model_byte_offset_at(&te->text_model, line_start_offset);
-    line_text = croft_editor_text_model_line_utf8(&te->text_model, line_number, &line_len_bytes);
+    row = text_editor_visual_row_at_visible_line(te, visible_line_number);
+    if (!row) {
+        return 0u;
+    }
+    if (row->model_line_number <= croft_editor_text_model_line_count(&te->text_model)) {
+        line_text = croft_editor_text_model_line_utf8(&te->text_model,
+                                                      row->model_line_number,
+                                                      &line_len_bytes);
+    }
 
-    best_offset = line_start_offset;
+    best_offset = row->start_offset;
     best_distance = doc_x < 0.0f ? -doc_x : doc_x;
-    for (offset = line_start_offset; offset <= line_end_offset; offset++) {
-        uint32_t byte_length =
-            croft_editor_text_model_byte_offset_at(&te->text_model, offset) - line_start_byte;
-        float width;
+    for (offset = row->start_offset; offset <= row->end_offset; offset++) {
+        float width = line_text
+            ? text_editor_visual_row_prefix_width(te, row, line_text, offset)
+            : 0.0f;
+        float distance = width >= doc_x ? (width - doc_x) : (doc_x - width);
 
         offsets_scanned++;
-        width = text_editor_measure_text(te, line_text, byte_length, te->font_size);
-        float distance = width >= doc_x ? (width - doc_x) : (doc_x - width);
-        if (offset == line_start_offset || distance <= best_distance) {
+        if (offset == row->start_offset || distance <= best_distance) {
             best_distance = distance;
             best_offset = offset;
         }
@@ -2485,11 +2814,96 @@ static uint32_t text_editor_hit_index(text_editor_node *te, float lx, float ly) 
     return best_offset;
 }
 
+static void text_editor_move_wrapped_vertical(text_editor_node* te,
+                                              int direction,
+                                              int selecting) {
+    text_editor_layout layout;
+    uint32_t current_row_number;
+    uint32_t target_row_number;
+    const text_editor_visual_row* current_row;
+    const text_editor_visual_row* target_row;
+    const char* current_line_text = NULL;
+    const char* target_line_text = NULL;
+    uint32_t line_len_bytes = 0u;
+    uint32_t best_offset;
+    uint32_t offset;
+    float best_distance;
+
+    if (!te || text_editor_prepare_layout(te, te->base.sx, te->base.sy, &layout) != CROFT_EDITOR_OK) {
+        return;
+    }
+
+    current_row_number = text_editor_visual_row_number_for_offset(te, te->sel_end, 1);
+    if (current_row_number == 0u) {
+        current_row_number = 1u;
+    }
+    target_row_number = current_row_number;
+    if (direction < 0 && target_row_number > 1u) {
+        target_row_number--;
+    } else if (direction > 0 && target_row_number < te->visual_row_count) {
+        target_row_number++;
+    }
+
+    current_row = text_editor_visual_row_at_visible_line(te, current_row_number);
+    target_row = text_editor_visual_row_at_visible_line(te, target_row_number);
+    if (!current_row || !target_row) {
+        return;
+    }
+
+    if (current_row->model_line_number <= croft_editor_text_model_line_count(&te->text_model)) {
+        current_line_text = croft_editor_text_model_line_utf8(&te->text_model,
+                                                              current_row->model_line_number,
+                                                              &line_len_bytes);
+    }
+    if (te->preferred_column == 0u) {
+        croft_editor_position position = croft_editor_text_model_get_position_at(&te->text_model, te->sel_end);
+        te->preferred_column = position.column;
+        te->preferred_visual_x = current_line_text
+            ? text_editor_visual_row_prefix_width(te, current_row, current_line_text, te->sel_end)
+            : 0.0f;
+    }
+
+    if (target_row->model_line_number <= croft_editor_text_model_line_count(&te->text_model)) {
+        target_line_text = croft_editor_text_model_line_utf8(&te->text_model,
+                                                             target_row->model_line_number,
+                                                             &line_len_bytes);
+    }
+
+    best_offset = target_row->start_offset;
+    best_distance = te->preferred_visual_x;
+    if (best_distance < 0.0f) {
+        best_distance = -best_distance;
+    }
+    for (offset = target_row->start_offset; offset <= target_row->end_offset; offset++) {
+        float width = target_line_text
+            ? text_editor_visual_row_prefix_width(te, target_row, target_line_text, offset)
+            : 0.0f;
+        float distance = width >= te->preferred_visual_x
+            ? (width - te->preferred_visual_x)
+            : (te->preferred_visual_x - width);
+
+        if (offset == target_row->start_offset || distance <= best_distance) {
+            best_distance = distance;
+            best_offset = offset;
+        }
+    }
+
+    if (selecting) {
+        te->sel_end = best_offset;
+    } else {
+        te->sel_start = best_offset;
+        te->sel_end = best_offset;
+    }
+    text_editor_sync_selection(te);
+}
+
 static void text_editor_mouse_event(scene_node *n, int action, float local_x, float local_y) {
     text_editor_node *te = (text_editor_node *)n;
     text_editor_layout layout;
 
-    text_editor_compute_layout(te, n->sx, n->sy, &layout);
+    if (text_editor_prepare_layout(te, n->sx, n->sy, &layout) != CROFT_EDITOR_OK) {
+        return;
+    }
     if (local_y >= layout.content_height) {
         if (action == 0 || action == 2) {
             te->is_selecting = 0;
@@ -2499,6 +2913,7 @@ static void text_editor_mouse_event(scene_node *n, int action, float local_x, fl
     if (local_x < layout.gutter_width && action == 1) {
         uint32_t visible_line_number;
         uint32_t line_number;
+        const text_editor_visual_row* row;
         croft_editor_fold_region region = {0};
 
         visible_line_number = text_editor_clamp_u32((uint32_t)((local_y - layout.text_inset_y - te->scroll_y)
@@ -2506,7 +2921,8 @@ static void text_editor_mouse_event(scene_node *n, int action, float local_x, fl
                                                         + 1u,
                                                     1u,
                                                     text_editor_visible_line_count(te));
-        line_number = text_editor_model_line_number_for_visible_line(te, visible_line_number);
+        row = text_editor_visual_row_at_visible_line(te, visible_line_number);
+        line_number = row ? row->model_line_number : 1u;
         if (local_x <= 18.0f
                 && (text_editor_find_fold_header_index(te, line_number, NULL)
                     || text_editor_fold_region_from_model(te, line_number, &region))) {
@@ -2694,6 +3110,12 @@ static void text_editor_key_event(scene_node *n, int key, int action) {
         }
         return;
     }
+    if ((te->modifiers & CROFT_UI_MOD_ALT) != 0u
+            && (te->modifiers & (CROFT_UI_MOD_CONTROL | CROFT_UI_MOD_SUPER)) == 0u
+            && key == CROFT_KEY_Z) {
+        text_editor_node_set_wrap_enabled(te, te->wrap_enabled == 0u);
+        return;
+    }
     if (command_mode
             && (te->modifiers & CROFT_UI_MOD_ALT) != 0u
             && key == CROFT_KEY_LEFT_BRACKET) {
@@ -2826,6 +3248,9 @@ static void text_editor_key_event(scene_node *n, int key, int action) {
                                            &te->preferred_column,
                                            selecting);
         }
+        if (te->preferred_column == 0u) {
+            te->preferred_visual_x = 0.0f;
+        }
         text_editor_sync_selection(te);
     } else if (key == CROFT_KEY_RIGHT) {
         text_editor_break_coalescing(te);
@@ -2848,23 +3273,30 @@ static void text_editor_key_event(scene_node *n, int key, int action) {
                                             &te->preferred_column,
                                             selecting);
         }
+        if (te->preferred_column == 0u) {
+            te->preferred_visual_x = 0.0f;
+        }
         text_editor_sync_selection(te);
     } else if (key == CROFT_KEY_UP || key == CROFT_KEY_DOWN) {
         text_editor_break_coalescing(te);
-        if (key == CROFT_KEY_UP) {
-            croft_editor_command_move_up(&te->text_model,
-                                         &te->sel_start,
-                                         &te->sel_end,
-                                         &te->preferred_column,
-                                         selecting);
+        if (te->wrap_enabled) {
+            text_editor_move_wrapped_vertical(te, key == CROFT_KEY_UP ? -1 : 1, selecting);
         } else {
-            croft_editor_command_move_down(&te->text_model,
-                                           &te->sel_start,
-                                           &te->sel_end,
-                                           &te->preferred_column,
-                                           selecting);
+            if (key == CROFT_KEY_UP) {
+                croft_editor_command_move_up(&te->text_model,
+                                             &te->sel_start,
+                                             &te->sel_end,
+                                             &te->preferred_column,
+                                             selecting);
+            } else {
+                croft_editor_command_move_down(&te->text_model,
+                                               &te->sel_start,
+                                               &te->sel_end,
+                                               &te->preferred_column,
+                                               selecting);
+            }
+            text_editor_sync_selection(te);
         }
-        text_editor_sync_selection(te);
     } else if (key == CROFT_KEY_HOME) {
         text_editor_break_coalescing(te);
         croft_editor_command_move_home(&te->text_model,
@@ -2872,6 +3304,9 @@ static void text_editor_key_event(scene_node *n, int key, int action) {
                                        &te->sel_end,
                                        &te->preferred_column,
                                        selecting);
+        if (te->preferred_column == 0u) {
+            te->preferred_visual_x = 0.0f;
+        }
         text_editor_sync_selection(te);
     } else if (key == CROFT_KEY_END) {
         text_editor_break_coalescing(te);
@@ -2880,6 +3315,9 @@ static void text_editor_key_event(scene_node *n, int key, int action) {
                                       &te->sel_end,
                                       &te->preferred_column,
                                       selecting);
+        if (te->preferred_column == 0u) {
+            te->preferred_visual_x = 0.0f;
+        }
         text_editor_sync_selection(te);
     } else if (key == CROFT_KEY_ENTER
             || key == CROFT_KEY_KP_ENTER_OLD
@@ -2913,6 +3351,7 @@ void text_editor_node_init(text_editor_node *n, struct SapEnv *env, float x, flo
     n->sel_start = 0;
     n->sel_end = 0;
     n->preferred_column = 0;
+    n->preferred_visual_x = 0.0f;
     n->modifiers = 0u;
     n->is_selecting = 0;
     n->find_active = 0;
@@ -2923,9 +3362,19 @@ void text_editor_node_init(text_editor_node *n, struct SapEnv *env, float x, flo
     n->replace_query[0] = '\0';
     n->replace_query_len = 0u;
     n->folded_region_count = 0u;
+    n->wrap_enabled = 0u;
+    n->visual_layout_dirty = 1u;
+    n->visual_layout_width = 0.0f;
+    n->visual_rows = NULL;
+    n->visual_row_count = 0u;
+    n->visual_row_capacity = 0u;
+    n->line_first_visible_rows = NULL;
+    n->line_visible_row_counts = NULL;
+    n->line_visible_row_capacity = 0u;
     n->profiling_enabled = 0u;
     memset(&n->profile_stats, 0, sizeof(n->profile_stats));
     croft_editor_text_model_init(&n->text_model);
+    croft_editor_line_cache_init(&n->line_cache);
     n->selection = croft_editor_selection_create(
         croft_editor_position_create(1, 1),
         croft_editor_position_create(1, 1)
@@ -2998,6 +3447,24 @@ void text_editor_node_set_modifiers(text_editor_node *n, uint32_t modifiers) {
         return;
     }
     n->modifiers = modifiers;
+}
+
+void text_editor_node_set_wrap_enabled(text_editor_node *n, int enabled) {
+    if (!n) {
+        return;
+    }
+    n->wrap_enabled = enabled ? 1u : 0u;
+    n->preferred_column = 0u;
+    n->preferred_visual_x = 0.0f;
+    if (n->wrap_enabled) {
+        n->scroll_x = 0.0f;
+    }
+    text_editor_invalidate_visual_layout(n);
+    text_editor_ensure_cursor_visible(n);
+}
+
+int text_editor_node_is_wrap_enabled(const text_editor_node *n) {
+    return n ? (n->wrap_enabled != 0u) : 0;
 }
 
 void text_editor_node_select_all(text_editor_node *n) {
@@ -3282,6 +3749,109 @@ int32_t text_editor_node_redo(text_editor_node *n) {
     return 0;
 }
 
+uint32_t text_editor_node_visible_line_count_for_bounds(text_editor_node *n,
+                                                        float width,
+                                                        float height) {
+    text_editor_layout layout;
+
+    if (!n || text_editor_prepare_layout(n, width, height, &layout) != CROFT_EDITOR_OK) {
+        return 0u;
+    }
+    return n->visual_row_count > 0u ? n->visual_row_count : 1u;
+}
+
+int32_t text_editor_node_offset_to_local_position(text_editor_node *n,
+                                                  float width,
+                                                  float height,
+                                                  uint32_t offset,
+                                                  float *out_x,
+                                                  float *out_y) {
+    text_editor_layout layout;
+    uint32_t row_number;
+    const text_editor_visual_row* row;
+    uint32_t line_len_bytes = 0u;
+    const char* line_text = NULL;
+
+    if (!n || !out_x || !out_y || text_editor_prepare_layout(n, width, height, &layout) != CROFT_EDITOR_OK) {
+        return -1;
+    }
+
+    row_number = text_editor_visual_row_number_for_offset(n, offset, 1);
+    row = text_editor_visual_row_at_visible_line(n, row_number);
+    if (!row) {
+        return -1;
+    }
+    if (row->model_line_number <= croft_editor_text_model_line_count(&n->text_model)) {
+        line_text = croft_editor_text_model_line_utf8(&n->text_model,
+                                                      row->model_line_number,
+                                                      &line_len_bytes);
+    }
+
+    *out_x = layout.gutter_width + n->scroll_x + layout.text_inset_x
+        + (line_text ? text_editor_visual_row_prefix_width(n, row, line_text, offset) : 0.0f);
+    *out_y = layout.text_inset_y + n->scroll_y + ((float)(row_number - 1u) * n->line_height);
+    return 0;
+}
+
+int32_t text_editor_node_hit_test_offset(text_editor_node *n,
+                                         float width,
+                                         float height,
+                                         float local_x,
+                                         float local_y,
+                                         uint32_t *out_offset) {
+    text_editor_layout layout;
+    const text_editor_visual_row* row;
+    const char* line_text = NULL;
+    uint32_t visible_line_number;
+    uint32_t line_len_bytes = 0u;
+    uint32_t best_offset;
+    uint32_t offset;
+    float best_distance;
+    float doc_x;
+    float doc_y;
+
+    if (!n || !out_offset || text_editor_prepare_layout(n, width, height, &layout) != CROFT_EDITOR_OK) {
+        return -1;
+    }
+
+    doc_x = local_x - layout.gutter_width - n->scroll_x - layout.text_inset_x;
+    doc_y = local_y - layout.text_inset_y - n->scroll_y;
+    if (doc_y < 0.0f) {
+        *out_offset = 0u;
+        return 0;
+    }
+
+    visible_line_number = text_editor_clamp_u32((uint32_t)(doc_y / n->line_height) + 1u,
+                                                1u,
+                                                n->visual_row_count > 0u ? n->visual_row_count : 1u);
+    row = text_editor_visual_row_at_visible_line(n, visible_line_number);
+    if (!row) {
+        return -1;
+    }
+    if (row->model_line_number <= croft_editor_text_model_line_count(&n->text_model)) {
+        line_text = croft_editor_text_model_line_utf8(&n->text_model,
+                                                      row->model_line_number,
+                                                      &line_len_bytes);
+    }
+
+    best_offset = row->start_offset;
+    best_distance = doc_x < 0.0f ? -doc_x : doc_x;
+    for (offset = row->start_offset; offset <= row->end_offset; offset++) {
+        float width_at_offset = line_text
+            ? text_editor_visual_row_prefix_width(n, row, line_text, offset)
+            : 0.0f;
+        float distance = width_at_offset >= doc_x ? (width_at_offset - doc_x) : (doc_x - width_at_offset);
+
+        if (offset == row->start_offset || distance <= best_distance) {
+            best_distance = distance;
+            best_offset = offset;
+        }
+    }
+
+    *out_offset = best_offset;
+    return 0;
+}
+
 void text_editor_node_dispose(text_editor_node *n) {
     if (!n) {
         return;
@@ -3296,6 +3866,7 @@ void text_editor_node_dispose(text_editor_node *n) {
     n->sel_start = 0;
     n->sel_end = 0;
     n->preferred_column = 0;
+    n->preferred_visual_x = 0.0f;
     n->modifiers = 0u;
     n->find_active = 0;
     n->replace_active = 0;
@@ -3305,6 +3876,19 @@ void text_editor_node_dispose(text_editor_node *n) {
     n->replace_query[0] = '\0';
     n->replace_query_len = 0u;
     n->folded_region_count = 0u;
+    n->wrap_enabled = 0u;
+    n->visual_layout_dirty = 1u;
+    n->visual_layout_width = 0.0f;
+    n->visual_row_count = 0u;
+    n->visual_row_capacity = 0u;
+    free(n->visual_rows);
+    n->visual_rows = NULL;
+    free(n->line_first_visible_rows);
+    n->line_first_visible_rows = NULL;
+    free(n->line_visible_row_counts);
+    n->line_visible_row_counts = NULL;
+    n->line_visible_row_capacity = 0u;
+    croft_editor_line_cache_dispose(&n->line_cache);
     n->profiling_enabled = 0u;
     memset(&n->profile_stats, 0, sizeof(n->profile_stats));
 }
