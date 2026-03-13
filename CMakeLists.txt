@@ -3380,8 +3380,10 @@ if(CROFT_GLFW_TARGET)
     croft_apply_public_includes(croft_ui_glfw_opengl)
     target_link_libraries(croft_ui_glfw_opengl PUBLIC croft_host_log ${CROFT_GLFW_TARGET})
     if(APPLE)
+        target_sources(croft_ui_glfw_opengl PRIVATE src/host/mac/host_text_input.m)
+        set_source_files_properties(src/host/mac/host_text_input.m PROPERTIES COMPILE_FLAGS "-fobjc-arc")
         target_compile_definitions(croft_ui_glfw_opengl PRIVATE GL_SILENCE_DEPRECATION)
-        target_link_libraries(croft_ui_glfw_opengl PUBLIC "-framework OpenGL")
+        target_link_libraries(croft_ui_glfw_opengl PUBLIC "-framework AppKit" "-framework OpenGL")
     endif()
     croft_register_artifact(croft_ui_glfw_opengl ui
         CAPABILITY_BUNDLES
@@ -3395,8 +3397,10 @@ if(CROFT_GLFW_TARGET)
     if(APPLE)
         add_library(croft_ui_glfw_metal STATIC src/host/host_ui.c)
         croft_apply_public_includes(croft_ui_glfw_metal)
+        target_sources(croft_ui_glfw_metal PRIVATE src/host/mac/host_text_input.m)
+        set_source_files_properties(src/host/mac/host_text_input.m PROPERTIES COMPILE_FLAGS "-fobjc-arc")
         target_compile_definitions(croft_ui_glfw_metal PRIVATE CROFT_HOST_UI_GLFW_NO_API=1)
-        target_link_libraries(croft_ui_glfw_metal PUBLIC croft_host_log ${CROFT_GLFW_TARGET})
+        target_link_libraries(croft_ui_glfw_metal PUBLIC croft_host_log ${CROFT_GLFW_TARGET} "-framework AppKit")
         croft_register_artifact(croft_ui_glfw_metal ui
             CAPABILITY_BUNDLES
                 croft-host-window-current-machine
@@ -4805,7 +4809,7 @@ endif()
 if(CROFT_BUILD_TESTS)
     enable_testing()
 
-    add_executable(test_croft tests/test_main.c tests/test_queue.c tests/host_tests/test_fs.c tests/test_editor_text_model.c tests/test_editor_line_cache.c tests/test_editor_syntax.c tests/test_editor_brackets.c tests/test_editor_folding.c tests/test_editor_whitespace.c tests/test_editor_search.c tests/test_editor_status.c tests/test_editor_document.c tests/test_editor_commands.c tests/test_editor_scene_runtime.c tests/test_editor_find_replace.c tests/test_editor_wrap_layout.c tests/test_json_viewer_state.c tests/test_wit_resource_codegen.c tests/test_wit_text_runtime.c tests/test_wit_text_program.c tests/test_wit_store_runtime.c tests/test_wit_mailbox_runtime.c tests/test_wit_host_fs_runtime.c tests/test_wit_host_clock_runtime.c tests/test_wit_host_editor_input_runtime.c tests/test_wit_host_popup_menu_runtime.c tests/wasm_guests/thatch_json_guest.c src/runtime/json_viewer_state.c)
+    add_executable(test_croft tests/test_main.c tests/test_queue.c tests/host_tests/test_fs.c tests/test_editor_text_model.c tests/test_editor_line_cache.c tests/test_editor_syntax.c tests/test_editor_brackets.c tests/test_editor_folding.c tests/test_editor_whitespace.c tests/test_editor_search.c tests/test_editor_status.c tests/test_editor_document.c tests/test_editor_commands.c tests/test_editor_scene_runtime.c tests/test_editor_find_replace.c tests/test_editor_wrap_layout.c tests/test_editor_metrics_and_composition.c tests/test_json_viewer_state.c tests/test_wit_resource_codegen.c tests/test_wit_text_runtime.c tests/test_wit_text_program.c tests/test_wit_store_runtime.c tests/test_wit_mailbox_runtime.c tests/test_wit_host_fs_runtime.c tests/test_wit_host_clock_runtime.c tests/test_wit_host_editor_input_runtime.c tests/test_wit_host_popup_menu_runtime.c tests/wasm_guests/thatch_json_guest.c src/runtime/json_viewer_state.c)
     target_include_directories(test_croft PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
     target_link_libraries(test_croft
         PRIVATE

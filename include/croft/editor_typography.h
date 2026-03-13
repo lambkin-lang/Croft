@@ -16,6 +16,9 @@ typedef struct croft_editor_font_probe {
     float point_size;
     float sample_width;
     float line_height;
+    float ascender;
+    float descender;
+    float leading;
     char requested_family[CROFT_EDITOR_FONT_PROBE_NAME_CAPACITY];
     char requested_style[CROFT_EDITOR_FONT_PROBE_NAME_CAPACITY];
     char resolved_family[CROFT_EDITOR_FONT_PROBE_NAME_CAPACITY];

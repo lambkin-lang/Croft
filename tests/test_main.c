@@ -269,6 +269,8 @@ extern int test_editor_scene_runtime_auto_close(void);
 extern int test_editor_find_replace_next(void);
 extern int test_editor_find_replace_all_undo(void);
 extern int test_editor_wrap_layout_geometry(void);
+extern int test_editor_metrics_snapshot(void);
+extern int test_editor_composition_state(void);
 extern int test_wit_resource_open_command_roundtrip(void);
 extern int test_wit_resource_handle_roundtrip(void);
 extern int test_wit_text_runtime_roundtrip(void);
@@ -284,6 +286,8 @@ extern int test_wit_host_editor_input_runtime_shortcuts(void);
 extern int test_wit_host_editor_input_runtime_motion_modes(void);
 extern int test_wit_host_editor_input_runtime_indent_actions(void);
 extern int test_wit_host_editor_input_runtime_fold_actions(void);
+extern int test_wit_host_editor_input_runtime_toggle_wrap(void);
+extern int test_wit_host_editor_input_runtime_composition_actions(void);
 extern int test_wit_host_popup_menu_runtime_empty_popup(void);
 extern int test_wit_host_popup_menu_runtime_unavailable_without_window(void);
 extern int test_json_viewer_state_path_selection_and_expansion(void);
@@ -424,6 +428,8 @@ int main(void)
     RUN_TEST(test_editor_find_replace_next);
     RUN_TEST(test_editor_find_replace_all_undo);
     RUN_TEST(test_editor_wrap_layout_geometry);
+    RUN_TEST(test_editor_metrics_snapshot);
+    RUN_TEST(test_editor_composition_state);
 
     printf("\n[wit_common_core]\n");
     RUN_TEST(test_wit_resource_open_command_roundtrip);
@@ -441,6 +447,8 @@ int main(void)
     RUN_TEST(test_wit_host_editor_input_runtime_motion_modes);
     RUN_TEST(test_wit_host_editor_input_runtime_indent_actions);
     RUN_TEST(test_wit_host_editor_input_runtime_fold_actions);
+    RUN_TEST(test_wit_host_editor_input_runtime_toggle_wrap);
+    RUN_TEST(test_wit_host_editor_input_runtime_composition_actions);
     RUN_TEST(test_wit_host_popup_menu_runtime_empty_popup);
     RUN_TEST(test_wit_host_popup_menu_runtime_unavailable_without_window);
     RUN_TEST(test_json_viewer_state_path_selection_and_expansion);

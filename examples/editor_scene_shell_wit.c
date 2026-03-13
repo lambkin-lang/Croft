@@ -61,10 +61,16 @@ static double usec_to_msec(uint64_t usec)
 
 static void print_font_probe_summary(const char* variant,
                                      const char* backend,
-                                     float editor_line_height,
-                                     float font_size)
+                                     const text_editor_node* editor)
 {
     croft_editor_font_probe probe = {0};
+    croft_text_editor_metrics_snapshot metrics = {0};
+    float font_size;
+
+    if (!editor) {
+        return;
+    }
+    font_size = editor->font_size;
 
     if (host_render_probe_font(font_size,
                                CROFT_EDITOR_FONT_PROBE_SAMPLE,
@@ -72,8 +78,9 @@ static void print_font_probe_summary(const char* variant,
                                &probe) != 0) {
         return;
     }
+    text_editor_node_get_metrics(editor, &metrics);
 
-    printf("editor-font-probe variant=%s backend=%s role=text requested_family=%s requested_style=%s resolved_family=%s resolved_style=%s point_size=%.1f sample_width=%.3f font_line_height=%.3f editor_line_height=%.3f\n",
+    printf("editor-font-probe variant=%s backend=%s role=text requested_family=%s requested_style=%s resolved_family=%s resolved_style=%s point_size=%.1f sample_width=%.3f font_line_height=%.3f ascender=%.3f descender=%.3f leading=%.3f editor_line_height=%.3f baseline=%.3f\n",
            variant,
            backend,
            probe.requested_family,
@@ -83,7 +90,11 @@ static void print_font_probe_summary(const char* variant,
            probe.point_size,
            probe.sample_width,
            probe.line_height,
-           editor_line_height);
+           metrics.ascender,
+           metrics.descender,
+           metrics.leading,
+           metrics.line_height,
+           metrics.baseline_offset);
 }
 
 static void request_redraw(void)
@@ -798,8 +809,29 @@ static editor_action_result editor_apply_action(croft_wit_host_clipboard_runtime
                 return EDITOR_ACTION_RECOVERABLE_ERROR;
             }
             return EDITOR_ACTION_APPLIED;
+        case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_TOGGLE_WRAP:
+            text_editor_node_set_wrap_enabled(&g_editor,
+                                              text_editor_node_is_wrap_enabled(&g_editor) ? 0 : 1);
+            return EDITOR_ACTION_APPLIED;
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_INSERT_CODEPOINT:
             g_editor.base.vtbl->on_char_event(&g_editor.base, action->val.insert_codepoint);
+            return EDITOR_ACTION_APPLIED;
+        case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_COMPOSITION_UPDATE:
+            if (text_editor_node_is_find_active(&g_editor)) {
+                text_editor_node_clear_composition(&g_editor);
+                return EDITOR_ACTION_NOOP;
+            }
+            if (text_editor_node_set_composition_utf8(&g_editor,
+                                                      action->val.composition_update.utf8_data,
+                                                      action->val.composition_update.utf8_len,
+                                                      action->val.composition_update.selection_start,
+                                                      action->val.composition_update.selection_end) != 0) {
+                log_recoverable_action_message("composition", "preview update failed");
+                return EDITOR_ACTION_RECOVERABLE_ERROR;
+            }
+            return EDITOR_ACTION_APPLIED;
+        case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_COMPOSITION_CLEAR:
+            text_editor_node_clear_composition(&g_editor);
             return EDITOR_ACTION_APPLIED;
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_UNDO:
             if (!croft_editor_document_can_undo(g_document)) {
@@ -1088,7 +1120,7 @@ int main(int argc, char** argv)
         text_editor_node_set_profiling(&g_editor, profile_enabled);
         scene_node_add_child(&g_root_vp.base, &g_editor.base);
         if (font_probe_enabled) {
-            print_font_probe_summary("scene-wit", "native-metal", g_editor.line_height, g_editor.font_size);
+            print_font_probe_summary("scene-wit", "native-metal", &g_editor);
         }
     }
 
@@ -1166,6 +1198,45 @@ int main(int argc, char** argv)
                                                                      &input_reply) != 0
                             || !editor_input_expect_status_ok(&input_reply)) {
                         log_recoverable_action_message("char event", "editor input bridge failed");
+                        break;
+                    }
+                    request_redraw();
+                    break;
+                }
+                case SAP_WIT_HOST_WINDOW_EVENT_COMPOSITION: {
+                    SapWitHostEditorInputCommand input_command = {0};
+                    SapWitHostEditorInputReply input_reply = {0};
+
+                    input_command.case_tag = SAP_WIT_HOST_EDITOR_INPUT_COMMAND_WINDOW_COMPOSITION;
+                    input_command.val.window_composition.utf8_data = event.val.composition.utf8_data;
+                    input_command.val.window_composition.utf8_len = event.val.composition.utf8_len;
+                    input_command.val.window_composition.selection_start =
+                        event.val.composition.selection_start;
+                    input_command.val.window_composition.selection_end =
+                        event.val.composition.selection_end;
+                    if (croft_wit_host_editor_input_runtime_dispatch(editor_input_runtime,
+                                                                     &input_command,
+                                                                     &input_reply) != 0
+                            || !editor_input_expect_status_ok(&input_reply)) {
+                        log_recoverable_action_message("composition event",
+                                                       "editor input bridge failed");
+                        break;
+                    }
+                    request_redraw();
+                    break;
+                }
+                case SAP_WIT_HOST_WINDOW_EVENT_COMPOSITION_CLEAR: {
+                    SapWitHostEditorInputCommand input_command = {0};
+                    SapWitHostEditorInputReply input_reply = {0};
+
+                    input_command.case_tag =
+                        SAP_WIT_HOST_EDITOR_INPUT_COMMAND_WINDOW_COMPOSITION_CLEAR;
+                    if (croft_wit_host_editor_input_runtime_dispatch(editor_input_runtime,
+                                                                     &input_command,
+                                                                     &input_reply) != 0
+                            || !editor_input_expect_status_ok(&input_reply)) {
+                        log_recoverable_action_message("composition clear",
+                                                       "editor input bridge failed");
                         break;
                     }
                     request_redraw();

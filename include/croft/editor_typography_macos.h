@@ -108,6 +108,15 @@ static inline int32_t croft_editor_mac_probe_font(NSFont* font,
     croft_editor_font_probe_copy_nsstring(probe_out->resolved_style,
                                           sizeof(probe_out->resolved_style),
                                           font.fontName);
+    probe_out->ascender = (float)ceil(font.ascender);
+    probe_out->descender = (float)ceil(-font.descender);
+    if (probe_out->descender < 0.0f) {
+        probe_out->descender = 0.0f;
+    }
+    probe_out->leading = (float)ceil(font.leading);
+    if (probe_out->leading < 0.0f) {
+        probe_out->leading = 0.0f;
+    }
     probe_out->line_height = (float)ceil(font.ascender - font.descender + font.leading);
     if (probe_out->line_height <= 0.0f) {
         probe_out->line_height = (float)point_size;

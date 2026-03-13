@@ -32,6 +32,12 @@ interface host-window {
     codepoint: u32,
   }
 
+  record window-composition-event {
+    utf8: list<u8>,
+    selection-start: u32,
+    selection-end: u32,
+  }
+
   record window-zoom-event {
     delta-micros: s32,
   }
@@ -42,6 +48,8 @@ interface host-window {
     scroll(window-scroll-event),
     cursor(window-cursor-event),
     char-event(window-char-event),
+    composition(window-composition-event),
+    composition-clear,
     zoom(window-zoom-event),
   }
 

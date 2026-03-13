@@ -1008,6 +1008,9 @@ static textpad_action_result textpad_apply_action(textpad_state* state,
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_QUIT:
             state->running = 0;
             return TEXTPAD_ACTION_APPLIED;
+        case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_TOGGLE_WRAP:
+        case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_COMPOSITION_UPDATE:
+        case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_COMPOSITION_CLEAR:
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_UNDO:
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_REDO:
         case SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_SAVE:
@@ -1240,6 +1243,39 @@ int main(void)
                             || !expect_editor_status_ok(&input_reply)) {
                         log_recoverable_action_message("char event", "editor input bridge failed");
                         break;
+                    }
+                    break;
+                }
+                case SAP_WIT_HOST_WINDOW_EVENT_COMPOSITION: {
+                    SapWitHostEditorInputCommand input_command = {0};
+                    SapWitHostEditorInputReply input_reply = {0};
+                    input_command.case_tag = SAP_WIT_HOST_EDITOR_INPUT_COMMAND_WINDOW_COMPOSITION;
+                    input_command.val.window_composition.utf8_data = event.val.composition.utf8_data;
+                    input_command.val.window_composition.utf8_len = event.val.composition.utf8_len;
+                    input_command.val.window_composition.selection_start =
+                        event.val.composition.selection_start;
+                    input_command.val.window_composition.selection_end =
+                        event.val.composition.selection_end;
+                    if (croft_wit_host_editor_input_runtime_dispatch(editor_input_runtime,
+                                                                     &input_command,
+                                                                     &input_reply) != 0
+                            || !expect_editor_status_ok(&input_reply)) {
+                        log_recoverable_action_message("composition event",
+                                                       "editor input bridge failed");
+                    }
+                    break;
+                }
+                case SAP_WIT_HOST_WINDOW_EVENT_COMPOSITION_CLEAR: {
+                    SapWitHostEditorInputCommand input_command = {0};
+                    SapWitHostEditorInputReply input_reply = {0};
+                    input_command.case_tag =
+                        SAP_WIT_HOST_EDITOR_INPUT_COMMAND_WINDOW_COMPOSITION_CLEAR;
+                    if (croft_wit_host_editor_input_runtime_dispatch(editor_input_runtime,
+                                                                     &input_command,
+                                                                     &input_reply) != 0
+                            || !expect_editor_status_ok(&input_reply)) {
+                        log_recoverable_action_message("composition clear",
+                                                       "editor input bridge failed");
                     }
                     break;
                 }

@@ -22,6 +22,12 @@ interface host-editor-input {
     codepoint: u32,
   }
 
+  record composition-event {
+    utf8: list<u8>,
+    selection-start: u32,
+    selection-end: u32,
+  }
+
   record menu-action {
     action-id: s32,
   }
@@ -47,7 +53,10 @@ interface host-editor-input {
     unfold,
     indent,
     outdent,
+    toggle-wrap,
     insert-codepoint(u32),
+    composition-update(composition-event),
+    composition-clear,
     undo,
     redo,
     select-all,
@@ -63,6 +72,8 @@ interface host-editor-input {
 
   window-key: func(event: key-event) -> status;
   window-char: func(event: char-event) -> status;
+  window-composition: func(event: composition-event) -> status;
+  window-composition-clear: func() -> status;
   menu-action: func(action: menu-action) -> status;
   next-action: func() -> action-result;
 }

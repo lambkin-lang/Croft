@@ -22,8 +22,17 @@ extern "C" {
 #define CROFT_UI_MOD_ALT      (1u << 2)
 #define CROFT_UI_MOD_SUPER    (1u << 3)
 
+/* Text composition event kinds */
+#define CROFT_UI_COMPOSITION_UPDATE 1
+#define CROFT_UI_COMPOSITION_CLEAR  2
+
 /* Event callback signature */
 typedef void (*host_ui_event_cb_t)(int32_t event_type, int32_t arg0, int32_t arg1);
+typedef void (*host_ui_composition_cb_t)(int32_t kind,
+                                         const uint8_t *utf8,
+                                         uint32_t utf8_len,
+                                         uint32_t selection_start,
+                                         uint32_t selection_end);
 
 /**
  * Initializes the Windowing platform (GLFW).
@@ -90,6 +99,7 @@ void host_ui_swap_buffers(void);
  * Registers a global callback for UI events.
  */
 void host_ui_set_event_callback(host_ui_event_cb_t cb);
+void host_ui_set_composition_callback(host_ui_composition_cb_t cb);
 
 /**
  * Gets the underlying GLFW window object when the caller is operating inside a

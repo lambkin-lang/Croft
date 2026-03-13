@@ -374,6 +374,11 @@ Current implemented editor baseline:
 - folding
 - wrapped-line layout with row-aware hit testing, viewport mapping, and caret
   movement in the scene editor family
+- font-probe-derived line-height, baseline, and inset policy in the
+  custom-rendered scene editor families
+- marked-text/IME composition preview plumbed through both the direct host-ui
+  path and the WIT host-window/editor-input path for the custom-rendered
+  editor families
 - syntax highlighting for JavaScript/TypeScript, JSON, YAML, Markdown, Python,
   Lambkin, WIT/WAT, CSS, HTML, and XML
 - file open/save/save-as plus native context menus in the AppKit and scene
@@ -384,12 +389,14 @@ Current implemented editor baseline:
 The next editor capabilities should focus on the hard, high-value portions of a
 VS Code-like document editor that do not require the extension/LSP ecosystem:
 
-1. line-height, baseline, and inset policy that make the direct-Metal editor
-   converge more honestly toward AppKit where that is appropriate
-2. IME/composition, selection affinity, and text-input correctness for the
-   custom-rendered editor families
-3. decoration plumbing for diagnostics, search results, active ranges, and
+1. selection affinity and richer text-input correctness for the
+   custom-rendered editor families now that marked-text composition has a real
+   host/input seam
+2. decoration plumbing for diagnostics, search results, active ranges, and
    syntax-driven styling without forcing one rendering strategy across families
+3. accessibility and platform-collapse tightening around the direct-Metal path
+   now that metrics and composition are no longer hidden inside renderer-local
+   guesses
 
 The spatial-workspace line should not move into larger implementation work until
 it has a clearer product definition. The first step there is a question list and
@@ -462,9 +469,9 @@ host-boundary pressure points instead of broadening the system indiscriminately.
 2. Keep WIT/codegen refactors broad: schema-shape changes should sweep
    `src/runtime`, `examples`, and `tests`, then build and smoke-check the
    example matrix instead of stopping at the first green target.
-3. Tighten the direct-Metal editor around text metrics, IME/composition, and
-   accessibility so the hard native-editor seams become
-   explicit instead of hiding inside one renderer-centric module.
+3. Build on the new text-metrics and composition seams by tackling selection
+   affinity, richer decorations, and accessibility instead of retreating into
+   renderer-local shortcuts.
 4. Keep the incremental cache and wrapped-row geometry covered by focused
    editor/scene tests so later refactors do not regress quietly.
 5. Keep AppKit as the CPU-native contrast case and tgfx as the scene-rendered
@@ -512,14 +519,14 @@ implementation tasks:
 
 The next concrete implementation work should happen in this order:
 
-1. Push direct-Metal editor work into line-height/baseline policy, IME,
-   and accessibility seams rather than more shell-level chrome.
+1. Push direct-Metal editor work into selection-affinity, decoration, and
+   accessibility seams rather than more shell-level chrome.
 2. Keep AppKit and tgfx alive as contrast cases while treating the native
    direct-Metal editor as the main custom-rendered reference path.
 3. Keep `make test-examples` and the example smoke path honest whenever WIT
    schemas, codegen, or host mix-in signatures change.
-4. Keep the new wrapped-row geometry pinned with unit coverage before adding
-   richer editor decorations or IME state.
+4. Keep the new wrapped-row geometry, font-metric policy, and composition state
+   pinned with unit coverage before adding richer editor decorations.
 6. Refine `tools/wit_codegen.c` further around remaining exact-tail helpers
    and how rename/trace manifests should feed Lambkin.
 7. Read `docs/LAMBKIN_XPI_JOURNAL.md` before expanding host/editor surface area

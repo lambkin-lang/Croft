@@ -35,7 +35,10 @@ enum {
 };
 
 struct croft_wit_host_editor_input_runtime {
-    SapWitHostEditorInputEditorAction actions[CROFT_WIT_EDITOR_ACTION_CAP];
+    struct {
+        SapWitHostEditorInputEditorAction action;
+        uint8_t* owned_utf8;
+    } actions[CROFT_WIT_EDITOR_ACTION_CAP];
     uint32_t action_head;
     uint32_t action_count;
     uint8_t suppress_tab_char;
@@ -95,17 +98,52 @@ static void croft_wit_host_editor_input_reply_action_empty(SapWitHostEditorInput
     reply->val.action.v_val.ok.has_v = 0u;
 }
 
-static void croft_wit_host_editor_input_enqueue(croft_wit_host_editor_input_runtime* runtime,
-                                                const SapWitHostEditorInputEditorAction* action)
+static void croft_wit_host_editor_input_release_slot(croft_wit_host_editor_input_runtime* runtime,
+                                                     uint32_t slot)
+{
+    if (!runtime || slot >= CROFT_WIT_EDITOR_ACTION_CAP) {
+        return;
+    }
+    free(runtime->actions[slot].owned_utf8);
+    runtime->actions[slot].owned_utf8 = NULL;
+    memset(&runtime->actions[slot].action, 0, sizeof(runtime->actions[slot].action));
+}
+
+static void croft_wit_host_editor_input_release_all(croft_wit_host_editor_input_runtime* runtime)
+{
+    uint32_t slot;
+
+    if (!runtime) {
+        return;
+    }
+    for (slot = 0u; slot < CROFT_WIT_EDITOR_ACTION_CAP; slot++) {
+        croft_wit_host_editor_input_release_slot(runtime, slot);
+    }
+    runtime->action_head = 0u;
+    runtime->action_count = 0u;
+}
+
+static void croft_wit_host_editor_input_enqueue_owned(croft_wit_host_editor_input_runtime* runtime,
+                                                      const SapWitHostEditorInputEditorAction* action,
+                                                      uint8_t* owned_utf8)
 {
     uint32_t slot;
 
     if (!runtime || !action || runtime->action_count >= CROFT_WIT_EDITOR_ACTION_CAP) {
+        free(owned_utf8);
         return;
     }
     slot = (runtime->action_head + runtime->action_count) % CROFT_WIT_EDITOR_ACTION_CAP;
-    runtime->actions[slot] = *action;
+    croft_wit_host_editor_input_release_slot(runtime, slot);
+    runtime->actions[slot].action = *action;
+    runtime->actions[slot].owned_utf8 = owned_utf8;
     runtime->action_count++;
+}
+
+static void croft_wit_host_editor_input_enqueue(croft_wit_host_editor_input_runtime* runtime,
+                                                const SapWitHostEditorInputEditorAction* action)
+{
+    croft_wit_host_editor_input_enqueue_owned(runtime, action, NULL);
 }
 
 static uint32_t croft_wit_host_editor_input_motion_flags(uint32_t modifiers)
@@ -201,6 +239,32 @@ static void croft_wit_host_editor_input_enqueue_simple(
     croft_wit_host_editor_input_enqueue(runtime, &action);
 }
 
+static void croft_wit_host_editor_input_enqueue_composition_update(
+    croft_wit_host_editor_input_runtime* runtime,
+    const SapWitHostEditorInputCompositionEvent* event)
+{
+    SapWitHostEditorInputEditorAction action = {0};
+    uint8_t* owned_utf8 = NULL;
+
+    if (!runtime || !event || !event->utf8_data || event->utf8_len == 0u) {
+        return;
+    }
+
+    owned_utf8 = (uint8_t*)malloc((size_t)event->utf8_len + 1u);
+    if (!owned_utf8) {
+        return;
+    }
+    memcpy(owned_utf8, event->utf8_data, event->utf8_len);
+    owned_utf8[event->utf8_len] = '\0';
+
+    action.case_tag = SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_COMPOSITION_UPDATE;
+    action.val.composition_update.utf8_data = owned_utf8;
+    action.val.composition_update.utf8_len = event->utf8_len;
+    action.val.composition_update.selection_start = event->selection_start;
+    action.val.composition_update.selection_end = event->selection_end;
+    croft_wit_host_editor_input_enqueue_owned(runtime, &action, owned_utf8);
+}
+
 croft_wit_host_editor_input_runtime* croft_wit_host_editor_input_runtime_create(void)
 {
     return (croft_wit_host_editor_input_runtime*)calloc(1u, sizeof(croft_wit_host_editor_input_runtime));
@@ -208,6 +272,7 @@ croft_wit_host_editor_input_runtime* croft_wit_host_editor_input_runtime_create(
 
 void croft_wit_host_editor_input_runtime_destroy(croft_wit_host_editor_input_runtime* runtime)
 {
+    croft_wit_host_editor_input_release_all(runtime);
     free(runtime);
 }
 
@@ -277,6 +342,14 @@ static void croft_wit_host_editor_input_translate_key(croft_wit_host_editor_inpu
             default:
                 break;
         }
+    }
+
+    if (!command_mode
+            && (key->modifiers & CROFT_UI_MOD_ALT) != 0u
+            && key->key == CROFT_KEY_Z) {
+        croft_wit_host_editor_input_enqueue_simple(runtime,
+            SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_TOGGLE_WRAP);
+        return;
     }
 
     switch (key->key) {
@@ -429,6 +502,36 @@ static int32_t croft_wit_host_editor_input_dispatch_window_char(
     return 0;
 }
 
+static int32_t croft_wit_host_editor_input_dispatch_window_composition(
+    void* ctx,
+    const SapWitHostEditorInputCompositionEvent* event,
+    SapWitHostEditorInputReply* reply_out)
+{
+    croft_wit_host_editor_input_runtime* runtime = (croft_wit_host_editor_input_runtime*)ctx;
+
+    if (!runtime || !event || !reply_out) {
+        return -1;
+    }
+    croft_wit_host_editor_input_enqueue_composition_update(runtime, event);
+    croft_wit_host_editor_input_reply_status_ok(reply_out);
+    return 0;
+}
+
+static int32_t croft_wit_host_editor_input_dispatch_window_composition_clear(
+    void* ctx,
+    SapWitHostEditorInputReply* reply_out)
+{
+    croft_wit_host_editor_input_runtime* runtime = (croft_wit_host_editor_input_runtime*)ctx;
+
+    if (!runtime || !reply_out) {
+        return -1;
+    }
+    croft_wit_host_editor_input_enqueue_simple(runtime,
+        SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_COMPOSITION_CLEAR);
+    croft_wit_host_editor_input_reply_status_ok(reply_out);
+    return 0;
+}
+
 static int32_t croft_wit_host_editor_input_dispatch_menu_action(
     void* ctx,
     const SapWitHostEditorInputMenuAction* action,
@@ -457,7 +560,7 @@ static int32_t croft_wit_host_editor_input_dispatch_next_action(
         croft_wit_host_editor_input_reply_action_empty(reply_out);
         return 0;
     }
-    croft_wit_host_editor_input_reply_action_ok(reply_out, &runtime->actions[runtime->action_head]);
+    croft_wit_host_editor_input_reply_action_ok(reply_out, &runtime->actions[runtime->action_head].action);
     runtime->action_head = (runtime->action_head + 1u) % CROFT_WIT_EDITOR_ACTION_CAP;
     runtime->action_count--;
     return 0;
@@ -473,6 +576,8 @@ int32_t croft_wit_host_editor_input_runtime_dispatch(
     static const SapWitHostEditorInputDispatchOps ops = {
         .window_key = croft_wit_host_editor_input_dispatch_window_key,
         .window_char = croft_wit_host_editor_input_dispatch_window_char,
+        .window_composition = croft_wit_host_editor_input_dispatch_window_composition,
+        .window_composition_clear = croft_wit_host_editor_input_dispatch_window_composition_clear,
         .menu_action = croft_wit_host_editor_input_dispatch_menu_action,
         .next_action = croft_wit_host_editor_input_dispatch_next_action,
     };

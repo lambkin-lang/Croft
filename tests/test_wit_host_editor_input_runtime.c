@@ -269,3 +269,94 @@ int test_wit_host_editor_input_runtime_fold_actions(void)
     croft_wit_host_editor_input_runtime_destroy(runtime);
     return 0;
 }
+
+int test_wit_host_editor_input_runtime_toggle_wrap(void)
+{
+    croft_wit_host_editor_input_runtime* runtime;
+    SapWitHostEditorInputCommand command = {0};
+    SapWitHostEditorInputReply reply = {0};
+    SapWitHostEditorInputEditorAction action = {0};
+
+    runtime = croft_wit_host_editor_input_runtime_create();
+    if (!runtime) {
+        return 1;
+    }
+
+    command.case_tag = SAP_WIT_HOST_EDITOR_INPUT_COMMAND_WINDOW_KEY;
+    command.val.window_key.key = 90;
+    command.val.window_key.action = 1;
+    command.val.window_key.modifiers = CROFT_UI_MOD_ALT;
+    if (croft_wit_host_editor_input_runtime_dispatch(runtime, &command, &reply) != 0) {
+        croft_wit_host_editor_input_runtime_destroy(runtime);
+        return 1;
+    }
+
+    command.case_tag = SAP_WIT_HOST_EDITOR_INPUT_COMMAND_NEXT_ACTION;
+    if (croft_wit_host_editor_input_runtime_dispatch(runtime, &command, &reply) != 0
+            || wit_editor_input_expect_action(&reply, &action) != 1
+            || action.case_tag != SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_TOGGLE_WRAP) {
+        croft_wit_host_editor_input_runtime_destroy(runtime);
+        return 1;
+    }
+
+    croft_wit_host_editor_input_runtime_destroy(runtime);
+    return 0;
+}
+
+int test_wit_host_editor_input_runtime_composition_actions(void)
+{
+    croft_wit_host_editor_input_runtime* runtime;
+    SapWitHostEditorInputCommand command = {0};
+    SapWitHostEditorInputReply reply = {0};
+    SapWitHostEditorInputEditorAction action = {0};
+    static const uint8_t marked_text[] = "ko";
+
+    runtime = croft_wit_host_editor_input_runtime_create();
+    if (!runtime) {
+        return 1;
+    }
+
+    command.case_tag = SAP_WIT_HOST_EDITOR_INPUT_COMMAND_WINDOW_COMPOSITION;
+    command.val.window_composition.utf8_data = marked_text;
+    command.val.window_composition.utf8_len = 2u;
+    command.val.window_composition.selection_start = 1u;
+    command.val.window_composition.selection_end = 2u;
+    if (croft_wit_host_editor_input_runtime_dispatch(runtime, &command, &reply) != 0) {
+        croft_wit_host_editor_input_runtime_destroy(runtime);
+        return 1;
+    }
+
+    command.case_tag = SAP_WIT_HOST_EDITOR_INPUT_COMMAND_NEXT_ACTION;
+    if (croft_wit_host_editor_input_runtime_dispatch(runtime, &command, &reply) != 0
+            || wit_editor_input_expect_action(&reply, &action) != 1
+            || action.case_tag != SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_COMPOSITION_UPDATE) {
+        croft_wit_host_editor_input_runtime_destroy(runtime);
+        return 1;
+    }
+    if (action.val.composition_update.utf8_len != 2u
+            || action.val.composition_update.utf8_data == NULL
+            || action.val.composition_update.utf8_data[0] != 'k'
+            || action.val.composition_update.utf8_data[1] != 'o'
+            || action.val.composition_update.selection_start != 1u
+            || action.val.composition_update.selection_end != 2u) {
+        croft_wit_host_editor_input_runtime_destroy(runtime);
+        return 1;
+    }
+
+    command.case_tag = SAP_WIT_HOST_EDITOR_INPUT_COMMAND_WINDOW_COMPOSITION_CLEAR;
+    if (croft_wit_host_editor_input_runtime_dispatch(runtime, &command, &reply) != 0) {
+        croft_wit_host_editor_input_runtime_destroy(runtime);
+        return 1;
+    }
+
+    command.case_tag = SAP_WIT_HOST_EDITOR_INPUT_COMMAND_NEXT_ACTION;
+    if (croft_wit_host_editor_input_runtime_dispatch(runtime, &command, &reply) != 0
+            || wit_editor_input_expect_action(&reply, &action) != 1
+            || action.case_tag != SAP_WIT_HOST_EDITOR_INPUT_EDITOR_ACTION_COMPOSITION_CLEAR) {
+        croft_wit_host_editor_input_runtime_destroy(runtime);
+        return 1;
+    }
+
+    croft_wit_host_editor_input_runtime_destroy(runtime);
+    return 0;
+}

@@ -12,13 +12,18 @@
 
 struct croft_wit_host_window_runtime {
     uint8_t live;
-    SapWitHostWindowEvent events[CROFT_WIT_HOST_WINDOW_EVENT_CAP];
+    struct {
+        SapWitHostWindowEvent event;
+        uint8_t* owned_utf8;
+    } events[CROFT_WIT_HOST_WINDOW_EVENT_CAP];
     uint32_t event_head;
     uint32_t event_count;
 };
 
 static croft_wit_host_window_runtime* g_window_runtime = NULL;
 static const SapWitHostWindowDispatchOps g_croft_wit_host_window_dispatch_ops;
+static void croft_wit_host_window_enqueue_owned(const SapWitHostWindowEvent* event,
+                                                uint8_t* owned_utf8);
 
 static void croft_wit_host_window_reply_zero(SapWitHostWindowReply* reply)
 {
@@ -140,17 +145,52 @@ static void croft_wit_host_window_reply_size_err(SapWitHostWindowReply* reply, c
 
 static void croft_wit_host_window_enqueue(const SapWitHostWindowEvent* event)
 {
+    croft_wit_host_window_enqueue_owned(event, NULL);
+}
+
+static void croft_wit_host_window_release_entry(croft_wit_host_window_runtime* runtime, uint32_t slot)
+{
+    if (!runtime || slot >= CROFT_WIT_HOST_WINDOW_EVENT_CAP) {
+        return;
+    }
+    free(runtime->events[slot].owned_utf8);
+    runtime->events[slot].owned_utf8 = NULL;
+    memset(&runtime->events[slot].event, 0, sizeof(runtime->events[slot].event));
+}
+
+static void croft_wit_host_window_release_all(croft_wit_host_window_runtime* runtime)
+{
+    uint32_t slot;
+
+    if (!runtime) {
+        return;
+    }
+
+    for (slot = 0u; slot < CROFT_WIT_HOST_WINDOW_EVENT_CAP; slot++) {
+        croft_wit_host_window_release_entry(runtime, slot);
+    }
+    runtime->event_head = 0u;
+    runtime->event_count = 0u;
+}
+
+static void croft_wit_host_window_enqueue_owned(const SapWitHostWindowEvent* event,
+                                                uint8_t* owned_utf8)
+{
     uint32_t slot;
 
     if (!g_window_runtime || !event) {
+        free(owned_utf8);
         return;
     }
     if (g_window_runtime->event_count >= CROFT_WIT_HOST_WINDOW_EVENT_CAP) {
+        free(owned_utf8);
         return;
     }
 
     slot = (g_window_runtime->event_head + g_window_runtime->event_count) % CROFT_WIT_HOST_WINDOW_EVENT_CAP;
-    g_window_runtime->events[slot] = *event;
+    croft_wit_host_window_release_entry(g_window_runtime, slot);
+    g_window_runtime->events[slot].event = *event;
+    g_window_runtime->events[slot].owned_utf8 = owned_utf8;
     g_window_runtime->event_count++;
 }
 
@@ -200,6 +240,35 @@ static void croft_wit_host_window_event_cb(int32_t event_type, int32_t arg0, int
     }
 }
 
+static void croft_wit_host_window_composition_cb(int32_t kind,
+                                                 const uint8_t* utf8,
+                                                 uint32_t utf8_len,
+                                                 uint32_t selection_start,
+                                                 uint32_t selection_end)
+{
+    SapWitHostWindowEvent event = {0};
+    uint8_t* owned_utf8 = NULL;
+
+    if (kind == CROFT_UI_COMPOSITION_UPDATE && utf8 && utf8_len > 0u) {
+        owned_utf8 = (uint8_t*)malloc((size_t)utf8_len + 1u);
+        if (!owned_utf8) {
+            return;
+        }
+        memcpy(owned_utf8, utf8, utf8_len);
+        owned_utf8[utf8_len] = '\0';
+        event.case_tag = SAP_WIT_HOST_WINDOW_EVENT_COMPOSITION;
+        event.val.composition.utf8_data = owned_utf8;
+        event.val.composition.utf8_len = utf8_len;
+        event.val.composition.selection_start = selection_start;
+        event.val.composition.selection_end = selection_end;
+        croft_wit_host_window_enqueue_owned(&event, owned_utf8);
+        return;
+    }
+
+    event.case_tag = SAP_WIT_HOST_WINDOW_EVENT_COMPOSITION_CLEAR;
+    croft_wit_host_window_enqueue(&event);
+}
+
 static int croft_wit_host_window_valid(const croft_wit_host_window_runtime* runtime,
                                        SapWitHostWindowResource handle)
 {
@@ -219,8 +288,10 @@ void croft_wit_host_window_runtime_destroy(croft_wit_host_window_runtime* runtim
 
     if (runtime->live) {
         host_ui_set_event_callback(NULL);
+        host_ui_set_composition_callback(NULL);
         host_ui_terminate();
     }
+    croft_wit_host_window_release_all(runtime);
     if (g_window_runtime == runtime) {
         g_window_runtime = NULL;
     }
@@ -289,6 +360,7 @@ static int32_t croft_wit_host_window_dispatch_open(void* ctx,
     runtime->event_count = 0u;
     g_window_runtime = runtime;
     host_ui_set_event_callback(croft_wit_host_window_event_cb);
+    host_ui_set_composition_callback(croft_wit_host_window_composition_cb);
 #if defined(__APPLE__)
     host_gesture_mac_init(host_ui_get_native_window(), (void*)croft_wit_host_window_event_cb);
 #endif
@@ -307,10 +379,10 @@ static int32_t croft_wit_host_window_dispatch_close(void* ctx,
     }
 
     host_ui_set_event_callback(NULL);
+    host_ui_set_composition_callback(NULL);
     host_ui_terminate();
     runtime->live = 0u;
-    runtime->event_head = 0u;
-    runtime->event_count = 0u;
+    croft_wit_host_window_release_all(runtime);
     if (g_window_runtime == runtime) {
         g_window_runtime = NULL;
     }
@@ -350,7 +422,7 @@ static int32_t croft_wit_host_window_dispatch_next_event(void* ctx,
         return 0;
     }
 
-    event = runtime->events[runtime->event_head];
+    event = runtime->events[runtime->event_head].event;
     runtime->event_head = (runtime->event_head + 1u) % CROFT_WIT_HOST_WINDOW_EVENT_CAP;
     runtime->event_count--;
     croft_wit_host_window_reply_event_ok(reply_out, &event);

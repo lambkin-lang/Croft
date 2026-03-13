@@ -14,7 +14,12 @@
 
 static GLFWwindow *g_window = NULL;
 static host_ui_event_cb_t g_event_cb = NULL;
+static host_ui_composition_cb_t g_composition_cb = NULL;
 static uint32_t g_modifier_mask = 0;
+
+#ifdef __APPLE__
+extern void host_text_input_mac_init(void *ns_window_ptr);
+#endif
 
 static uint32_t croft_ui_map_glfw_modifiers(int mods) {
     uint32_t mask = 0;
@@ -112,6 +117,8 @@ void host_ui_terminate(void) {
         glfwDestroyWindow(g_window);
         g_window = NULL;
     }
+    g_event_cb = NULL;
+    g_composition_cb = NULL;
     g_modifier_mask = 0;
     glfwTerminate();
 }
@@ -137,6 +144,9 @@ int32_t host_ui_create_window(uint32_t width, uint32_t height, const char *title
     glfwSetMouseButtonCallback(g_window, glfw_mouse_button_callback);
     glfwSetScrollCallback(g_window, glfw_scroll_callback);
     glfwSetCursorPosCallback(g_window, glfw_cursor_pos_callback);
+#ifdef __APPLE__
+    host_text_input_mac_init(glfwGetCocoaWindow(g_window));
+#endif
     
     return 0;
 }
@@ -278,6 +288,10 @@ void host_ui_set_event_callback(host_ui_event_cb_t cb) {
     g_event_cb = cb;
 }
 
+void host_ui_set_composition_callback(host_ui_composition_cb_t cb) {
+    g_composition_cb = cb;
+}
+
 void* host_ui_get_window(void) {
     return (void*)g_window;
 }
@@ -289,4 +303,15 @@ void* host_ui_get_native_window(void) {
 #else
     return NULL;
 #endif
+}
+
+void croft_host_ui_dispatch_composition_event(int32_t kind,
+                                              const uint8_t* utf8,
+                                              uint32_t utf8_len,
+                                              uint32_t selection_start,
+                                              uint32_t selection_end) {
+    if (!g_composition_cb) {
+        return;
+    }
+    g_composition_cb(kind, utf8, utf8_len, selection_start, selection_end);
 }

@@ -319,9 +319,15 @@ static void show_editor_context_menu(float x, float y) {
 
 static void print_font_probe_summary(const char* variant,
                                      const char* backend,
-                                     float editor_line_height,
-                                     float font_size) {
+                                     const text_editor_node* editor) {
     croft_editor_font_probe probe = {0};
+    croft_text_editor_metrics_snapshot metrics = {0};
+    float font_size;
+
+    if (!editor) {
+        return;
+    }
+    font_size = editor->font_size;
 
     if (host_render_probe_font(font_size,
                                CROFT_EDITOR_FONT_PROBE_SAMPLE,
@@ -329,8 +335,9 @@ static void print_font_probe_summary(const char* variant,
                                &probe) != 0) {
         return;
     }
+    text_editor_node_get_metrics(editor, &metrics);
 
-    printf("editor-font-probe variant=%s backend=%s role=text requested_family=%s requested_style=%s resolved_family=%s resolved_style=%s point_size=%.1f sample_width=%.3f font_line_height=%.3f editor_line_height=%.3f\n",
+    printf("editor-font-probe variant=%s backend=%s role=text requested_family=%s requested_style=%s resolved_family=%s resolved_style=%s point_size=%.1f sample_width=%.3f font_line_height=%.3f ascender=%.3f descender=%.3f leading=%.3f editor_line_height=%.3f baseline=%.3f\n",
            variant,
            backend,
            probe.requested_family,
@@ -340,7 +347,11 @@ static void print_font_probe_summary(const char* variant,
            probe.point_size,
            probe.sample_width,
            probe.line_height,
-           editor_line_height);
+           metrics.ascender,
+           metrics.descender,
+           metrics.leading,
+           metrics.line_height,
+           metrics.baseline_offset);
 }
 
 static void print_editor_profile_summary(const char* variant, const text_editor_node* editor) {
@@ -531,6 +542,29 @@ static void on_ui_event(int32_t type, int32_t arg0, int32_t arg1) {
     }
 }
 
+static void on_ui_composition_event(int32_t kind,
+                                    const uint8_t* utf8,
+                                    uint32_t utf8_len,
+                                    uint32_t selection_start,
+                                    uint32_t selection_end) {
+    if (g_focused_node != &g_editor.base || text_editor_node_is_find_active(&g_editor)) {
+        text_editor_node_clear_composition(&g_editor);
+        request_redraw();
+        return;
+    }
+
+    if (kind == CROFT_UI_COMPOSITION_UPDATE) {
+        (void)text_editor_node_set_composition_utf8(&g_editor,
+                                                    utf8,
+                                                    utf8_len,
+                                                    selection_start,
+                                                    selection_end);
+    } else {
+        text_editor_node_clear_composition(&g_editor);
+    }
+    request_redraw();
+}
+
 int main(int argc, char** argv) {
     const char* target_file = argc > 1 ? argv[1] : NULL;
     const char* auto_close_env = getenv("CROFT_EDITOR_AUTO_CLOSE_MS");
@@ -581,6 +615,7 @@ int main(int argc, char** argv) {
     host_render_set_profiling(profile_enabled);
 
     host_ui_set_event_callback(on_ui_event);
+    host_ui_set_composition_callback(on_ui_composition_event);
 
     {
         uint32_t fw = 0;
@@ -598,7 +633,7 @@ int main(int argc, char** argv) {
         text_editor_node_set_profiling(&g_editor, profile_enabled);
         scene_node_add_child(&g_root_vp.base, &g_editor.base);
         if (font_probe_enabled) {
-            print_font_probe_summary("scene", "tgfx", g_editor.line_height, g_editor.font_size);
+            print_font_probe_summary("scene", "tgfx", &g_editor);
         }
     }
 

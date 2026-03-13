@@ -261,6 +261,9 @@ inline int32_t probe_font(Cache* cache,
 
     font = make_font(cache, font_size, CROFT_TEXT_FONT_ROLE_MONOSPACE);
     metrics = font.getMetrics();
+    out_probe->ascender = std::fmax(0.0f, -metrics.ascent);
+    out_probe->descender = std::fmax(0.0f, metrics.descent);
+    out_probe->leading = std::fmax(0.0f, metrics.leading);
     out_probe->line_height = std::fmax(0.0f, metrics.descent - metrics.ascent + metrics.leading);
     if (sample && len > 0u) {
         out_probe->sample_width = measure_text(cache, sample, len, font_size);

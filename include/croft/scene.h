@@ -5,6 +5,7 @@
 #include "croft/editor_line_cache.h"
 #include "croft/editor_syntax.h"
 #include "croft/editor_text_model.h"
+#include "croft/editor_typography.h"
 #include "croft/scene_a11y_bridge.h"
 
 #include <stddef.h>
@@ -132,6 +133,19 @@ typedef struct croft_text_editor_profile_snapshot {
     uint64_t gutter_pass_lines;
 } croft_text_editor_profile_snapshot;
 
+typedef struct croft_text_editor_metrics_snapshot {
+    uint32_t font_metrics_valid;
+    float font_size;
+    float font_line_height;
+    float ascender;
+    float descender;
+    float leading;
+    float line_height;
+    float baseline_offset;
+    float text_inset_x;
+    float text_inset_y;
+} croft_text_editor_metrics_snapshot;
+
 typedef struct text_editor_node {
     scene_node base;
     struct SapEnv *env;
@@ -175,6 +189,14 @@ typedef struct text_editor_node {
     uint32_t* line_first_visible_rows;
     uint32_t* line_visible_row_counts;
     uint32_t line_visible_row_capacity;
+    croft_editor_font_probe font_probe;
+    uint32_t font_metrics_valid;
+    float baseline_offset;
+    char* composition_utf8;
+    uint32_t composition_len;
+    uint32_t composition_capacity;
+    uint32_t composition_selection_start;
+    uint32_t composition_selection_end;
     uint32_t profiling_enabled;
     croft_text_editor_profile_snapshot profile_stats;
 } text_editor_node;
@@ -189,9 +211,21 @@ void text_editor_node_set_profiling(text_editor_node *n, int enabled);
 void text_editor_node_reset_profile(text_editor_node *n);
 void text_editor_node_get_profile(const text_editor_node *n,
                                   croft_text_editor_profile_snapshot *out_snapshot);
+void text_editor_node_get_metrics(const text_editor_node *n,
+                                  croft_text_editor_metrics_snapshot *out_snapshot);
 void text_editor_node_select_all(text_editor_node *n);
 int text_editor_node_is_find_active(const text_editor_node *n);
 int text_editor_node_is_replace_active(const text_editor_node *n);
+int text_editor_node_has_composition(const text_editor_node *n);
+int32_t text_editor_node_set_composition_utf8(text_editor_node *n,
+                                              const uint8_t *utf8,
+                                              size_t utf8_len,
+                                              uint32_t selection_start,
+                                              uint32_t selection_end);
+void text_editor_node_clear_composition(text_editor_node *n);
+int32_t text_editor_node_copy_composition_utf8(const text_editor_node *n,
+                                               char **out_utf8,
+                                               size_t *out_len);
 void text_editor_node_find_activate(text_editor_node *n);
 void text_editor_node_replace_activate(text_editor_node *n);
 void text_editor_node_find_close(text_editor_node *n);
