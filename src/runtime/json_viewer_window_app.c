@@ -131,6 +131,18 @@ static int expect_gpu_caps_ok(const SapWitHostGpu2dReply *reply, uint32_t *caps_
     return 1;
 }
 
+static int expect_measure_ok(const SapWitHostGpu2dReply *reply, float *width_out)
+{
+    if (!reply || !width_out) {
+        return 0;
+    }
+    if (reply->case_tag != SAP_WIT_HOST_GPU2D_REPLY_MEASURE || !reply->val.measure.is_v_ok) {
+        return 0;
+    }
+    *width_out = reply->val.measure.v_val.ok.v;
+    return 1;
+}
+
 static int expect_clock_now(const SapWitHostClockReply *reply, uint64_t *now_out)
 {
     if (!reply || !now_out) {
@@ -160,7 +172,7 @@ static void croft_json_viewer_layout_init(CroftJsonViewerWindowLayout *layout,
     layout->content_y = 92.0f;
     layout->content_w = (float)width - 312.0f;
     layout->content_h = (float)height - 166.0f;
-    layout->content_text_y = 154.0f;
+    layout->content_text_y = 176.0f;
     layout->content_text_x = 316.0f;
     layout->content_bottom = (float)height - 74.0f;
     layout->footer_y = (float)height - 32.0f;
@@ -188,6 +200,34 @@ static int croft_json_viewer_gpu_draw_rect(const CroftJsonViewerWindowAppConfig 
     rc = config->gpu_dispatch(config->dispatch_ctx, &gpu_cmd, &gpu_reply);
     if (rc == ERR_OK) {
         rc = expect_gpu_status_ok(&gpu_reply) ? ERR_OK : ERR_TYPE;
+        sap_wit_dispose_host_gpu2d_reply(&gpu_reply);
+    }
+    return rc;
+}
+
+static int croft_json_viewer_gpu_measure_text(const CroftJsonViewerWindowAppConfig *config,
+                                              SapWitHostGpu2dSurfaceResource surface,
+                                              const uint8_t *text,
+                                              uint32_t text_len,
+                                              float font_size,
+                                              float *width_out)
+{
+    SapWitHostGpu2dCommand gpu_cmd = {0};
+    SapWitHostGpu2dReply gpu_reply = {0};
+    int rc;
+
+    if (!width_out || (!text && text_len > 0u)) {
+        return ERR_INVALID;
+    }
+
+    gpu_cmd.case_tag = SAP_WIT_HOST_GPU2D_COMMAND_MEASURE_TEXT;
+    gpu_cmd.val.measure_text.surface = surface;
+    gpu_cmd.val.measure_text.utf8_data = text;
+    gpu_cmd.val.measure_text.utf8_len = text_len;
+    gpu_cmd.val.measure_text.font_size = font_size;
+    rc = config->gpu_dispatch(config->dispatch_ctx, &gpu_cmd, &gpu_reply);
+    if (rc == ERR_OK) {
+        rc = expect_measure_ok(&gpu_reply, width_out) ? ERR_OK : ERR_TYPE;
         sap_wit_dispose_host_gpu2d_reply(&gpu_reply);
     }
     return rc;
@@ -228,6 +268,146 @@ static const char *croft_json_viewer_display_path(const char *path)
         return "root";
     }
     return path;
+}
+
+static uint32_t croft_json_viewer_copy_text(char *out, uint32_t out_cap, const char *text)
+{
+    uint32_t len = 0u;
+
+    if (!out || out_cap == 0u) {
+        return 0u;
+    }
+    out[0] = '\0';
+    if (!text) {
+        return 0u;
+    }
+    len = (uint32_t)sap_wit_rt_strlen(text);
+    if (len >= out_cap) {
+        len = out_cap - 1u;
+    }
+    if (len > 0u) {
+        sap_wit_rt_memcpy(out, text, len);
+    }
+    out[len] = '\0';
+    return len;
+}
+
+static uint32_t croft_json_viewer_fit_text(const CroftJsonViewerWindowAppConfig *config,
+                                           SapWitHostGpu2dSurfaceResource surface,
+                                           const char *text,
+                                           float font_size,
+                                           float max_width,
+                                           char *out,
+                                           uint32_t out_cap)
+{
+    static const char k_ellipsis[] = "...";
+    uint32_t len;
+    float width = 0.0f;
+
+    if (!out || out_cap == 0u || max_width <= 0.0f) {
+        return 0u;
+    }
+
+    len = croft_json_viewer_copy_text(out, out_cap, text);
+    if (len == 0u) {
+        return 0u;
+    }
+    if (croft_json_viewer_gpu_measure_text(config,
+                                           surface,
+                                           (const uint8_t *)out,
+                                           len,
+                                           font_size,
+                                           &width) != ERR_OK) {
+        return len;
+    }
+    if (width <= max_width) {
+        return len;
+    }
+    if (out_cap <= sizeof(k_ellipsis)) {
+        out[0] = '\0';
+        return 0u;
+    }
+    if (croft_json_viewer_gpu_measure_text(config,
+                                           surface,
+                                           (const uint8_t *)k_ellipsis,
+                                           3u,
+                                           font_size,
+                                           &width) != ERR_OK
+            || width > max_width) {
+        out[0] = '\0';
+        return 0u;
+    }
+
+    while (len > 0u) {
+        uint32_t prefix_len = len - 1u;
+
+        if (prefix_len > out_cap - sizeof(k_ellipsis)) {
+            prefix_len = out_cap - sizeof(k_ellipsis);
+        }
+        if (prefix_len > 0u) {
+            sap_wit_rt_memcpy(out, text, prefix_len);
+        }
+        sap_wit_rt_memcpy(out + prefix_len, k_ellipsis, 3u);
+        out[prefix_len + 3u] = '\0';
+        if (croft_json_viewer_gpu_measure_text(config,
+                                               surface,
+                                               (const uint8_t *)out,
+                                               prefix_len + 3u,
+                                               font_size,
+                                               &width) == ERR_OK
+                && width <= max_width) {
+            return prefix_len + 3u;
+        }
+        len = prefix_len;
+    }
+
+    sap_wit_rt_memcpy(out, k_ellipsis, 3u);
+    out[3] = '\0';
+    return 3u;
+}
+
+static uint32_t croft_json_viewer_pick_footer_help(const CroftJsonViewerWindowAppConfig *config,
+                                                   SapWitHostGpu2dSurfaceResource surface,
+                                                   float font_size,
+                                                   float max_width,
+                                                   char *out,
+                                                   uint32_t out_cap)
+{
+    static const char *const k_candidates[] = {
+        "Click sidebar or JSON lines to select  click fold gutter  wheel scrolls",
+        "Click rows or JSON lines to select  click fold gutter  wheel scrolls",
+        "Click to select  click fold gutter  wheel scrolls",
+        "Click to select  wheel scrolls"
+    };
+    uint32_t i;
+
+    if (!out || out_cap == 0u || max_width <= 0.0f) {
+        return 0u;
+    }
+
+    for (i = 0u; i < (uint32_t)(sizeof(k_candidates) / sizeof(k_candidates[0])); i++) {
+        float width = 0.0f;
+        const char *candidate = k_candidates[i];
+        uint32_t len = (uint32_t)sap_wit_rt_strlen(candidate);
+
+        if (croft_json_viewer_gpu_measure_text(config,
+                                               surface,
+                                               (const uint8_t *)candidate,
+                                               len,
+                                               font_size,
+                                               &width) == ERR_OK
+                && width <= max_width) {
+            return croft_json_viewer_copy_text(out, out_cap, candidate);
+        }
+    }
+
+    return croft_json_viewer_fit_text(config,
+                                      surface,
+                                      "Click to select  wheel scrolls",
+                                      font_size,
+                                      max_width,
+                                      out,
+                                      out_cap);
 }
 
 static int croft_json_viewer_sidebar_index_at_point(const CroftJsonViewerWindowAppState *state,
@@ -355,9 +535,25 @@ static int croft_json_viewer_render_frame(CroftJsonViewerWindowAppState *state,
                                           uint32_t height)
 {
     CroftJsonViewerWindowLayout layout;
+    char content_badge[128];
+    char footer_help[96];
+    char footer_selected[128];
     const char *selected_path;
     const char *selected_display;
+    const char *selected_label = "Selected:";
+    uint32_t content_badge_len = 0u;
+    uint32_t footer_help_len = 0u;
+    uint32_t footer_selected_len = 0u;
     uint32_t i;
+    float content_badge_width = 0.0f;
+    float content_badge_max_width;
+    float footer_font = 15.0f;
+    float footer_help_x = 32.0f;
+    float footer_help_width = 0.0f;
+    float footer_help_max_width;
+    float footer_label_width = 0.0f;
+    float footer_selected_width = 0.0f;
+    float footer_selected_x;
     float line_height = 22.0f;
     float content_viewport_height;
     float max_scroll;
@@ -372,6 +568,94 @@ static int croft_json_viewer_render_frame(CroftJsonViewerWindowAppState *state,
     max_scroll = croft_json_viewer_state_max_scroll(&state->viewer,
                                                     line_height,
                                                     content_viewport_height);
+
+    content_badge_max_width = layout.content_w - 40.0f;
+    content_badge_len = croft_json_viewer_fit_text(config,
+                                                   surface,
+                                                   selected_display,
+                                                   14.0f,
+                                                   content_badge_max_width - 16.0f,
+                                                   content_badge,
+                                                   sizeof(content_badge));
+    if (content_badge_len == 0u) {
+        content_badge_len = croft_json_viewer_copy_text(content_badge,
+                                                        sizeof(content_badge),
+                                                        selected_display);
+    }
+    if (content_badge_len > 0u) {
+        rc = croft_json_viewer_gpu_measure_text(config,
+                                                surface,
+                                                (const uint8_t *)content_badge,
+                                                content_badge_len,
+                                                14.0f,
+                                                &content_badge_width);
+        if (rc != ERR_OK) {
+            return rc;
+        }
+    }
+    if (content_badge_width < 80.0f) {
+        content_badge_width = 80.0f;
+    }
+    if (content_badge_width > content_badge_max_width - 16.0f) {
+        content_badge_width = content_badge_max_width - 16.0f;
+    }
+
+    rc = croft_json_viewer_gpu_measure_text(config,
+                                            surface,
+                                            (const uint8_t *)selected_label,
+                                            9u,
+                                            footer_font,
+                                            &footer_label_width);
+    if (rc != ERR_OK) {
+        return rc;
+    }
+    footer_selected_len = croft_json_viewer_fit_text(config,
+                                                     surface,
+                                                     selected_display,
+                                                     footer_font,
+                                                     (float)width * 0.24f,
+                                                     footer_selected,
+                                                     sizeof(footer_selected));
+    if (footer_selected_len > 0u) {
+        rc = croft_json_viewer_gpu_measure_text(config,
+                                                surface,
+                                                (const uint8_t *)footer_selected,
+                                                footer_selected_len,
+                                                footer_font,
+                                                &footer_selected_width);
+        if (rc != ERR_OK) {
+            return rc;
+        }
+    }
+    footer_selected_x = (float)width - 28.0f - footer_selected_width - footer_label_width;
+    if (footer_selected_len > 0u) {
+        footer_selected_x -= 8.0f;
+    }
+    footer_help_max_width = footer_selected_x - footer_help_x - 24.0f;
+    footer_help_len = croft_json_viewer_pick_footer_help(config,
+                                                         surface,
+                                                         footer_font,
+                                                         footer_help_max_width,
+                                                         footer_help,
+                                                         sizeof(footer_help));
+    if (footer_help_len > 0u) {
+        rc = croft_json_viewer_gpu_measure_text(config,
+                                                surface,
+                                                (const uint8_t *)footer_help,
+                                                footer_help_len,
+                                                footer_font,
+                                                &footer_help_width);
+        if (rc != ERR_OK) {
+            return rc;
+        }
+    }
+    if (footer_help_width > footer_help_max_width) {
+        footer_help_len = 0u;
+        footer_help_width = 0.0f;
+    }
+    if (footer_selected_x < footer_help_x + footer_help_width + 24.0f) {
+        footer_selected_x = footer_help_x + footer_help_width + 24.0f;
+    }
 
     rc = croft_json_viewer_gpu_draw_rect(config, surface, 0.0f, 0.0f, (float)width, 68.0f, 0x17324DFFu);
     if (rc != ERR_OK) {
@@ -484,7 +768,7 @@ static int croft_json_viewer_render_frame(CroftJsonViewerWindowAppState *state,
                                          surface,
                                          layout.content_x + 16.0f,
                                          128.0f,
-                                         208.0f,
+                                         content_badge_width + 16.0f,
                                          24.0f,
                                          0xE8F2F7FFu);
     if (rc != ERR_OK) {
@@ -494,8 +778,8 @@ static int croft_json_viewer_render_frame(CroftJsonViewerWindowAppState *state,
                                          surface,
                                          layout.content_x + 24.0f,
                                          145.0f,
-                                         (const uint8_t *)selected_display,
-                                         (uint32_t)sap_wit_rt_strlen(selected_display),
+                                         (const uint8_t *)content_badge,
+                                         content_badge_len,
                                          14.0f,
                                          0x0F5B7AFFu);
     if (rc != ERR_OK) {
@@ -582,35 +866,40 @@ static int croft_json_viewer_render_frame(CroftJsonViewerWindowAppState *state,
         }
     }
 
+    if (footer_help_len > 0u) {
+        rc = croft_json_viewer_gpu_draw_text(config,
+                                             surface,
+                                             footer_help_x,
+                                             layout.footer_y,
+                                             (const uint8_t *)footer_help,
+                                             footer_help_len,
+                                             footer_font,
+                                             0x52697DFFu);
+        if (rc != ERR_OK) {
+            return rc;
+        }
+    }
     rc = croft_json_viewer_gpu_draw_text(config,
                                          surface,
-                                         32.0f,
+                                         footer_selected_x,
                                          layout.footer_y,
-                                         (const uint8_t *)"Click sidebar or JSON lines to select  click fold gutter  wheel scrolls",
-                                         70u,
-                                         15.0f,
+                                         (const uint8_t *)selected_label,
+                                         9u,
+                                         footer_font,
                                          0x52697DFFu);
     if (rc != ERR_OK) {
         return rc;
     }
-    rc = croft_json_viewer_gpu_draw_text(config,
-                                         surface,
-                                         714.0f,
-                                         layout.footer_y,
-                                         (const uint8_t *)"Selected:",
-                                         9u,
-                                         15.0f,
-                                         0x52697DFFu);
-    if (rc != ERR_OK) {
-        return rc;
+    if (footer_selected_len == 0u) {
+        return ERR_OK;
     }
     return croft_json_viewer_gpu_draw_text(config,
                                            surface,
-                                           788.0f,
+                                           footer_selected_x + footer_label_width + 8.0f,
                                            layout.footer_y,
-                                           (const uint8_t *)selected_display,
-                                           (uint32_t)sap_wit_rt_strlen(selected_display),
-                                           15.0f,
+                                           (const uint8_t *)footer_selected,
+                                           footer_selected_len,
+                                           footer_font,
                                            0x0F5B7AFFu);
 }
 
