@@ -112,15 +112,23 @@ static NSMenu* croft_build_native_text_menu(NSWindow* window,
         return custom_menu;
     }
 
-    helper = [[NSTextView alloc] initWithFrame:NSMakeRect(0.0, 0.0, 1.0, 1.0)];
+    helper = [[NSTextView alloc] initWithFrame:parent_view.bounds];
     if (!helper) {
         return custom_menu;
     }
 
     contextual_string = croft_contextual_string(contextual_utf8, contextual_utf8_len);
+    [helper setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
     [helper setRichText:NO];
     [helper setEditable:NO];
     [helper setSelectable:YES];
+    [helper setDrawsBackground:NO];
+    [helper setTextColor:[NSColor clearColor]];
+    [helper setInsertionPointColor:[NSColor clearColor]];
+    [helper setSelectedTextAttributes:@{
+        NSForegroundColorAttributeName: [NSColor clearColor],
+        NSBackgroundColorAttributeName: [NSColor clearColor]
+    }];
     [helper setString:contextual_string];
     [helper setSelectedRange:NSMakeRange(0u, contextual_string.length)];
     [helper setMenu:custom_menu];
@@ -200,7 +208,7 @@ host_popup_menu_result host_popup_menu_show_with_context(const host_popup_menu_i
     g_selected_action_id = 0;
     event = [NSApp currentEvent];
     if (used_native_text_menu && croft_is_mouse_down_event(event)) {
-        [NSMenu popUpContextMenu:menu withEvent:event forView:view];
+        [NSMenu popUpContextMenu:menu withEvent:event forView:helper];
     } else {
         location = NSMakePoint((CGFloat)x, NSHeight(view.bounds) - (CGFloat)y);
         [menu popUpMenuPositioningItem:nil atLocation:location inView:view];
