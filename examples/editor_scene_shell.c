@@ -88,6 +88,33 @@ static int select_editor_word_at_local_point(float local_x, float local_y) {
     return text_editor_node_select_word_at_offset(&g_editor, offset) == 0;
 }
 
+static int editor_selection_definition_anchor(float* out_x,
+                                              float* out_y,
+                                              float* out_font_size) {
+    uint32_t selection_min = 0u;
+    float local_x = 0.0f;
+    float local_y = 0.0f;
+
+    if (!out_x || !out_y || !out_font_size || !editor_has_selection()) {
+        return -1;
+    }
+
+    selection_min = g_editor.sel_start < g_editor.sel_end ? g_editor.sel_start : g_editor.sel_end;
+    if (text_editor_node_offset_to_local_position(&g_editor,
+                                                  g_editor.base.sx,
+                                                  g_editor.base.sy,
+                                                  selection_min,
+                                                  &local_x,
+                                                  &local_y) != 0) {
+        return -1;
+    }
+
+    *out_x = g_editor.base.x + local_x;
+    *out_y = g_editor.base.y + local_y + g_editor.baseline_offset;
+    *out_font_size = g_editor.font_size;
+    return 0;
+}
+
 static void bind_document_to_editor(croft_editor_document* document) {
     g_document = document;
     text_editor_node_bind_document(&g_editor, g_document);
@@ -283,6 +310,7 @@ static editor_action_result editor_apply_menu_action(int32_t action_id) {
 
 static void show_editor_context_menu(float x, float y) {
     int32_t action_id = 0;
+    host_popup_menu_text_context text_context = {0};
     char* contextual_utf8 = NULL;
     size_t contextual_len = 0u;
     host_popup_menu_item items[] = {
@@ -312,15 +340,22 @@ static void show_editor_context_menu(float x, float y) {
     };
     if (editor_has_selection()) {
         (void)text_editor_node_copy_selection_utf8(&g_editor, &contextual_utf8, &contextual_len);
+        text_context.utf8 = contextual_utf8;
+        text_context.utf8_len = contextual_len;
+        text_context.baseline_x = x;
+        text_context.baseline_y = y;
+        text_context.font_size = g_editor.font_size;
+        text_context.include_native_text_services = 1u;
+        (void)editor_selection_definition_anchor(&text_context.baseline_x,
+                                                 &text_context.baseline_y,
+                                                 &text_context.font_size);
     }
-    switch (host_popup_menu_show_with_context(items,
-                                              (uint32_t)(sizeof(items) / sizeof(items[0])),
-                                              x,
-                                              y,
-                                              contextual_utf8,
-                                              contextual_len,
-                                              1u,
-                                              &action_id)) {
+    switch (host_popup_menu_show_with_text_context(items,
+                                                   (uint32_t)(sizeof(items) / sizeof(items[0])),
+                                                   x,
+                                                   y,
+                                                   editor_has_selection() ? &text_context : NULL,
+                                                   &action_id)) {
         case HOST_POPUP_MENU_RESULT_OK:
             (void)editor_apply_menu_action(action_id);
             break;

@@ -22,6 +22,23 @@ typedef enum host_popup_menu_result {
     HOST_POPUP_MENU_RESULT_INTERNAL = 3
 } host_popup_menu_result;
 
+typedef struct host_popup_menu_text_context {
+    const char* utf8;
+    size_t utf8_len;
+    float baseline_x;
+    float baseline_y;
+    float font_size;
+    uint8_t include_native_text_services;
+} host_popup_menu_text_context;
+
+host_popup_menu_result host_popup_menu_show_with_text_context(
+    const host_popup_menu_item* items,
+    uint32_t item_count,
+    float x,
+    float y,
+    const host_popup_menu_text_context* text_context,
+    int32_t* action_id_out);
+
 host_popup_menu_result host_popup_menu_show_with_context(const host_popup_menu_item* items,
                                                          uint32_t item_count,
                                                          float x,

@@ -3094,6 +3094,18 @@ static void text_editor_draw(scene_node *n, render_ctx *rc) {
                     selection_max < row->end_offset ? selection_max : row->end_offset;
                 float x1 = 0.0f;
                 float x2 = 0.0f;
+                float selection_height = te->font_probe.line_height > 0.0f
+                    ? te->font_probe.line_height
+                    : te->line_height - 2.0f;
+                float selection_y = current_y - te->baseline_offset;
+
+                if (selection_height > te->line_height) {
+                    selection_height = te->line_height;
+                }
+                if (selection_height < 1.0f) {
+                    selection_height = te->line_height;
+                }
+                selection_y += (te->line_height - selection_height) * 0.5f;
 
                 text_editor_visual_row_range_bounds(te,
                                                     &layout,
@@ -3104,9 +3116,9 @@ static void text_editor_draw(scene_node *n, render_ctx *rc) {
                                                     &x1,
                                                     &x2);
                 host_render_draw_rect(x1,
-                                      current_y - te->baseline_offset,
+                                      selection_y,
                                       x2 - x1,
-                                      te->line_height,
+                                      selection_height,
                                       0x5B9FE0CC);
             }
 
