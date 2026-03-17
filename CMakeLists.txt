@@ -2769,10 +2769,16 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/text")
     file(GLOB LAMBKIN_TEXT_SOURCES CONFIGURE_DEPENDS "src/text/*.c")
     list(APPEND LAMBKIN_CORE_SOURCES ${LAMBKIN_TEXT_SOURCES})
 endif()
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/vendor/ryu64/src")
+    file(GLOB LAMBKIN_RYU64_SOURCES CONFIGURE_DEPENDS "vendor/ryu64/src/*.c")
+    list(APPEND LAMBKIN_CORE_SOURCES ${LAMBKIN_RYU64_SOURCES})
+    list(APPEND LAMBKIN_CORE_SOURCES "vendor/ryu64/wasm_compat/string.c")
+endif()
 
 add_library(croft_lambkin_core OBJECT ${LAMBKIN_CORE_SOURCES})
 croft_apply_public_includes(croft_lambkin_core)
-target_compile_definitions(croft_lambkin_core PUBLIC SAPLING_PAGE_SIZE=4096 LAMBKIN_CORE)
+target_include_directories(croft_lambkin_core PRIVATE vendor/ryu64/include vendor/ryu64/wasm_compat)
+target_compile_definitions(croft_lambkin_core PUBLIC SAPLING_PAGE_SIZE=4096 LAMBKIN_CORE RYU64_ENABLE_PARSE_BIGINT)
 target_compile_options(croft_lambkin_core PRIVATE
     -emit-llvm
     -ffreestanding
@@ -2783,7 +2789,7 @@ target_compile_options(croft_lambkin_core PRIVATE
 
 add_custom_command(
     OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/croft_lambkin_core.bc
-    COMMAND bash -c "/opt/homebrew/opt/llvm@21/bin/llvm-link $$<TARGET_OBJECTS:croft_lambkin_core> -o ${CMAKE_CURRENT_BINARY_DIR}/croft_lambkin_core.bc"
+    COMMAND bash -c "/opt/homebrew/opt/llvm@21/bin/llvm-link $<JOIN:$<TARGET_OBJECTS:croft_lambkin_core>, > -o ${CMAKE_CURRENT_BINARY_DIR}/croft_lambkin_core.bc"
     DEPENDS croft_lambkin_core
 )
 add_custom_target(croft_lambkin_core_bc ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/croft_lambkin_core.bc)
