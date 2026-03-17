@@ -77,6 +77,8 @@ Ensure the compiler supports C11 and pthreads. Enable LTO and dead-code eliminat
 
 - Commits must reflect real, tested repository states.
 - Do not rewrite history for cosmetic cleanliness.
+- All `git` operations are owned by the main agent and must be executed serially.
+- Do not parallelize `git` commands, do not run `git` from sub-agents, and do not begin a new `git` operation until the previous one has fully exited and any lock files are gone.
 - Explicitly avoid these rewrite workflows:
   - `git commit --amend`
   - `git stash`-based context juggling

@@ -70,6 +70,7 @@ See `.github/copilot-instructions.md` for the full policy file. Key points:
 - **Greenfield evolution:** Prefer migrating to current architecture over backward-compatibility shims. Internal changes across runtime, tests, and samples are expected.
 - **Track-or-fix:** Decide based on confidence and durability. Investigate before committing to uncertain fixes. Fundamental issues discovered during unrelated work must be tracked.
 - **Honest git history:** No `--amend`, no `git stash` juggling, no `git rebase` for cleanup. Commits must reflect real tested states. Additive follow-up commits over synthetic history editing.
+- **Serial git ownership:** All `git` operations must be done by the main agent only, strictly one at a time. Do not parallelize `git`, do not delegate `git` to sub-agents, and do not start a new `git` command until the prior one has fully exited and released any lock files.
 - **Build reproducibility:** Use the project build system for verification. Clean + full rebuild is the first response to inconsistent failures.
 - **Dependencies are a firm boundary:** Do not modify dependency internals except as a last resort; document thoroughly if unavoidable.
 
