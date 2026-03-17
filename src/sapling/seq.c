@@ -43,7 +43,7 @@
 #include "sapling/arena.h"
 
 #include <assert.h>
-#include <string.h>
+/* #include <string.h> removed for Lambkin -nostdlib */
 #include <stdio.h>
 
 #include "sapling/nomalloc.h"
@@ -212,7 +212,7 @@ static int seq_on_begin(SapTxnCtx *txn, void *parent_state, void **state_out)
     struct SeqTxnState *st = sap_txn_scratch_alloc(txn, (uint32_t)sizeof(struct SeqTxnState));
     if (!st)
         return ERR_OOM;
-    memset(st, 0, sizeof(*st));
+    __builtin_memset(st, 0, sizeof(*st));
     st->sap_txn = txn;
     st->parent = (struct SeqTxnState *)parent_state;
 
@@ -459,7 +459,7 @@ static int ftree_ensure_writable(SapTxnCtx *txn, FTree **tp)
     FTree *new_t = seq_alloc_node(txn, sizeof(FTree));
     if (!new_t)
         return ERR_OOM;
-    memcpy(new_t, *tp, sizeof(FTree));
+    __builtin_memcpy(new_t, *tp, sizeof(FTree));
     *tp = new_t;
     return ERR_OK;
 }

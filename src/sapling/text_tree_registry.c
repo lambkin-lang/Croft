@@ -14,7 +14,7 @@
 #include "sapling/txn_vec.h"
 
 #include <stdatomic.h>
-#include <string.h>
+/* #include <string.h> removed for Lambkin -nostdlib */
 
 #include "sapling/nomalloc.h"
 
@@ -48,7 +48,7 @@ TextTreeRegistry *text_tree_registry_new(SapEnv *env)
     if (sap_arena_alloc_node(arena, (uint32_t)sizeof(TextTreeRegistry),
                              (void **)&reg, &nodeno) != ERR_OK)
         return NULL;
-    memset(reg, 0, sizeof(*reg));
+    __builtin_memset(reg, 0, sizeof(*reg));
 
     reg->env = env;
     reg->nodeno = nodeno;

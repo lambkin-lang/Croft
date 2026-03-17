@@ -2748,6 +2748,45 @@ croft_register_artifact(sapling_core datastore
 add_library(sapling_core_threaded STATIC ${SAPLING_CORE_SOURCES})
 croft_apply_public_includes(sapling_core_threaded)
 croft_apply_sapling_profile(sapling_core_threaded THREADED)
+
+# ── Lambkin Core Bitcode Target ─────────────────────────────────────────
+
+set(LAMBKIN_CORE_SOURCES
+    src/sapling/sapling.c
+    src/sapling/arena.c
+    src/sapling/txn.c
+    src/sapling/txn_vec.c
+    src/sapling/hamt.c
+    src/sapling/seq.c
+    src/sapling/text.c
+    src/sapling/text_literal.c
+    src/sapling/text_tree_registry.c
+    src/sapling/thatch.c
+    src/sapling/bept.c
+    src/sapling/err.c
+)
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/text")
+    file(GLOB LAMBKIN_TEXT_SOURCES CONFIGURE_DEPENDS "src/text/*.c")
+    list(APPEND LAMBKIN_CORE_SOURCES ${LAMBKIN_TEXT_SOURCES})
+endif()
+
+add_library(croft_lambkin_core OBJECT ${LAMBKIN_CORE_SOURCES})
+croft_apply_public_includes(croft_lambkin_core)
+target_compile_definitions(croft_lambkin_core PUBLIC SAPLING_PAGE_SIZE=4096 LAMBKIN_CORE)
+target_compile_options(croft_lambkin_core PRIVATE
+    -emit-llvm
+    -ffreestanding
+    -nostdlib
+    -fno-builtin
+    -O3
+)
+
+add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/croft_lambkin_core.bc
+    COMMAND bash -c "/opt/homebrew/opt/llvm@21/bin/llvm-link $$<TARGET_OBJECTS:croft_lambkin_core> -o ${CMAKE_CURRENT_BINARY_DIR}/croft_lambkin_core.bc"
+    DEPENDS croft_lambkin_core
+)
+add_custom_target(croft_lambkin_core_bc ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/croft_lambkin_core.bc)
 croft_link_libraries_checked(sapling_core_threaded PUBLIC croft_thatch_core)
 if(CROFT_BUILD_TESTS)
     target_compile_definitions(sapling_core_threaded PRIVATE SAPLING_HAMT_TESTING)

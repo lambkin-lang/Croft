@@ -11,7 +11,7 @@
 #include "sapling/txn.h"
 #include "sapling/txn_vec.h"
 
-#include <string.h>
+/* #include <string.h> removed for Lambkin -nostdlib */
 
 #include "sapling/nomalloc.h"
 
@@ -96,7 +96,7 @@ static uint32_t hash_probe(const TextLiteralTable *t, const uint8_t *utf8, size_
         {
             const TextLiteralEntry *e =
                 (const TextLiteralEntry *)sap_txn_vec_at(&t->entries, idx);
-            if (e->len == len && (len == 0 || memcmp(e->ptr, utf8, len) == 0))
+            if (e->len == len && (len == 0 || __builtin_memcmp(e->ptr, utf8, len) == 0))
                 return idx; /* found */
         }
 
@@ -145,7 +145,7 @@ static int hash_grow(TextLiteralTable *t)
         return ERR_OOM;
 
     uint32_t *new_buckets = (uint32_t *)new_data;
-    memset(new_buckets, 0, alloc_size); /* zero = HASH_EMPTY */
+    __builtin_memset(new_buckets, 0, alloc_size); /* zero = HASH_EMPTY */
 
     /* Rehash all existing entries */
     uint32_t old_cap = t->hash_capacity;
@@ -200,7 +200,7 @@ static int alloc_new_page(TextLiteralTable *t)
         return ERR_OOM;
     }
     TextLiteralPage *pg = (TextLiteralPage *)pg_mem;
-    memset(pg, 0, sizeof(*pg));
+    __builtin_memset(pg, 0, sizeof(*pg));
     pg->pgno = pgno;
     pg->self_nodeno = pg_nodeno;
     pg->next = t->pages;
@@ -237,7 +237,7 @@ static int arena_copy(TextLiteralTable *t, const uint8_t *data, size_t len,
         uint32_t buf_nodeno = 0;
         if (sap_arena_alloc_node(arena, (uint32_t)len, &buf_mem, &buf_nodeno) != ERR_OK)
             return ERR_OOM;
-        memcpy(buf_mem, data, len);
+        __builtin_memcpy(buf_mem, data, len);
         *out = (const uint8_t *)buf_mem;
 
         /* Track the oversized buffer for cleanup — arena-allocated tracking node */
@@ -250,7 +250,7 @@ static int arena_copy(TextLiteralTable *t, const uint8_t *data, size_t len,
             return ERR_OOM;
         }
         TextLiteralPage *pg = (TextLiteralPage *)pg_mem;
-        memset(pg, 0, sizeof(*pg));
+        __builtin_memset(pg, 0, sizeof(*pg));
         pg->pgno = UINT32_MAX;
         pg->self_nodeno = pg_nodeno;
         pg->oversized_ptr = buf_mem;
@@ -269,7 +269,7 @@ static int arena_copy(TextLiteralTable *t, const uint8_t *data, size_t len,
             return rc;
     }
 
-    memcpy(t->page_ptr + t->page_head, data, len);
+    __builtin_memcpy(t->page_ptr + t->page_head, data, len);
     *out = t->page_ptr + t->page_head;
     t->page_head += (uint32_t)len;
     return ERR_OK;
@@ -288,7 +288,7 @@ TextLiteralTable *text_literal_table_new(SapEnv *env)
     if (sap_arena_alloc_node(arena, (uint32_t)sizeof(TextLiteralTable),
                              (void **)&t, &nodeno) != ERR_OK)
         return NULL;
-    memset(t, 0, sizeof(*t));
+    __builtin_memset(t, 0, sizeof(*t));
 
     t->env = env;
     t->nodeno = nodeno;

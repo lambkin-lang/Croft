@@ -8,7 +8,7 @@
 #include "sapling/txn_vec.h"
 #include "common/arena_alloc_internal.h"
 
-#include <string.h>
+/* #include <string.h> removed for Lambkin -nostdlib */
 
 int sap_txn_vec_init(SapTxnVec *vec, SapMemArena *arena,
                      uint32_t elem_size, uint32_t initial_cap)
@@ -88,7 +88,7 @@ int sap_txn_vec_reserve(SapTxnVec *vec, uint32_t needed)
     }
 
     if (vec->data && vec->len > 0)
-        memcpy(new_data, vec->data, (size_t)vec->len * vec->elem_size);
+        __builtin_memcpy(new_data, vec->data, (size_t)vec->len * vec->elem_size);
 
     /* Free old backing node */
     if (vec->data)
@@ -113,7 +113,7 @@ int sap_txn_vec_push(SapTxnVec *vec, const void *elem)
             return rc;
     }
 
-    memcpy((uint8_t *)vec->data + (size_t)vec->len * vec->elem_size,
+    __builtin_memcpy((uint8_t *)vec->data + (size_t)vec->len * vec->elem_size,
            elem, vec->elem_size);
     vec->len++;
     return ERR_OK;
@@ -148,7 +148,7 @@ int sap_txn_vec_swap_remove(SapTxnVec *vec, uint32_t idx)
     {
         void *dst = (uint8_t *)vec->data + (size_t)idx * vec->elem_size;
         void *src = (uint8_t *)vec->data + (size_t)vec->len * vec->elem_size;
-        memcpy(dst, src, vec->elem_size);
+        __builtin_memcpy(dst, src, vec->elem_size);
     }
     return ERR_OK;
 }

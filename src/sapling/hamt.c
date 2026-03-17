@@ -20,7 +20,7 @@
 #include "sapling/hamt.h"
 #include "sapling/arena.h"
 #include "sapling/txn_vec.h"
-#include <string.h>
+/* #include <string.h> removed for Lambkin -nostdlib */
 
 #include "sapling/nomalloc.h"
 
@@ -174,7 +174,7 @@ static inline int leaf_key_eq(const HamtLeaf *leaf, const void *key, uint32_t ke
         return 0;
     if (key_len == 0)
         return 1;
-    return memcmp(leaf->data, key, key_len) == 0;
+    return __builtin_memcmp(leaf->data, key, key_len) == 0;
 }
 
 /* ===== Tracked Allocation ===== */
@@ -224,9 +224,9 @@ static int alloc_leaf(SapMemArena *arena, HamtTxnState *st, uint32_t hash, const
     leaf->key_len = key_len;
     leaf->val_len = val_len;
     if (key_len > 0)
-        memcpy(leaf->data, key, key_len);
+        __builtin_memcpy(leaf->data, key, key_len);
     if (val && val_len > 0)
-        memcpy(leaf->data + key_len, val, val_len);
+        __builtin_memcpy(leaf->data + key_len, val, val_len);
     return ERR_OK;
 }
 
@@ -248,7 +248,7 @@ static int alloc_branch_raw(SapMemArena *arena, HamtTxnState *st, uint32_t bitma
     br->tag = HAMT_TAG_BRANCH;
     br->bitmap = bitmap;
     if (child_count > 0 && children)
-        memcpy(br->child_refs, children, payload);
+        __builtin_memcpy(br->child_refs, children, payload);
     return ERR_OK;
 }
 
@@ -271,7 +271,7 @@ static int alloc_collision(SapMemArena *arena, HamtTxnState *st, uint32_t hash,
     col->hash = hash;
     col->count = count;
     if (count > 0 && leaf_refs)
-        memcpy(col->leaf_refs, leaf_refs, payload);
+        __builtin_memcpy(col->leaf_refs, leaf_refs, payload);
     return ERR_OK;
 }
 
@@ -331,7 +331,7 @@ static int branch_with_replaced(SapMemArena *arena, HamtTxnState *st, const Hamt
 
     br->tag = HAMT_TAG_BRANCH;
     br->bitmap = old->bitmap;
-    memcpy(br->child_refs, old->child_refs, pop * sizeof(uint32_t));
+    __builtin_memcpy(br->child_refs, old->child_refs, pop * sizeof(uint32_t));
     br->child_refs[idx] = child_ref;
 
     return ERR_OK;
@@ -415,7 +415,7 @@ static int on_begin(SapTxnCtx *txn, void *parent_state, void **state_out)
     HamtTxnState *st = (HamtTxnState *)sap_txn_scratch_alloc(txn, (uint32_t)sizeof(HamtTxnState));
     if (!st)
         return ERR_OOM;
-    memset(st, 0, sizeof(*st));
+    __builtin_memset(st, 0, sizeof(*st));
 
     SapMemArena *arena = sap_txn_arena(txn);
     int rc = sap_txn_vec_init(&st->new_refs, arena, sizeof(uint32_t), 0);
@@ -532,7 +532,7 @@ int sap_hamt_subsystem_init(SapEnv *env)
                                   (void **)&state, &nodeno);
     if (rc != ERR_OK)
         return rc;
-    memset(state, 0, sizeof(*state));
+    __builtin_memset(state, 0, sizeof(*state));
 
     state->env = env;
     state->root_ref = HAMT_REF_NULL;
@@ -780,7 +780,7 @@ int sap_hamt_put(SapTxnCtx *txn, const void *key, uint32_t key_len, const void *
             if (rc != ERR_OK)
                 return rc;
             HamtCollision *new_col = (HamtCollision *)hamt_resolve(arena, new_child_ref);
-            memcpy(new_col->leaf_refs, col->leaf_refs, col->count * sizeof(uint32_t));
+            __builtin_memcpy(new_col->leaf_refs, col->leaf_refs, col->count * sizeof(uint32_t));
             new_col->leaf_refs[col->count] = new_leaf_ref;
         }
         else
@@ -837,7 +837,7 @@ int sap_hamt_get(SapTxnCtx *txn, const void *key, uint32_t key_len, const void *
         if (tag == HAMT_TAG_LEAF)
         {
             HamtLeaf *leaf = (HamtLeaf *)node;
-            /* Short-circuit: hash first, then length, then memcmp */
+            /* Short-circuit: hash first, then length, then __builtin_memcmp */
             if (leaf->hash != hash)
                 return ERR_NOT_FOUND;
             if (!leaf_key_eq(leaf, key, key_len))

@@ -274,7 +274,7 @@ typedef struct
     uint32_t index_cap;
 } SapSweepCheckpoint;
 
-void sap_sweep_checkpoint_clear(SapSweepCheckpoint *cp);
+void sap_sweep_checkpoint_clear(SapMemArena *arena, SapSweepCheckpoint *cp);
 
 /* Bounded sweep variant with optional resumable checkpoint; max_to_delete==0 is a no-op success.
  * If cp is provided, it avoids scanning from the start of the index on each batch.

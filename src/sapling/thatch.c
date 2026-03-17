@@ -8,7 +8,7 @@
 #include "sapling/thatch.h"
 #include "sapling/arena.h"
 #include "sapling/txn.h"
-#include <string.h>
+/* #include <string.h> removed for Lambkin -nostdlib */
 
 /* ------------------------------------------------------------------ */
 /* Internal State Structures                                          */

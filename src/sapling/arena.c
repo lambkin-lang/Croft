@@ -1,8 +1,16 @@
 #include "sapling/arena.h"
 #include "common/arena_alloc_internal.h"
 
+/* #include <string.h> removed for Lambkin -nostdlib */
+
+#ifndef LAMBKIN_CORE
 #include <stdlib.h>
-#include <string.h>
+#else
+#define malloc(x) (NULL)
+#define calloc(x, y) (NULL)
+#define realloc(x, y) (NULL)
+#define free(x) ((void)0)
+#endif
 
 #ifndef SAPLING_PAGE_SIZE
 #define SAPLING_PAGE_SIZE 4096
@@ -119,11 +127,11 @@ static int arena_resize_slot_tables(SapMemArena *arena, uint32_t min_capacity)
     }
 
     if (arena->malloc_chunks) {
-        memcpy(new_chunks, arena->malloc_chunks, (size_t)old_capacity * sizeof(void *));
+        __builtin_memcpy(new_chunks, arena->malloc_chunks, (size_t)old_capacity * sizeof(void *));
         free(arena->malloc_chunks);
     }
     if (arena->chunk_sizes) {
-        memcpy(new_sizes, arena->chunk_sizes, (size_t)old_capacity * sizeof(uint32_t));
+        __builtin_memcpy(new_sizes, arena->chunk_sizes, (size_t)old_capacity * sizeof(uint32_t));
         free(arena->chunk_sizes);
     }
 
@@ -185,7 +193,7 @@ static int arena_linear_alloc_bytes(SapMemArena *arena, uint32_t size, uint32_t 
     }
 
     *ptr_out = arena->linear_storage + aligned;
-    memset(*ptr_out, 0, size);
+    __builtin_memset(*ptr_out, 0, size);
     arena->linear_used_bytes = aligned + (uint64_t)size;
     return ERR_OK;
 }
@@ -201,9 +209,9 @@ int sap_arena_init(SapMemArena **arena_out, const SapArenaOptions *opts)
     if (!a)
         return ERR_OOM;
 
-    memcpy(&a->opts, opts, sizeof(*opts));
-    memset(&a->stats, 0, sizeof(a->stats));
-    memset(&a->budget, 0, sizeof(a->budget));
+    __builtin_memcpy(&a->opts, opts, sizeof(*opts));
+    __builtin_memset(&a->stats, 0, sizeof(a->stats));
+    __builtin_memset(&a->budget, 0, sizeof(a->budget));
     a->malloc_chunks = NULL;
     a->chunk_sizes = NULL;
     a->chunk_count = 0;
@@ -239,7 +247,7 @@ int sap_arena_init(SapMemArena **arena_out, const SapArenaOptions *opts)
             free(a);
             return ERR_OOM;
         }
-        memset(a->linear_storage, 0, (size_t)max_bytes);
+        __builtin_memset(a->linear_storage, 0, (size_t)max_bytes);
         a->linear_capacity_bytes = max_bytes;
     }
 
@@ -313,7 +321,7 @@ int sap_arena_alloc_page(SapMemArena *arena, void **page_out, uint32_t *pgno_out
             arena->malloc_chunks[pgno] &&
             arena->chunk_sizes[pgno] >= eff_page_size) {
             page = arena->malloc_chunks[pgno];
-            memset(page, 0, eff_page_size);
+            __builtin_memset(page, 0, eff_page_size);
         } else if (arena->opts.type == SAP_ARENA_BACKING_MALLOC) {
             page = calloc(1, eff_page_size);
         } else if (arena->opts.type == SAP_ARENA_BACKING_CUSTOM) {
@@ -422,7 +430,7 @@ int sap_arena_alloc_node(SapMemArena *arena, uint32_t size, void **node_out, uin
             return ERR_INVALID;
         node = arena->opts.cfg.custom.alloc_page(arena->opts.cfg.custom.ctx, size);
         if (node)
-            memset(node, 0, size);
+            __builtin_memset(node, 0, size);
     } else if (arena->opts.type == SAP_ARENA_BACKING_LINEAR) {
         rc = arena_linear_alloc_bytes(arena, size, (uint32_t)_Alignof(max_align_t), &node);
         if (rc != ERR_OK)
@@ -499,6 +507,56 @@ int sap_arena_free_node(SapMemArena *arena, uint32_t nodeno, uint32_t size)
     return ERR_NOT_FOUND;
 }
 
+int sap_arena_alloc_node_zero(SapMemArena *arena, uint32_t size, void **node_out, uint32_t *nodeno_out)
+{
+    int rc = sap_arena_alloc_node(arena, size, node_out, nodeno_out);
+    if (rc == ERR_OK && *node_out) {
+        __builtin_memset(*node_out, 0, size);
+    }
+    return rc;
+}
+
+int sap_arena_realloc_node(SapMemArena *arena, uint32_t old_nodeno, uint32_t old_size, uint32_t new_size, void **node_out, uint32_t *nodeno_out)
+{
+    int rc;
+    void *old_ptr = sap_arena_resolve(arena, old_nodeno);
+    void *new_ptr = NULL;
+    uint32_t new_nodeno = 0;
+
+    if (!arena || !node_out || !nodeno_out)
+        return ERR_INVALID;
+
+    if (!old_ptr) {
+        return sap_arena_alloc_node(arena, new_size, node_out, nodeno_out);
+    }
+
+    if (new_size == 0) {
+        rc = sap_arena_free_node(arena, old_nodeno, old_size);
+        *node_out = NULL;
+        *nodeno_out = 0;
+        return rc;
+    }
+
+    rc = sap_arena_alloc_node(arena, new_size, &new_ptr, &new_nodeno);
+    if (rc != ERR_OK)
+        return rc;
+
+    uint32_t copy_size = old_size < new_size ? old_size : new_size;
+    __builtin_memcpy(new_ptr, old_ptr, copy_size);
+
+    rc = sap_arena_free_node(arena, old_nodeno, old_size);
+    if (rc != ERR_OK) {
+        /* This shouldn't normally fail if old_nodeno was valid, but if it does, 
+           we could try to free the new node, or just leak old. We'll free new. */
+        sap_arena_free_node(arena, new_nodeno, new_size);
+        return rc;
+    }
+
+    *node_out = new_ptr;
+    *nodeno_out = new_nodeno;
+    return ERR_OK;
+}
+
 int sap_arena_free_node_ptr(SapMemArena *arena, void *node, uint32_t size)
 {
     uint32_t i = 0u;
@@ -550,7 +608,7 @@ int sap_arena_alloc_stats_reset(SapMemArena *arena)
 {
     if (!arena)
         return ERR_INVALID;
-    memset(&arena->stats, 0, sizeof(arena->stats));
+    __builtin_memset(&arena->stats, 0, sizeof(arena->stats));
     arena_refresh_active_stats(arena);
     return ERR_OK;
 }
@@ -568,7 +626,7 @@ int sap_arena_alloc_stats_diff(const SapArenaAllocStats *start, const SapArenaAl
 {
     if (!start || !end || !delta_out)
         return ERR_INVALID;
-    memset(delta_out, 0, sizeof(*delta_out));
+    __builtin_memset(delta_out, 0, sizeof(*delta_out));
 
     DIFF_FIELD(page_alloc_calls);
     DIFF_FIELD(page_alloc_ok);

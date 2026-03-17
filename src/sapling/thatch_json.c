@@ -24,7 +24,7 @@
  */
 
 #include "sapling/thatch_json.h"
-#include <string.h>
+/* #include <string.h> removed for Lambkin -nostdlib */
 #include <stdlib.h>  /* strtod */
 #include <limits.h>
 
@@ -53,7 +53,7 @@ static void jp_skip_ws(JParser *p) {
 
 static int jp_match(JParser *p, const char *lit, uint32_t lit_len) {
     if (p->pos + lit_len > p->len) return 0;
-    if (memcmp(p->src + p->pos, lit, lit_len) != 0) return 0;
+    if (__builtin_memcmp(p->src + p->pos, lit, lit_len) != 0) return 0;
     p->pos += lit_len;
     return 1;
 }
@@ -284,7 +284,7 @@ static int jp_parse_number(JParser *p) {
         /* Copy to NUL-terminated buffer for strtod */
         char buf[64];
         if (num_len >= sizeof(buf)) return ERR_PARSE;
-        memcpy(buf, p->src + start, num_len);
+        __builtin_memcpy(buf, p->src + start, num_len);
         buf[num_len] = '\0';
         char *end;
         double dval = strtod(buf, &end);
@@ -659,7 +659,7 @@ int tj_get(ThatchVal val, const char *key, uint32_t key_len, ThatchVal *out) {
         if (rc) return rc;
 
         /* c now points at the value */
-        if (klen == key_len && memcmp(kptr, key, key_len) == 0) {
+        if (klen == key_len && __builtin_memcmp(kptr, key, key_len) == 0) {
             out->region = val.region;
             out->pos = c;
             return ERR_OK;
@@ -676,7 +676,7 @@ int tj_get(ThatchVal val, const char *key, uint32_t key_len, ThatchVal *out) {
 
 int tj_get_str(ThatchVal val, const char *key, ThatchVal *out) {
     if (!key) return ERR_INVALID;
-    return tj_get(val, key, (uint32_t)strlen(key), out);
+    return tj_get(val, key, (uint32_t)__builtin_strlen(key), out);
 }
 
 int tj_index(ThatchVal val, uint32_t index, ThatchVal *out) {

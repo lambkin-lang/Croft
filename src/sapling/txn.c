@@ -1,7 +1,7 @@
 #include "sapling/txn.h"
 #include "common/arena_alloc_internal.h"
-#include <stdlib.h>
-#include <string.h>
+/* #include <stdlib.h> removed */
+/* #include <string.h> removed for Lambkin -nostdlib */
 
 #ifdef SAPLING_THREADED
 #include <pthread.h>
@@ -102,7 +102,8 @@ static void env_txn_unlink(SapTxnCtx *txn)
 }
 
 SapEnv *sap_env_create(SapMemArena *arena, uint32_t page_size) {
-    SapEnv *env = calloc(1, sizeof(SapEnv));
+    SapEnv *env = NULL;
+    sap_arena_alloc_node_zero(arena, sizeof(SapEnv), (void**)&env, NULL);
     if (env) {
         env->arena = arena;
         env->page_size = page_size ? page_size : 4096;
@@ -136,7 +137,7 @@ void sap_env_destroy(SapEnv *env) {
 #ifdef SAPLING_THREADED
         pthread_mutex_destroy(&env->list_mu);
 #endif
-        free(env);
+        sap_arena_free_node_ptr(env->arena, env, sizeof(SapEnv));
     }
 }
 
@@ -196,7 +197,8 @@ SapTxnCtx *sap_txn_begin(SapEnv *env, SapTxnCtx *parent, unsigned int flags)
     if (!env) return NULL;
     if (parent && parent->env != env) return NULL;
     
-    SapTxnCtx *txn = calloc(1, sizeof(SapTxnCtx));
+    SapTxnCtx *txn = NULL;
+    sap_arena_alloc_node_zero(env->arena, sizeof(SapTxnCtx), (void**)&txn, NULL);
     if (!txn) return NULL;
     
     txn->env = env;
@@ -222,7 +224,7 @@ SapTxnCtx *sap_txn_begin(SapEnv *env, SapTxnCtx *parent, unsigned int flags)
     pthread_mutex_unlock(&env->list_mu);
 #endif
     if (!can_begin) {
-        free(txn);
+        sap_arena_free_node_ptr(env->arena, txn, sizeof(SapTxnCtx));
         return NULL;
     }
 
@@ -264,7 +266,7 @@ int sap_txn_commit(SapTxnCtx *txn)
     if (txn->scratch_page) {
         sap_arena_free_page(env->arena, txn->scratch_pgno);
     }
-    free(txn);
+    sap_arena_free_node_ptr(env->arena, txn, sizeof(SapTxnCtx));
     return ERR_OK;
 }
 
@@ -283,7 +285,7 @@ void sap_txn_abort(SapTxnCtx *txn)
     if (txn->scratch_page) {
         sap_arena_free_page(env->arena, txn->scratch_pgno);
     }
-    free(txn);
+    sap_arena_free_node_ptr(env->arena, txn, sizeof(SapTxnCtx));
 }
 
 void *sap_txn_scratch_alloc(SapTxnCtx *txn, uint32_t len)

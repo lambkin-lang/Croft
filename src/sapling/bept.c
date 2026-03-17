@@ -1,9 +1,17 @@
 #include "sapling/bept.h"
 #include "sapling/arena.h"
 #include "sapling/txn.h"
-#include <string.h>
+/* #include <string.h> removed for Lambkin -nostdlib */
+#ifndef LAMBKIN_CORE
 #include <assert.h>
 #include <stdlib.h>
+#else
+#define assert(x) ((void)0)
+#define malloc(x) (NULL)
+#define calloc(x, y) (NULL)
+#define realloc(x, y) (NULL)
+#define free(x) ((void)0)
+#endif
 
 #include "sapling/nomalloc.h"
 
@@ -104,12 +112,15 @@ static int find_diff_bit(const uint32_t *k1, uint32_t k1_len,
 /* ------------------------------------------------------------------ */
 
 static int on_begin(SapTxnCtx *txn, void *parent_state, void **state_out) {
-    /* allocate heap directly; txn scratch page may be released by other plugins */
-    TxnState *state = (TxnState *)calloc(1, sizeof(TxnState));
+    /* allocate via arena; txn scratch page may be released by other plugins */
+    SapEnv *env = sap_txn_env(txn);
+    SapMemArena *arena = sap_env_get_arena(env);
+    TxnState *state = NULL;
+    sap_arena_alloc_node_zero(arena, sizeof(TxnState), (void**)&state, NULL);
     if (!state) return ERR_OOM;
 
     state->txn = txn;
-    state->env_state = (EnvState *)sap_env_subsystem_state(sap_txn_env(txn), BEPT_SUBSYSTEM_ID);
+    state->env_state = (EnvState *)sap_env_subsystem_state(env, BEPT_SUBSYSTEM_ID);
 
     if (parent_state == NULL) {
         state->parent = NULL;
@@ -124,8 +135,8 @@ static int on_begin(SapTxnCtx *txn, void *parent_state, void **state_out) {
 }
 
 static int on_commit(SapTxnCtx *txn, void *state) {
-    (void)txn;
     TxnState *s = (TxnState *)state;
+    SapMemArena *arena = sap_env_get_arena(sap_txn_env(txn));
 
     if (s->parent) {
         s->parent->root = s->root;
@@ -133,13 +144,13 @@ static int on_commit(SapTxnCtx *txn, void *state) {
         s->env_state->root = s->root;
     }
 
-    free(s);
+    sap_arena_free_node_ptr(arena, s, sizeof(TxnState));
     return ERR_OK;
 }
 
 static void on_abort(SapTxnCtx *txn, void *state) {
-    (void)txn;
-    free(state);
+    SapMemArena *arena = sap_env_get_arena(sap_txn_env(txn));
+    sap_arena_free_node_ptr(arena, state, sizeof(TxnState));
 }
 
 static void on_env_destroy(void *env_state) {
@@ -167,7 +178,7 @@ int sap_bept_subsystem_init(SapEnv *env) {
     uint32_t nodeno = 0;
     int rc = sap_arena_alloc_node(arena, (uint32_t)sizeof(EnvState), (void **)&state, &nodeno);
     if (rc != ERR_OK) return rc;
-    memset(state, 0, sizeof(*state));
+    __builtin_memset(state, 0, sizeof(*state));
 
     state->env = env;
     state->root = NULL;
@@ -210,13 +221,13 @@ static int alloc_leaf(SapMemArena *arena, const uint32_t *key, uint32_t key_len,
     
     /* Copy key */
     if (key_len > 0) {
-        memcpy(node->data, key, key_len * sizeof(uint32_t));
+        __builtin_memcpy(node->data, key, key_len * sizeof(uint32_t));
     }
     
     /* Copy value (after key) */
     if (val && val_len > 0) {
         uint8_t *val_ptr = (uint8_t *)(node->data + key_len);
-        memcpy(val_ptr, val, val_len);
+        __builtin_memcpy(val_ptr, val, val_len);
     }
     
     *out = (Node*)node;
@@ -403,7 +414,7 @@ int sap_bept_get(SapTxnCtx *txn, const uint32_t *key, uint32_t key_len_words,
     
     /* Check exact match */
     if (key_len_words != leaf->key_len_words) return ERR_NOT_FOUND;
-    if (memcmp(key, leaf->data, key_len_words * 4) != 0) return ERR_NOT_FOUND;
+    if (__builtin_memcmp(key, leaf->data, key_len_words * 4) != 0) return ERR_NOT_FOUND;
     
     if (val_out) {
         *val_out = leaf->data + leaf->key_len_words;
@@ -417,7 +428,7 @@ static int delete_recursive(SapMemArena *arena, Node *node, const uint32_t *key,
     if (node->type == BEPT_NODE_LEAF) {
         Leaf *leaf = (Leaf *)node;
         /* Check match */
-        if (key_len == leaf->key_len_words && memcmp(key, leaf->data, key_len * 4) == 0) {
+        if (key_len == leaf->key_len_words && __builtin_memcmp(key, leaf->data, key_len * 4) == 0) {
             *out = NULL;
             return ERR_OK;
         } else {
@@ -491,7 +502,7 @@ int sap_bept_min(SapTxnCtx *txn, uint32_t *key_out_buf, uint32_t key_len_words,
     Leaf *leaf = (Leaf *)node;
     if (key_out_buf) {
         uint32_t copy_words = (leaf->key_len_words < key_len_words) ? leaf->key_len_words : key_len_words;
-        memcpy(key_out_buf, leaf->data, copy_words * 4);
+        __builtin_memcpy(key_out_buf, leaf->data, copy_words * 4);
     }
     if (val_out) *val_out = leaf->data + leaf->key_len_words;
     if (val_len_out) *val_len_out = leaf->val_len;

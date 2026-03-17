@@ -137,6 +137,17 @@ int sap_arena_free_node(SapMemArena *arena, uint32_t nodeno, uint32_t size);
 int sap_arena_free_node_ptr(SapMemArena *arena, void *node, uint32_t size);
 
 /*
+ * Allocate and zero-initialize a sub-page node.
+ */
+int sap_arena_alloc_node_zero(SapMemArena *arena, uint32_t size, void **node_out, uint32_t *nodeno_out);
+
+/*
+ * Re-allocate a sub-page node to a new size, copying existing data.
+ * The old node is freed if successful. If it fails, the old node remains valid.
+ */
+int sap_arena_realloc_node(SapMemArena *arena, uint32_t old_nodeno, uint32_t old_size, uint32_t new_size, void **node_out, uint32_t *nodeno_out);
+
+/*
  * Memory inspection: Returns the number of currently active/held pages not in the free list.
  */
 uint32_t sap_arena_active_pages(const SapMemArena *arena);

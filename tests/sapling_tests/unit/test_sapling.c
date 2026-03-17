@@ -2799,7 +2799,7 @@ static void test_ttl_checkpoint(void)
     CHECK(deleted == 1);
     CHECK(txn_commit(w) == ERR_OK);
 
-    sap_sweep_checkpoint_clear(&cp);
+    sap_sweep_checkpoint_clear(g_alloc, &cp);
     db_close(db);
 }
 

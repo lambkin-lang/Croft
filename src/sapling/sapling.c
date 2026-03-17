@@ -12,10 +12,30 @@
 #include "sapling/txn.h"
 #include "common/fault_inject.h"
 
+/* #include <string.h> removed for Lambkin -nostdlib */
+#ifndef LAMBKIN_CORE
 #include <assert.h>
 #include <stdlib.h>
-#include <string.h>
 #include <stdio.h>
+#else
+#define assert(x) ((void)0)
+#define malloc(x) (NULL)
+#define calloc(x, y) (NULL)
+#define realloc(x, y) (NULL)
+#define free(x) ((void)0)
+#define printf(...) ((void)0)
+#define fflush(x) ((void)0)
+#define sap_fi_should_fail(fi, site) (0)
+
+static inline int sap__lamkin_memcmp(const void *s1, const void *s2, size_t n) {
+    const unsigned char *p1 = s1, *p2 = s2;
+    for(size_t i = 0; i < n; i++) {
+        if (p1[i] != p2[i]) return p1[i] < p2[i] ? -1 : 1;
+    }
+    return 0;
+}
+#define __builtin_memcmp sap__lamkin_memcmp
+#endif
 
 /* ================================================================== */
 /* Threading abstraction                                              */
@@ -115,19 +135,19 @@ static uint32_t meta_max_dbs(uint32_t page_size)
 static inline uint16_t rd16(const void *p)
 {
     uint16_t v;
-    memcpy(&v, p, 2);
+    __builtin_memcpy(&v, p, 2);
     return v;
 }
 static inline uint32_t rd32(const void *p)
 {
     uint32_t v;
-    memcpy(&v, p, 4);
+    __builtin_memcpy(&v, p, 4);
     return v;
 }
 static inline uint64_t rd64(const void *p)
 {
     uint64_t v;
-    memcpy(&v, p, 8);
+    __builtin_memcpy(&v, p, 8);
     return v;
 }
 static inline uint64_t rd64be(const void *p)
@@ -137,9 +157,9 @@ static inline uint64_t rd64be(const void *p)
            ((uint64_t)b[3] << 32) | ((uint64_t)b[4] << 24) | ((uint64_t)b[5] << 16) |
            ((uint64_t)b[6] << 8) | (uint64_t)b[7];
 }
-static inline void wr16(void *p, uint16_t v) { memcpy(p, &v, 2); }
-static inline void wr32(void *p, uint32_t v) { memcpy(p, &v, 4); }
-static inline void wr64(void *p, uint64_t v) { memcpy(p, &v, 8); }
+static inline void wr16(void *p, uint16_t v) { __builtin_memcpy(p, &v, 2); }
+static inline void wr32(void *p, uint32_t v) { __builtin_memcpy(p, &v, 4); }
+static inline void wr64(void *p, uint64_t v) { __builtin_memcpy(p, &v, 8); }
 static inline void wr64be(void *p, uint64_t v)
 {
     uint8_t *b = (uint8_t *)p;
@@ -351,7 +371,7 @@ static int u32_find(const uint32_t *a, uint32_t n, uint32_t v, uint32_t *pos)
     return 0;
 }
 
-static int u32_push(uint32_t **a, uint32_t *cnt, uint32_t *cap, uint32_t v)
+static int u32_push(SapMemArena *arena, uint32_t **a, uint32_t *cnt, uint32_t *cap, uint32_t v)
 {
     uint32_t pos;
     if (u32_find(*a, *cnt, v, &pos))
@@ -359,14 +379,19 @@ static int u32_push(uint32_t **a, uint32_t *cnt, uint32_t *cap, uint32_t v)
     if (*cnt >= *cap)
     {
         uint32_t nc = *cap ? *cap * 2 : 16;
-        uint32_t *na = (uint32_t *)realloc(*a, nc * sizeof(uint32_t));
+        uint32_t *na = NULL;
+        sap_arena_alloc_node(arena, nc * sizeof(uint32_t), (void**)&na, NULL);
         if (!na)
             return -1;
+        if (*cnt > 0)
+            __builtin_memcpy(na, *a, *cnt * sizeof(uint32_t));
+        if (*a)
+            sap_arena_free_node_ptr(arena, *a, *cap * sizeof(uint32_t));
         *a = na;
         *cap = nc;
     }
     if (*cnt > pos)
-        memmove(*a + pos + 1, *a + pos, (*cnt - pos) * sizeof(uint32_t));
+        __builtin_memmove(*a + pos + 1, *a + pos, (*cnt - pos) * sizeof(uint32_t));
     (*a)[pos] = v;
     (*cnt)++;
     return 0;
@@ -378,7 +403,7 @@ static int u32_remove(uint32_t *a, uint32_t *cnt, uint32_t v)
     if (!u32_find(a, *cnt, v, &pos))
         return 0;
     if (*cnt - pos - 1 > 0)
-        memmove(a + pos, a + pos + 1, (*cnt - pos - 1) * sizeof(uint32_t));
+        __builtin_memmove(a + pos, a + pos + 1, (*cnt - pos - 1) * sizeof(uint32_t));
     (*cnt)--;
     return 1;
 }
@@ -400,8 +425,9 @@ static void txn_scratch_pop_one(struct BTreeTxnState *txn)
         return;
     seg = txn->scratch_top;
     txn->scratch_top = seg->prev;
-    free(seg->buf);
-    free(seg);
+    if (seg->buf)
+        sap_arena_free_node_ptr(txn->db->arena, seg->buf, seg->cap);
+    sap_arena_free_node_ptr(txn->db->arena, seg, sizeof(*seg));
 }
 
 static void txn_scratch_clear(struct BTreeTxnState *txn)
@@ -467,13 +493,13 @@ static void *txn_scratch_alloc(struct BTreeTxnState *txn, uint32_t len)
         uint32_t cap = (seg && seg->cap) ? seg->cap * 2u : 256u;
         if (cap < n)
             cap = n;
-        seg = (struct ScratchSeg *)malloc(sizeof(*seg));
+        sap_arena_alloc_node(txn->db->arena, sizeof(*seg), (void**)&seg, NULL);
         if (!seg)
             return NULL;
-        seg->buf = (uint8_t *)malloc(cap);
+        sap_arena_alloc_node(txn->db->arena, cap, (void**)&seg->buf, NULL);
         if (!seg->buf)
         {
-            free(seg);
+            sap_arena_free_node_ptr(txn->db->arena, seg, sizeof(*seg));
             return NULL;
         }
         seg->cap = cap;
@@ -490,7 +516,7 @@ static uint8_t *txn_scratch_copy(struct BTreeTxnState *txn, const void *src, uin
     if (!dst)
         return NULL;
     if (len)
-        memcpy(dst, src, len);
+        __builtin_memcpy(dst, src, len);
     return dst;
 }
 
@@ -503,8 +529,9 @@ static void txn_readbuf_clear(struct BTreeTxnState *txn)
     while (cur)
     {
         struct BTreeTxnStateReadBuf *next = cur->next;
-        free(cur->buf);
-        free(cur);
+        if (cur->buf)
+            sap_arena_free_node_ptr(txn->db->arena, cur->buf, cur->len);
+        sap_arena_free_node_ptr(txn->db->arena, cur, sizeof(*cur));
         cur = next;
     }
     txn->read_bufs = NULL;
@@ -515,7 +542,7 @@ static int txn_readbuf_hold(struct BTreeTxnState *txn, uint8_t *buf, uint32_t le
     struct BTreeTxnStateReadBuf *node;
     if (!txn || !buf)
         return -1;
-    node = (struct BTreeTxnStateReadBuf *)malloc(sizeof(*node));
+    sap_arena_alloc_node(txn->db->arena, sizeof(*node), (void**)&node, NULL);
     if (!node)
         return -1;
     node->buf = buf;
@@ -555,7 +582,7 @@ static int key_has_prefix(const void *key, uint32_t key_len, const void *prefix,
         return 0;
     if (prefix_len == 0)
         return 1;
-    return memcmp(key, prefix, prefix_len) == 0;
+    return __builtin_memcmp(key, prefix, prefix_len) == 0;
 }
 
 static void txn_changes_clear(struct BTreeTxnState *txn)
@@ -564,10 +591,10 @@ static void txn_changes_clear(struct BTreeTxnState *txn)
         return;
     for (uint32_t i = 0; i < txn->change_cnt; i++)
     {
-        free(txn->changes[i].key);
-        free(txn->changes[i].val);
+        if (txn->changes[i].key) sap_arena_free_node_ptr(txn->db->arena, txn->changes[i].key, txn->changes[i].key_len);
+        if (txn->changes[i].val) sap_arena_free_node_ptr(txn->db->arena, txn->changes[i].val, txn->changes[i].val_len);
     }
-    free(txn->changes);
+    if (txn->changes) sap_arena_free_node_ptr(txn->db->arena, txn->changes, txn->change_cap * sizeof(struct BTreeTxnStateChange));
     txn->changes = NULL;
     txn->change_cnt = 0;
     txn->change_cap = 0;
@@ -579,8 +606,8 @@ static void txn_changes_truncate(struct BTreeTxnState *txn, uint32_t keep_count)
         return;
     for (uint32_t i = keep_count; i < txn->change_cnt; i++)
     {
-        free(txn->changes[i].key);
-        free(txn->changes[i].val);
+        if (txn->changes[i].key) sap_arena_free_node_ptr(txn->db->arena, txn->changes[i].key, txn->changes[i].key_len);
+        if (txn->changes[i].val) sap_arena_free_node_ptr(txn->db->arena, txn->changes[i].val, txn->changes[i].val_len);
         txn->changes[i].key = NULL;
         txn->changes[i].val = NULL;
         txn->changes[i].key_len = 0;
@@ -610,26 +637,31 @@ static int txn_track_change(struct BTreeTxnState *txn, uint32_t dbi, const void 
         const struct BTreeTxnStateChange *cur = &txn->changes[i];
         if (cur->dbi != dbi || cur->key_len != key_len)
             continue;
-        if (key_len == 0 || memcmp(cur->key, key, key_len) == 0)
+        if (key_len == 0 || __builtin_memcmp(cur->key, key, key_len) == 0)
             return 0;
     }
 
     if (txn->change_cnt >= txn->change_cap)
     {
         uint32_t nc = txn->change_cap ? txn->change_cap * 2u : 16u;
-        struct BTreeTxnStateChange *na = (struct BTreeTxnStateChange *)realloc(txn->changes, (size_t)nc * sizeof(*na));
+        struct BTreeTxnStateChange *na = NULL;
+        sap_arena_alloc_node(txn->db->arena, nc * sizeof(*na), (void**)&na, NULL);
         if (!na)
             return -1;
+        if (txn->change_cnt > 0)
+            __builtin_memcpy(na, txn->changes, txn->change_cnt * sizeof(*na));
+        if (txn->changes)
+            sap_arena_free_node_ptr(txn->db->arena, txn->changes, txn->change_cap * sizeof(*na));
         txn->changes = na;
         txn->change_cap = nc;
     }
 
     if (key_len > 0)
     {
-        kcopy = (uint8_t *)malloc(key_len);
+        sap_arena_alloc_node(txn->db->arena, key_len, (void**)&kcopy, NULL);
         if (!kcopy)
             return -1;
-        memcpy(kcopy, key, key_len);
+        __builtin_memcpy(kcopy, key, key_len);
     }
 
     chg = &txn->changes[txn->change_cnt++];
@@ -664,7 +696,7 @@ static struct WatchRec *watch_snapshot_locked(const struct BTreeEnvState *db, ui
         return NULL;
 
     n = db->num_watches;
-    snap = (struct WatchRec *)calloc(n, sizeof(*snap));
+    sap_arena_alloc_node_zero(db->arena, n * sizeof(*snap), (void**)&snap, NULL);
     if (!snap)
         return NULL;
 
@@ -676,15 +708,15 @@ static struct WatchRec *watch_snapshot_locked(const struct BTreeEnvState *db, ui
         snap[i].ctx = db->watches[i].ctx;
         if (snap[i].prefix_len > 0)
         {
-            snap[i].prefix = (uint8_t *)malloc(snap[i].prefix_len);
+            sap_arena_alloc_node(db->arena, snap[i].prefix_len, (void**)&snap[i].prefix, NULL);
             if (!snap[i].prefix)
             {
                 for (uint32_t j = 0; j < i; j++)
-                    free(snap[j].prefix);
-                free(snap);
+                    if (snap[j].prefix) sap_arena_free_node_ptr(db->arena, snap[j].prefix, snap[j].prefix_len);
+                sap_arena_free_node_ptr(db->arena, snap, n * sizeof(*snap));
                 return NULL;
             }
-            memcpy(snap[i].prefix, db->watches[i].prefix, snap[i].prefix_len);
+            __builtin_memcpy(snap[i].prefix, db->watches[i].prefix, snap[i].prefix_len);
         }
     }
 
@@ -693,13 +725,13 @@ static struct WatchRec *watch_snapshot_locked(const struct BTreeEnvState *db, ui
     return snap;
 }
 
-static void watch_snapshot_free(struct WatchRec *snap, uint32_t count)
+static void watch_snapshot_free(SapMemArena *arena, struct WatchRec *snap, uint32_t count)
 {
     if (!snap)
         return;
     for (uint32_t i = 0; i < count; i++)
-        free(snap[i].prefix);
-    free(snap);
+        if (snap[i].prefix) sap_arena_free_node_ptr(arena, snap[i].prefix, snap[i].prefix_len);
+    sap_arena_free_node_ptr(arena, snap, count * sizeof(*snap));
 }
 
 static void txn_notify_watchers(struct BTreeTxnState *txn, const struct WatchRec *watch_snap,
@@ -748,7 +780,7 @@ static void txn_notify_watchers(struct BTreeTxnState *txn, const struct WatchRec
 static int default_cmp(const void *a, uint32_t al, const void *b, uint32_t bl)
 {
     uint32_t m = al < bl ? al : bl;
-    int c = memcmp(a, b, (size_t)m);
+    int c = __builtin_memcmp(a, b, (size_t)m);
     if (c)
         return c;
     return al < bl ? -1 : al > bl ? 1 : 0;
@@ -806,7 +838,7 @@ static uint32_t meta_cksum(const void *pg, uint32_t data_len)
 
 static void pg_init_internal(void *pg, uint32_t pgno, uint32_t pgsz)
 {
-    memset(pg, 0, pgsz);
+    __builtin_memset(pg, 0, pgsz);
     SET_PG_TYPE(pg, PAGE_INTERNAL);
     SET_PG_PGNO(pg, pgno);
     SET_PG_NUM(pg, 0);
@@ -816,7 +848,7 @@ static void pg_init_internal(void *pg, uint32_t pgno, uint32_t pgsz)
 
 static void pg_init_leaf(void *pg, uint32_t pgno, uint32_t pgsz)
 {
-    memset(pg, 0, pgsz);
+    __builtin_memset(pg, 0, pgsz);
     SET_PG_TYPE(pg, PAGE_LEAF);
     SET_PG_PGNO(pg, pgno);
     SET_PG_NUM(pg, 0);
@@ -826,7 +858,7 @@ static void pg_init_leaf(void *pg, uint32_t pgno, uint32_t pgsz)
 static void pg_init_overflow(void *pg, uint32_t pgno, uint32_t pgsz)
 {
     (void)pgsz;
-    memset(pg, 0, pgsz);
+    __builtin_memset(pg, 0, pgsz);
     SET_PG_TYPE(pg, PAGE_OVERFLOW);
     SET_PG_PGNO(pg, pgno);
     SET_PG_NUM(pg, 0);
@@ -865,7 +897,7 @@ static uint32_t raw_alloc(struct BTreeTxnState *txn)
                 SAP_STAT_INC(db->stats.free_list_next_dropped);
             }
             txn->free_pgno = next;
-            memset(db->pages[pgno], 0, db->page_size);
+            __builtin_memset(db->pages[pgno], 0, db->page_size);
             return pgno;
         }
     }
@@ -877,13 +909,18 @@ static uint32_t raw_alloc(struct BTreeTxnState *txn)
         if (!np)
             return INVALID_PGNO;
         SAP_MUTEX_LOCK(db->write_mutex);
-        memcpy(np, db->pages, db->pages_cap * sizeof(void *));
+        __builtin_memcpy(np, db->pages, db->pages_cap * sizeof(void *));
         if (db->num_old_arrays >= db->cap_old_arrays)
         {
             uint32_t oc = db->cap_old_arrays ? db->cap_old_arrays * 2 : 4;
-            void ***oa = (void ***)realloc(db->old_page_arrays, oc * sizeof(void **));
+            void ***oa = NULL;
+            sap_arena_alloc_node(db->arena, oc * sizeof(void **), (void**)&oa, NULL);
             if (oa)
             {
+                if (db->num_old_arrays > 0)
+                    __builtin_memcpy(oa, db->old_page_arrays, db->num_old_arrays * sizeof(void **));
+                if (db->old_page_arrays)
+                    sap_arena_free_node_ptr(db->arena, db->old_page_arrays, db->cap_old_arrays * sizeof(void **));
                 db->old_page_arrays = oa;
                 db->cap_old_arrays = oc;
             }
@@ -901,7 +938,7 @@ static uint32_t raw_alloc(struct BTreeTxnState *txn)
     if (sap_arena_alloc_page(db->arena, &pg, &dummy_pgno) != 0) pg = NULL;
     if (!pg)
         return INVALID_PGNO;
-    memset(pg, 0, db->page_size);
+    __builtin_memset(pg, 0, db->page_size);
     db->pages[pgno] = pg;
     txn->num_pages++;
     return pgno;
@@ -912,7 +949,7 @@ static uint32_t txn_alloc(struct BTreeTxnState *txn)
     uint32_t pgno = raw_alloc(txn);
     if (pgno == INVALID_PGNO)
         return INVALID_PGNO;
-    if (u32_push(&txn->new_pages, &txn->new_cnt, &txn->new_cap, pgno) < 0)
+    if (u32_push(txn->db->arena, &txn->new_pages, &txn->new_cnt, &txn->new_cap, pgno) < 0)
         return INVALID_PGNO;
     return pgno;
 }
@@ -931,11 +968,11 @@ static uint32_t txn_cow(struct BTreeTxnState *txn, uint32_t pgno)
     uint32_t np = raw_alloc(txn);
     if (np == INVALID_PGNO)
         return INVALID_PGNO;
-    memcpy(db->pages[np], db->pages[pgno], db->page_size);
+    __builtin_memcpy(db->pages[np], db->pages[pgno], db->page_size);
     SET_PG_PGNO(db->pages[np], np);
-    if (u32_push(&txn->new_pages, &txn->new_cnt, &txn->new_cap, np) < 0)
+    if (u32_push(txn->db->arena, &txn->new_pages, &txn->new_cnt, &txn->new_cap, np) < 0)
         return INVALID_PGNO;
-    if (u32_push(&txn->old_pages, &txn->old_cnt, &txn->old_cap, pgno) < 0)
+    if (u32_push(txn->db->arena, &txn->old_pages, &txn->old_cnt, &txn->old_cap, pgno) < 0)
         return INVALID_PGNO;
     return np;
 }
@@ -969,7 +1006,7 @@ static int overflow_mark_chain_old(struct BTreeTxnState *txn, uint32_t first_pgn
         pg = db->pages[pgno];
         if (!pg || PG_TYPE(pg) != PAGE_OVERFLOW)
             return -1;
-        if (u32_push(&txn->old_pages, &txn->old_cnt, &txn->old_cap, pgno) < 0)
+        if (u32_push(txn->db->arena, &txn->old_pages, &txn->old_cnt, &txn->old_cap, pgno) < 0)
             return -1;
         next = OV_NEXT(pg);
         pgno = next;
@@ -1046,7 +1083,7 @@ static int overflow_store_value(struct BTreeTxnState *txn, const void *val, uint
         pg_init_overflow(pg, pgno, db->page_size);
         if (chunk > val_len - off)
             chunk = val_len - off;
-        memcpy(OV_DATA(pg), (const uint8_t *)val + off, chunk);
+        __builtin_memcpy(OV_DATA(pg), (const uint8_t *)val + off, chunk);
         SET_OV_DLEN(pg, chunk);
 
         if (first == INVALID_PGNO)
@@ -1098,7 +1135,7 @@ static int overflow_read_value(struct BTreeTxnState *txn, const void *meta, cons
         return ERR_OK;
     }
 
-    buf = (uint8_t *)malloc(val_len);
+    sap_arena_alloc_node(txn->db->arena, val_len, (void**)&buf, NULL);
     if (!buf)
         return ERR_OOM;
     db = txn->db;
@@ -1109,39 +1146,39 @@ static int overflow_read_value(struct BTreeTxnState *txn, const void *meta, cons
         uint32_t chunk;
         if (pgno == INVALID_PGNO || pgno >= txn->num_pages)
         {
-            free(buf);
+            sap_arena_free_node_ptr(txn->db->arena, buf, val_len);
             return ERR_CORRUPT;
         }
         pg = db->pages[pgno];
         if (!pg || PG_TYPE(pg) != PAGE_OVERFLOW)
         {
-            free(buf);
+            sap_arena_free_node_ptr(txn->db->arena, buf, val_len);
             return ERR_CORRUPT;
         }
         chunk = OV_DLEN(pg);
         if (chunk == 0 || chunk > val_len - copied)
         {
-            free(buf);
+            sap_arena_free_node_ptr(txn->db->arena, buf, val_len);
             return ERR_CORRUPT;
         }
-        memcpy(buf + copied, OV_DATA(pg), chunk);
+        __builtin_memcpy(buf + copied, OV_DATA(pg), chunk);
         copied += chunk;
         pgno = OV_NEXT(pg);
         steps++;
         if (steps > txn->num_pages)
         {
-            free(buf);
+            sap_arena_free_node_ptr(txn->db->arena, buf, val_len);
             return ERR_CORRUPT;
         }
     }
     if (pgno != INVALID_PGNO)
     {
-        free(buf);
+        sap_arena_free_node_ptr(txn->db->arena, buf, val_len);
         return ERR_CORRUPT;
     }
     if (txn_readbuf_hold(txn, buf, val_len, first_pgno) < 0)
     {
-        free(buf);
+        sap_arena_free_node_ptr(txn->db->arena, buf, val_len);
         return ERR_OOM;
     }
     *val_out = buf;
@@ -1206,9 +1243,14 @@ static int db_defer_page(struct BTreeEnvState *db, uint64_t freed_at, uint32_t p
     if (db->num_deferred >= db->cap_deferred)
     {
         uint32_t nc = db->cap_deferred ? db->cap_deferred * 2 : 16;
-        void *nd = realloc(db->deferred, nc * sizeof(db->deferred[0]));
+        void *nd = NULL;
+        sap_arena_alloc_node(db->arena, nc * sizeof(db->deferred[0]), (void**)&nd, NULL);
         if (!nd)
             return -1;
+        if (db->num_deferred > 0)
+            __builtin_memcpy(nd, db->deferred, db->num_deferred * sizeof(db->deferred[0]));
+        if (db->deferred)
+            sap_arena_free_node_ptr(db->arena, db->deferred, db->cap_deferred * sizeof(db->deferred[0]));
         db->deferred = nd;
         db->cap_deferred = nc;
     }
@@ -1241,7 +1283,7 @@ static void meta_write(struct BTreeEnvState *db)
     void *m0 = db->pages[0], *m1 = db->pages[1];
     uint64_t t0 = rd64(PB(m0, META_TXNID)), t1 = rd64(PB(m1, META_TXNID));
     void *dst = (t1 > t0) ? m0 : m1;
-    memset(dst, 0, db->page_size);
+    __builtin_memset(dst, 0, db->page_size);
     wr32(PB(dst, META_MAGIC), SAP_MAGIC);
     wr32(PB(dst, META_VERSION), SAP_VERSION);
     wr64(PB(dst, META_TXNID), db->txnid);
@@ -1375,19 +1417,19 @@ static int leaf_insert(void *pg, uint32_t page_size, int pos, const void *key, u
 
     wr16(PB(pg, coff), klen);
     wr16(PB(pg, coff + 2), vlen);
-    memcpy(PB(pg, coff + LCELL_HDR), key, klen);
+    __builtin_memcpy(PB(pg, coff + LCELL_HDR), key, klen);
     if (val_out)
     {
-        memset(PB(pg, coff + LCELL_HDR + klen), 0, store_vlen);
+        __builtin_memset(PB(pg, coff + LCELL_HDR + klen), 0, store_vlen);
         *val_out = PB(pg, coff + LCELL_HDR + klen);
     }
     else
     {
-        memcpy(PB(pg, coff + LCELL_HDR + klen), val, store_vlen);
+        __builtin_memcpy(PB(pg, coff + LCELL_HDR + klen), val, store_vlen);
     }
     SET_L_DEND(pg, coff);
     if (n > pos)
-        memmove(PB(pg, LEAF_HDR + (uint32_t)(pos + 1) * SLOT_SZ),
+        __builtin_memmove(PB(pg, LEAF_HDR + (uint32_t)(pos + 1) * SLOT_SZ),
                 PB(pg, LEAF_HDR + (uint32_t)pos * SLOT_SZ), (uint32_t)(n - pos) * SLOT_SZ);
     SET_L_SLOT(pg, pos, coff);
     SET_PG_NUM(pg, (uint16_t)(n + 1));
@@ -1401,7 +1443,7 @@ static void leaf_remove(void *pg, int pos)
     uint32_t csz = leaf_cell_size(L_CKLEN(pg, off), L_CVLEN(pg, off));
     uint16_t dend = (uint16_t)L_DEND(pg);
     if (off > dend)
-        memmove(PB(pg, dend + csz), PB(pg, dend), (uint32_t)(off - dend));
+        __builtin_memmove(PB(pg, dend + csz), PB(pg, dend), (uint32_t)(off - dend));
     for (int i = 0; i < n; i++)
     {
         if (i == pos)
@@ -1411,7 +1453,7 @@ static void leaf_remove(void *pg, int pos)
             SET_L_SLOT(pg, i, (uint16_t)(s + csz));
     }
     SET_L_DEND(pg, (uint16_t)(dend + csz));
-    memmove(PB(pg, LEAF_HDR + (uint32_t)pos * SLOT_SZ),
+    __builtin_memmove(PB(pg, LEAF_HDR + (uint32_t)pos * SLOT_SZ),
             PB(pg, LEAF_HDR + (uint32_t)(pos + 1) * SLOT_SZ), (uint32_t)(n - pos - 1) * SLOT_SZ);
     SET_PG_NUM(pg, (uint16_t)(n - 1));
 }
@@ -1456,11 +1498,11 @@ static int int_insert(void *pg, int pos, const void *key, uint16_t klen, uint32_
     uint16_t coff = (uint16_t)(dend - ICELL_SZ(klen));
     wr16(PB(pg, coff), klen);
     wr32(PB(pg, coff + 2), right_child);
-    memcpy(PB(pg, coff + ICELL_HDR), key, klen);
+    __builtin_memcpy(PB(pg, coff + ICELL_HDR), key, klen);
     SET_I_DEND(pg, coff);
     int n = (int)PG_NUM(pg);
     if (n > pos)
-        memmove(PB(pg, INT_HDR + (uint32_t)(pos + 1) * SLOT_SZ),
+        __builtin_memmove(PB(pg, INT_HDR + (uint32_t)(pos + 1) * SLOT_SZ),
                 PB(pg, INT_HDR + (uint32_t)pos * SLOT_SZ), (uint32_t)(n - pos) * SLOT_SZ);
     SET_I_SLOT(pg, pos, coff);
     SET_PG_NUM(pg, (uint16_t)(n + 1));
@@ -1480,7 +1522,7 @@ static void int_remove_child(void *pg, int child_idx)
     uint32_t csz = ICELL_SZ(I_CKLEN(pg, off));
     uint16_t dend = (uint16_t)I_DEND(pg);
     if (off > dend)
-        memmove(PB(pg, dend + csz), PB(pg, dend), (uint32_t)(off - dend));
+        __builtin_memmove(PB(pg, dend + csz), PB(pg, dend), (uint32_t)(off - dend));
     for (int i = 0; i < n; i++)
     {
         if (i == slot_idx)
@@ -1490,7 +1532,7 @@ static void int_remove_child(void *pg, int child_idx)
             SET_I_SLOT(pg, i, (uint16_t)(s + csz));
     }
     SET_I_DEND(pg, (uint16_t)(dend + csz));
-    memmove(PB(pg, INT_HDR + (uint32_t)slot_idx * SLOT_SZ),
+    __builtin_memmove(PB(pg, INT_HDR + (uint32_t)slot_idx * SLOT_SZ),
             PB(pg, INT_HDR + (uint32_t)(slot_idx + 1) * SLOT_SZ),
             (uint32_t)(n - slot_idx - 1) * SLOT_SZ);
     SET_PG_NUM(pg, (uint16_t)(n - 1));
@@ -1561,9 +1603,9 @@ static uint32_t leaf_split(struct BTreeTxnState *txn, uint32_t dbi, uint32_t lpg
         vl2[j] = all[j].vl;
         koff[j] = ko;
         voff[j] = vo;
-        memcpy(kbuf + ko, all[j].k, all[j].kl);
+        __builtin_memcpy(kbuf + ko, all[j].k, all[j].kl);
         ko += all[j].kl;
-        memcpy(vbuf + vo, all[j].v, store_vlen);
+        __builtin_memcpy(vbuf + vo, all[j].v, store_vlen);
         vo += store_vlen;
     }
     int left_n = total / 2;
@@ -1589,7 +1631,7 @@ static uint32_t leaf_split(struct BTreeTxnState *txn, uint32_t dbi, uint32_t lpg
 
     uint16_t sep_off = (uint16_t)L_SLOT(rpg, 0);
     uint16_t sk = L_CKLEN(rpg, sep_off);
-    memcpy(sep_buf, L_CKEY(rpg, sep_off), sk);
+    __builtin_memcpy(sep_buf, L_CKEY(rpg, sep_off), sk);
     *sep_klen_out = sk;
 
     txn_scratch_release(txn, scratch_mark);
@@ -1626,7 +1668,7 @@ static uint32_t int_split(struct BTreeTxnState *txn, uint32_t lpgno, void *lpg, 
         {
             ckl[j] = klen;
             crc[j] = right_child;
-            memcpy(kb + kboff, key, klen);
+            __builtin_memcpy(kb + kboff, key, klen);
             ko[j] = kboff;
             kboff += klen;
         }
@@ -1635,7 +1677,7 @@ static uint32_t int_split(struct BTreeTxnState *txn, uint32_t lpgno, void *lpg, 
             uint16_t off = (uint16_t)I_SLOT(lpg, i);
             ckl[j] = I_CKLEN(lpg, off);
             crc[j] = I_CRIGHT(lpg, off);
-            memcpy(kb + kboff, I_CKEY(lpg, off), ckl[j]);
+            __builtin_memcpy(kb + kboff, I_CKEY(lpg, off), ckl[j]);
             ko[j] = kboff;
             kboff += ckl[j];
             i++;
@@ -1645,7 +1687,7 @@ static uint32_t int_split(struct BTreeTxnState *txn, uint32_t lpgno, void *lpg, 
     int mid = total / 2;
 
     *sep_klen_out = ckl[mid];
-    memcpy(sep_buf, kb + ko[mid], ckl[mid]);
+    __builtin_memcpy(sep_buf, kb + ko[mid], ckl[mid]);
 
     uint32_t right_lc;
     int rpos = mid + 1;
@@ -1755,8 +1797,8 @@ int txn_put_flags_dbi(Txn *txn_pub, uint32_t dbi, const void *key, uint32_t key_
         if (!comp_buf)
             return ERR_OOM;
         wr32(comp_buf, key_len);
-        memcpy(comp_buf + 4, key, key_len);
-        memcpy(comp_buf + 4 + key_len, val, val_len);
+        __builtin_memcpy(comp_buf + 4, key, key_len);
+        __builtin_memcpy(comp_buf + 4 + key_len, val, val_len);
         key = comp_buf;
         key_len = comp_len;
         val = "";
@@ -2002,7 +2044,7 @@ int txn_put_flags_dbi(Txn *txn_pub, uint32_t dbi, const void *key, uint32_t key_
                 rc = ERR_OOM;
                 goto cleanup;
             }
-            memcpy(sep_buf, psep_buf, psep_klen);
+            __builtin_memcpy(sep_buf, psep_buf, psep_klen);
             sep_klen = psep_klen;
             sep_key = sep_buf;
             left_pgno = par_pgno;
@@ -2077,7 +2119,7 @@ int txn_put_if(Txn *txn_pub, uint32_t dbi, const void *key, uint32_t key_len, co
         return rc;
     if (cur_len != expected_len)
         return ERR_CONFLICT;
-    if (expected_len && memcmp(cur_val, expected_val, expected_len) != 0)
+    if (expected_len && __builtin_memcmp(cur_val, expected_val, expected_len) != 0)
         return ERR_CONFLICT;
     return txn_put_dbi((Txn *)txn->sap_txn, dbi, key, key_len, val, val_len);
 }
@@ -2321,7 +2363,7 @@ static int txn_mark_tree_old(struct BTreeTxnState *txn, uint32_t root_pgno)
         return 0;
 
     cap = 64;
-    stack = (uint32_t *)malloc((size_t)cap * sizeof(*stack));
+    sap_arena_alloc_node(txn->db->arena, (uint32_t)(cap * sizeof(*stack)), (void**)&stack, NULL);
     if (!stack)
         return -1;
     stack[top++] = root_pgno;
@@ -2338,7 +2380,7 @@ static int txn_mark_tree_old(struct BTreeTxnState *txn, uint32_t root_pgno)
             rc = -1;
             break;
         }
-        if (u32_push(&txn->old_pages, &txn->old_cnt, &txn->old_cap, pgno) < 0)
+        if (u32_push(txn->db->arena, &txn->old_pages, &txn->old_cnt, &txn->old_cap, pgno) < 0)
         {
             rc = -1;
             break;
@@ -2366,12 +2408,15 @@ static int txn_mark_tree_old(struct BTreeTxnState *txn, uint32_t root_pgno)
                 }
                 if (rc)
                     break;
-                uint32_t *ns = (uint32_t *)realloc(stack, (size_t)nc * sizeof(*stack));
+                uint32_t *ns = NULL;
+                sap_arena_alloc_node(txn->db->arena, (uint32_t)(nc * sizeof(*stack)), (void**)&ns, NULL);
                 if (!ns)
                 {
                     rc = -1;
                     break;
                 }
+                __builtin_memcpy(ns, stack, top * sizeof(*stack));
+                sap_arena_free_node_ptr(txn->db->arena, stack, cap * sizeof(*stack));
                 stack = ns;
                 cap = nc;
             }
@@ -2396,7 +2441,7 @@ static int txn_mark_tree_old(struct BTreeTxnState *txn, uint32_t root_pgno)
         }
     }
 
-    free(stack);
+    sap_arena_free_node_ptr(txn->db->arena, stack, cap * sizeof(*stack));
     return rc;
 }
 
@@ -2410,7 +2455,7 @@ static int txn_tree_has_overflow(struct BTreeTxnState *txn, uint32_t root_pgno)
         return 0;
 
     cap = 64;
-    stack = (uint32_t *)malloc((size_t)cap * sizeof(*stack));
+    sap_arena_alloc_node(txn->db->arena, cap * sizeof(*stack), (void**)&stack, NULL);
     if (!stack)
         return -1;
     stack[top++] = root_pgno;
@@ -2450,12 +2495,15 @@ static int txn_tree_has_overflow(struct BTreeTxnState *txn, uint32_t root_pgno)
                 }
                 if (rc)
                     break;
-                uint32_t *ns = (uint32_t *)realloc(stack, (size_t)nc * sizeof(*stack));
+                uint32_t *ns = NULL;
+                sap_arena_alloc_node(txn->db->arena, (uint32_t)(nc * sizeof(*stack)), (void**)&ns, NULL);
                 if (!ns)
                 {
                     rc = -1;
                     break;
                 }
+                __builtin_memcpy(ns, stack, top * sizeof(*stack));
+                sap_arena_free_node_ptr(txn->db->arena, stack, cap * sizeof(*stack));
                 stack = ns;
                 cap = nc;
             }
@@ -2471,14 +2519,14 @@ static int txn_tree_has_overflow(struct BTreeTxnState *txn, uint32_t root_pgno)
                 uint16_t off = (uint16_t)L_SLOT(pg, i);
                 if (L_CVLEN(pg, off) == OVERFLOW_VALUE_SENTINEL)
                 {
-                    free(stack);
+                    sap_arena_free_node_ptr(txn->db->arena, stack, cap * sizeof(*stack));
                     return 1;
                 }
             }
         }
     }
 
-    free(stack);
+    sap_arena_free_node_ptr(txn->db->arena, stack, cap * sizeof(*stack));
     return rc;
 }
 
@@ -2499,8 +2547,8 @@ static int txn_load_sorted_empty_fast(struct BTreeTxnState *txn, uint32_t dbi, c
     if (count > (UINT32_MAX / (uint32_t)sizeof(*cur)))
         return ERR_INVALID;
 
-    cur = (struct BuildNode *)malloc((size_t)count * sizeof(*cur));
-    next = (struct BuildNode *)malloc((size_t)count * sizeof(*next));
+    sap_arena_alloc_node(txn->db->arena, count * sizeof(*cur), (void**)&cur, NULL);
+    sap_arena_alloc_node(txn->db->arena, count * sizeof(*next), (void**)&next, NULL);
     if (!cur || !next)
         goto cleanup;
     for (uint32_t i = 0; i < count; i++)
@@ -2556,8 +2604,8 @@ static int txn_load_sorted_empty_fast(struct BTreeTxnState *txn, uint32_t dbi, c
                     goto cleanup;
                 }
                 wr32(comp, key_lens[i]);
-                memcpy(comp + 4, k, key_lens[i]);
-                memcpy(comp + 4 + key_lens[i], v, val_lens[i]);
+                __builtin_memcpy(comp + 4, k, key_lens[i]);
+                __builtin_memcpy(comp + 4 + key_lens[i], v, val_lens[i]);
                 store_key = comp;
                 store_val = &zero;
                 store_klen = (uint16_t)comp_len;
@@ -2617,14 +2665,15 @@ static int txn_load_sorted_empty_fast(struct BTreeTxnState *txn, uint32_t dbi, c
             goto cleanup;
         }
 
-        cap = (uint32_t *)malloc((size_t)cur_count * sizeof(*cap));
-        choice = (uint32_t *)calloc((size_t)cur_count + 1, sizeof(*choice));
-        feasible = (uint8_t *)calloc((size_t)cur_count + 1, 1);
+        sap_arena_alloc_node(txn->db->arena, cur_count * sizeof(*cap), (void**)&cap, NULL);
+        sap_arena_alloc_node_zero(txn->db->arena, (cur_count + 1) * sizeof(*choice), (void**)&choice, NULL);
+        sap_arena_alloc_node_zero(txn->db->arena, (cur_count + 1), (void**)&feasible, NULL);
+        
         if (!cap || !choice || !feasible)
         {
-            free(cap);
-            free(choice);
-            free(feasible);
+            if (cap) sap_arena_free_node_ptr(txn->db->arena, cap, cur_count * sizeof(*cap));
+            if (choice) sap_arena_free_node_ptr(txn->db->arena, choice, (cur_count + 1) * sizeof(*choice));
+            if (feasible) sap_arena_free_node_ptr(txn->db->arena, feasible, (cur_count + 1));
             rc = ERR_OOM;
             goto cleanup;
         }
@@ -2664,9 +2713,9 @@ static int txn_load_sorted_empty_fast(struct BTreeTxnState *txn, uint32_t dbi, c
 
         if (!feasible[0])
         {
-            free(cap);
-            free(choice);
-            free(feasible);
+            sap_arena_free_node_ptr(txn->db->arena, cap, cur_count * sizeof(*cap));
+            sap_arena_free_node_ptr(txn->db->arena, choice, (cur_count + 1) * sizeof(*choice));
+            sap_arena_free_node_ptr(txn->db->arena, feasible, (cur_count + 1));
             rc = ERR_FULL;
             goto cleanup;
         }
@@ -2678,9 +2727,9 @@ static int txn_load_sorted_empty_fast(struct BTreeTxnState *txn, uint32_t dbi, c
             void *ipg;
             if (pgno == INVALID_PGNO)
             {
-                free(cap);
-                free(choice);
-                free(feasible);
+                sap_arena_free_node_ptr(txn->db->arena, cap, cur_count * sizeof(*cap));
+                sap_arena_free_node_ptr(txn->db->arena, choice, (cur_count + 1) * sizeof(*choice));
+                sap_arena_free_node_ptr(txn->db->arena, feasible, (cur_count + 1));
                 rc = ERR_OOM;
                 goto cleanup;
             }
@@ -2692,9 +2741,9 @@ static int txn_load_sorted_empty_fast(struct BTreeTxnState *txn, uint32_t dbi, c
                 if (int_insert(ipg, (int)PG_NUM(ipg), cur[idx + j].min_key, cur[idx + j].min_len,
                                cur[idx + j].pgno) < 0)
                 {
-                    free(cap);
-                    free(choice);
-                    free(feasible);
+                    sap_arena_free_node_ptr(txn->db->arena, cap, cur_count * sizeof(*cap));
+                    sap_arena_free_node_ptr(txn->db->arena, choice, (cur_count + 1) * sizeof(*choice));
+                    sap_arena_free_node_ptr(txn->db->arena, feasible, (cur_count + 1));
                     rc = ERR_CORRUPT;
                     goto cleanup;
                 }
@@ -2706,9 +2755,9 @@ static int txn_load_sorted_empty_fast(struct BTreeTxnState *txn, uint32_t dbi, c
             idx += group;
         }
 
-        free(cap);
-        free(choice);
-        free(feasible);
+        sap_arena_free_node_ptr(txn->db->arena, cap, cur_count * sizeof(*cap));
+        sap_arena_free_node_ptr(txn->db->arena, choice, (cur_count + 1) * sizeof(*choice));
+        sap_arena_free_node_ptr(txn->db->arena, feasible, (cur_count + 1));
         if (next_count == 0)
         {
             rc = ERR_CORRUPT;
@@ -2730,8 +2779,8 @@ static int txn_load_sorted_empty_fast(struct BTreeTxnState *txn, uint32_t dbi, c
     rc = ERR_OK;
 
 cleanup:
-    free(cur);
-    free(next);
+    if (cur) sap_arena_free_node_ptr(txn->db->arena, cur, count * sizeof(*cur));
+    if (next) sap_arena_free_node_ptr(txn->db->arena, next, count * sizeof(*next));
     return rc;
 }
 
@@ -2764,10 +2813,11 @@ static int txn_load_sorted_nonempty_merge_fast(struct BTreeTxnState *txn, uint32
     if (max_total > (UINT32_MAX / (uint32_t)sizeof(*mkeys)))
         return ERR_OOM;
 
-    mkeys = (const void **)malloc((size_t)max_total * sizeof(*mkeys));
-    mvals = (const void **)malloc((size_t)max_total * sizeof(*mvals));
-    mklen = (uint32_t *)malloc((size_t)max_total * sizeof(*mklen));
-    mvlen = (uint32_t *)malloc((size_t)max_total * sizeof(*mvlen));
+    sap_arena_alloc_node(txn->db->arena, max_total * sizeof(*mkeys), (void**)&mkeys, NULL);
+    sap_arena_alloc_node(txn->db->arena, max_total * sizeof(*mvals), (void**)&mvals, NULL);
+    sap_arena_alloc_node(txn->db->arena, max_total * sizeof(*mklen), (void**)&mklen, NULL);
+    sap_arena_alloc_node(txn->db->arena, max_total * sizeof(*mvlen), (void**)&mvlen, NULL);
+    
     if (!mkeys || !mvals || !mklen || !mvlen)
         goto cleanup;
 
@@ -2882,11 +2932,10 @@ static int txn_load_sorted_nonempty_merge_fast(struct BTreeTxnState *txn, uint32
 
 cleanup:
     if (cur)
-        cursor_close(cur);
-    free(mkeys);
-    free(mvals);
-    free(mklen);
-    free(mvlen);
+    if (mkeys) sap_arena_free_node_ptr(txn->db->arena, mkeys, max_total * sizeof(*mkeys));
+    if (mvals) sap_arena_free_node_ptr(txn->db->arena, mvals, max_total * sizeof(*mvals));
+    if (mklen) sap_arena_free_node_ptr(txn->db->arena, mklen, max_total * sizeof(*mklen));
+    if (mvlen) sap_arena_free_node_ptr(txn->db->arena, mvlen, max_total * sizeof(*mvlen));
     return rc;
 }
 
@@ -3306,15 +3355,15 @@ struct TTLKeyList
     uint32_t cap;
 };
 
-static void ttl_key_list_clear(struct TTLKeyList *list)
+static void ttl_key_list_clear(SapMemArena *arena, struct TTLKeyList *list)
 {
     if (!list)
         return;
     for (uint32_t i = 0; i < list->count; i++)
-        free(list->keys[i]);
-    free(list->keys);
-    free(list->lens);
-    free(list->expiries);
+        sap_arena_free_node_ptr(arena, list->keys[i], list->lens[i] ? list->lens[i] : 1u);
+    if (list->keys) sap_arena_free_node_ptr(arena, list->keys, list->cap * sizeof(uint8_t *));
+    if (list->lens) sap_arena_free_node_ptr(arena, list->lens, list->cap * sizeof(uint32_t));
+    if (list->expiries) sap_arena_free_node_ptr(arena, list->expiries, list->cap * sizeof(uint64_t));
     list->keys = NULL;
     list->lens = NULL;
     list->expiries = NULL;
@@ -3322,7 +3371,7 @@ static void ttl_key_list_clear(struct TTLKeyList *list)
     list->cap = 0;
 }
 
-static int ttl_key_list_push(struct TTLKeyList *list, const void *key, uint32_t key_len,
+static int ttl_key_list_push(SapMemArena *arena, struct TTLKeyList *list, const void *key, uint32_t key_len,
                              uint64_t expiry)
 {
     uint8_t *copy;
@@ -3331,35 +3380,39 @@ static int ttl_key_list_push(struct TTLKeyList *list, const void *key, uint32_t 
     if (list->count >= list->cap)
     {
         uint32_t nc = list->cap ? list->cap * 2u : 16u;
-        uint8_t **nkeys = (uint8_t **)malloc(nc * sizeof(uint8_t *));
-        uint32_t *nlens = (uint32_t *)malloc(nc * sizeof(uint32_t));
-        uint64_t *nexp = (uint64_t *)malloc(nc * sizeof(uint64_t));
+        uint8_t **nkeys = NULL;
+        uint32_t *nlens = NULL;
+        uint64_t *nexp = NULL;
+        sap_arena_alloc_node(arena, nc * sizeof(uint8_t *), (void**)&nkeys, NULL);
+        sap_arena_alloc_node(arena, nc * sizeof(uint32_t), (void**)&nlens, NULL);
+        sap_arena_alloc_node(arena, nc * sizeof(uint64_t), (void**)&nexp, NULL);
+        
         if (!nkeys || !nlens || !nexp)
         {
-            free(nkeys);
-            free(nlens);
-            free(nexp);
+            if (nkeys) sap_arena_free_node_ptr(arena, nkeys, nc * sizeof(uint8_t *));
+            if (nlens) sap_arena_free_node_ptr(arena, nlens, nc * sizeof(uint32_t));
+            if (nexp) sap_arena_free_node_ptr(arena, nexp, nc * sizeof(uint64_t));
             return ERR_OOM;
         }
         if (list->count > 0)
         {
-            memcpy(nkeys, list->keys, list->count * sizeof(uint8_t *));
-            memcpy(nlens, list->lens, list->count * sizeof(uint32_t));
-            memcpy(nexp, list->expiries, list->count * sizeof(uint64_t));
+            __builtin_memcpy(nkeys, list->keys, list->count * sizeof(uint8_t *));
+            __builtin_memcpy(nlens, list->lens, list->count * sizeof(uint32_t));
+            __builtin_memcpy(nexp, list->expiries, list->count * sizeof(uint64_t));
         }
-        free(list->keys);
-        free(list->lens);
-        free(list->expiries);
+        if (list->keys) sap_arena_free_node_ptr(arena, list->keys, list->cap * sizeof(uint8_t *));
+        if (list->lens) sap_arena_free_node_ptr(arena, list->lens, list->cap * sizeof(uint32_t));
+        if (list->expiries) sap_arena_free_node_ptr(arena, list->expiries, list->cap * sizeof(uint64_t));
         list->keys = nkeys;
         list->lens = nlens;
         list->expiries = nexp;
         list->cap = nc;
     }
-    copy = (uint8_t *)malloc(key_len ? key_len : 1u);
+    sap_arena_alloc_node(arena, key_len ? key_len : 1u, (void**)&copy, NULL);
     if (!copy)
         return ERR_OOM;
     if (key_len > 0)
-        memcpy(copy, key, key_len);
+        __builtin_memcpy(copy, key, key_len);
     list->keys[list->count] = copy;
     list->lens[list->count] = key_len;
     list->expiries[list->count] = expiry;
@@ -3367,44 +3420,44 @@ static int ttl_key_list_push(struct TTLKeyList *list, const void *key, uint32_t 
     return ERR_OK;
 }
 
-static int ttl_encode_lookup_key(const void *key, uint32_t key_len, uint8_t **out_key,
+static int ttl_encode_lookup_key(SapMemArena *arena, const void *key, uint32_t key_len, uint8_t **out_key,
                                  uint32_t *out_len)
 {
-    uint8_t *buf;
+    uint8_t *buf = NULL;
     uint32_t len;
     if (!out_key || !out_len)
         return ERR_INVALID;
     if (key_len > UINT16_MAX - TTL_META_LOOKUP_OVERHEAD)
         return ERR_FULL;
     len = key_len + TTL_META_LOOKUP_OVERHEAD;
-    buf = (uint8_t *)malloc(len ? len : 1u);
+    sap_arena_alloc_node(arena, len ? len : 1u, (void**)&buf, NULL);
     if (!buf)
         return ERR_OOM;
     buf[0] = TTL_META_LOOKUP_TAG;
     if (key_len > 0)
-        memcpy(buf + TTL_META_LOOKUP_OVERHEAD, key, key_len);
+        __builtin_memcpy(buf + TTL_META_LOOKUP_OVERHEAD, key, key_len);
     *out_key = buf;
     *out_len = len;
     return ERR_OK;
 }
 
-static int ttl_encode_index_key(const void *key, uint32_t key_len, uint64_t expiry,
+static int ttl_encode_index_key(SapMemArena *arena, const void *key, uint32_t key_len, uint64_t expiry,
                                 uint8_t **out_key, uint32_t *out_len)
 {
-    uint8_t *buf;
+    uint8_t *buf = NULL;
     uint32_t len;
     if (!out_key || !out_len)
         return ERR_INVALID;
     if (key_len > UINT16_MAX - TTL_META_INDEX_OVERHEAD)
         return ERR_FULL;
     len = key_len + TTL_META_INDEX_OVERHEAD;
-    buf = (uint8_t *)malloc(len ? len : 1u);
+    sap_arena_alloc_node(arena, len ? len : 1u, (void**)&buf, NULL);
     if (!buf)
         return ERR_OOM;
     buf[0] = TTL_META_INDEX_TAG;
     wr64be(buf + 1, expiry);
     if (key_len > 0)
-        memcpy(buf + TTL_META_INDEX_OVERHEAD, key, key_len);
+        __builtin_memcpy(buf + TTL_META_INDEX_OVERHEAD, key, key_len);
     *out_key = buf;
     *out_len = len;
     return ERR_OK;
@@ -3449,10 +3502,10 @@ int txn_put_ttl_dbi(Txn *txn_pub, uint32_t data_dbi, uint32_t ttl_dbi, const voi
     rc = ttl_validate_dbis(txn, data_dbi, ttl_dbi, 1);
     if (rc != ERR_OK)
         return rc;
-    rc = ttl_encode_lookup_key(key, key_len, &lookup_key, &lookup_len);
+    rc = ttl_encode_lookup_key(txn->db->arena, key, key_len, &lookup_key, &lookup_len);
     if (rc != ERR_OK)
         goto done;
-    rc = ttl_encode_index_key(key, key_len, expires_at_ms, &index_key, &index_len);
+    rc = ttl_encode_index_key(txn->db->arena, key, key_len, expires_at_ms, &index_key, &index_len);
     if (rc != ERR_OK)
         goto done;
 
@@ -3469,7 +3522,7 @@ int txn_put_ttl_dbi(Txn *txn_pub, uint32_t data_dbi, uint32_t ttl_dbi, const voi
         rc = (old_exp_len == 8) ? ERR_OK : ERR_CORRUPT;
         if (rc != ERR_OK)
             goto abort_child;
-        rc = ttl_encode_index_key(key, key_len, rd64(old_exp_raw), &old_index_key, &old_index_len);
+        rc = ttl_encode_index_key(txn->db->arena, key, key_len, rd64(old_exp_raw), &old_index_key, &old_index_len);
         if (rc != ERR_OK)
             goto abort_child;
         rc = txn_del_dbi(child, ttl_dbi, old_index_key, old_index_len);
@@ -3501,9 +3554,9 @@ int txn_put_ttl_dbi(Txn *txn_pub, uint32_t data_dbi, uint32_t ttl_dbi, const voi
 abort_child:
     txn_abort(child);
 done:
-    free(lookup_key);
-    free(index_key);
-    free(old_index_key);
+    if (lookup_key) sap_arena_free_node_ptr(txn->db->arena, lookup_key, lookup_len);
+    if (index_key) sap_arena_free_node_ptr(txn->db->arena, index_key, index_len);
+    if (old_index_key) sap_arena_free_node_ptr(txn->db->arena, old_index_key, old_index_len);
     return rc;
 }
 
@@ -3527,19 +3580,19 @@ int txn_get_ttl_dbi(Txn *txn_pub, uint32_t data_dbi, uint32_t ttl_dbi, const voi
     if (rc != ERR_OK)
         return rc;
 
-    rc = ttl_encode_lookup_key(key, key_len, &lookup_key, &lookup_len);
+    rc = ttl_encode_lookup_key(txn->db->arena, key, key_len, &lookup_key, &lookup_len);
     if (rc != ERR_OK)
         return rc;
 
     rc = txn_get_dbi((Txn *)txn->sap_txn, ttl_dbi, lookup_key, lookup_len, &exp_raw, &exp_len);
     if (rc != ERR_OK)
     {
-        free(lookup_key);
+        sap_arena_free_node_ptr(txn->db->arena, lookup_key, lookup_len);
         return rc;
     }
     if (exp_len != 8)
     {
-        free(lookup_key);
+        sap_arena_free_node_ptr(txn->db->arena, lookup_key, lookup_len);
         return ERR_CORRUPT;
     }
 
@@ -3550,19 +3603,19 @@ int txn_get_ttl_dbi(Txn *txn_pub, uint32_t data_dbi, uint32_t ttl_dbi, const voi
         {
             uint8_t *index_key = NULL;
             uint32_t index_len = 0;
-            if (ttl_encode_index_key(key, key_len, expiry, &index_key, &index_len) == ERR_OK)
+            if (ttl_encode_index_key(txn->db->arena, key, key_len, expiry, &index_key, &index_len) == ERR_OK)
             {
                 txn_del_dbi((Txn *)txn->sap_txn, data_dbi, key, key_len);
                 txn_del_dbi((Txn *)txn->sap_txn, ttl_dbi, lookup_key, lookup_len);
                 txn_del_dbi((Txn *)txn->sap_txn, ttl_dbi, index_key, index_len);
-                free(index_key);
+                sap_arena_free_node_ptr(txn->db->arena, index_key, index_len);
             }
         }
-        free(lookup_key);
+        sap_arena_free_node_ptr(txn->db->arena, lookup_key, lookup_len);
         return ERR_NOT_FOUND;
     }
 
-    free(lookup_key);
+    sap_arena_free_node_ptr(txn->db->arena, lookup_key, lookup_len);
     return txn_get_dbi((Txn *)txn->sap_txn, data_dbi, key, key_len, val_out, val_len_out);
 }
 
@@ -3653,7 +3706,7 @@ static int txn_sweep_ttl_inner(struct BTreeTxnState *txn, uint32_t data_dbi, uin
         expiry = rd64be(kb + 1);
         if (expiry <= now_ms)
         {
-            rc = ttl_key_list_push(&expired, kb + TTL_META_INDEX_OVERHEAD,
+            rc = ttl_key_list_push(txn->db->arena, &expired, kb + TTL_META_INDEX_OVERHEAD,
                                    kl - TTL_META_INDEX_OVERHEAD, expiry);
             if (rc != ERR_OK)
                 break;
@@ -3681,7 +3734,7 @@ static int txn_sweep_ttl_inner(struct BTreeTxnState *txn, uint32_t data_dbi, uin
     cursor_close(cur);
     if (rc != ERR_OK)
     {
-        ttl_key_list_clear(&expired);
+        ttl_key_list_clear(txn->db->arena, &expired);
         return rc;
     }
 
@@ -3697,14 +3750,14 @@ static int txn_sweep_ttl_inner(struct BTreeTxnState *txn, uint32_t data_dbi, uin
         int do_delete_data = 0;
         int drc;
 
-        rc = ttl_encode_lookup_key(expired.keys[i], expired.lens[i], &lookup_key, &lookup_len);
+        rc = ttl_encode_lookup_key(txn->db->arena, expired.keys[i], expired.lens[i], &lookup_key, &lookup_len);
         if (rc != ERR_OK)
             break;
-        rc = ttl_encode_index_key(expired.keys[i], expired.lens[i], expired.expiries[i], &index_key,
+        rc = ttl_encode_index_key(txn->db->arena, expired.keys[i], expired.lens[i], expired.expiries[i], &index_key,
                                   &index_len);
         if (rc != ERR_OK)
         {
-            free(lookup_key);
+            sap_arena_free_node_ptr(txn->db->arena, lookup_key, lookup_len);
             break;
         }
 
@@ -3712,15 +3765,15 @@ static int txn_sweep_ttl_inner(struct BTreeTxnState *txn, uint32_t data_dbi, uin
         if (drc != ERR_OK && drc != ERR_NOT_FOUND)
         {
             rc = drc;
-            free(lookup_key);
-            free(index_key);
+            sap_arena_free_node_ptr(txn->db->arena, lookup_key, lookup_len);
+            sap_arena_free_node_ptr(txn->db->arena, index_key, index_len);
             break;
         }
         if (drc == ERR_OK && lookup_vlen != 8)
         {
             rc = ERR_CORRUPT;
-            free(lookup_key);
-            free(index_key);
+            sap_arena_free_node_ptr(txn->db->arena, lookup_key, lookup_len);
+            sap_arena_free_node_ptr(txn->db->arena, index_key, index_len);
             break;
         }
 
@@ -3742,8 +3795,8 @@ static int txn_sweep_ttl_inner(struct BTreeTxnState *txn, uint32_t data_dbi, uin
             if (drc != ERR_OK && drc != ERR_NOT_FOUND)
             {
                 rc = drc;
-                free(lookup_key);
-                free(index_key);
+                sap_arena_free_node_ptr(txn->db->arena, lookup_key, lookup_len);
+                sap_arena_free_node_ptr(txn->db->arena, index_key, index_len);
                 break;
             }
 
@@ -3751,8 +3804,8 @@ static int txn_sweep_ttl_inner(struct BTreeTxnState *txn, uint32_t data_dbi, uin
             if (drc != ERR_OK && drc != ERR_NOT_FOUND)
             {
                 rc = drc;
-                free(lookup_key);
-                free(index_key);
+                sap_arena_free_node_ptr(txn->db->arena, lookup_key, lookup_len);
+                sap_arena_free_node_ptr(txn->db->arena, index_key, index_len);
                 break;
             }
             if (drc == ERR_OK)
@@ -3762,8 +3815,8 @@ static int txn_sweep_ttl_inner(struct BTreeTxnState *txn, uint32_t data_dbi, uin
             if (drc != ERR_OK && drc != ERR_NOT_FOUND)
             {
                 rc = drc;
-                free(lookup_key);
-                free(index_key);
+                sap_arena_free_node_ptr(txn->db->arena, lookup_key, lookup_len);
+                sap_arena_free_node_ptr(txn->db->arena, index_key, index_len);
                 break;
             }
             if (drc == ERR_OK)
@@ -3778,14 +3831,14 @@ static int txn_sweep_ttl_inner(struct BTreeTxnState *txn, uint32_t data_dbi, uin
             if (drc != ERR_OK && drc != ERR_NOT_FOUND)
             {
                 rc = drc;
-                free(lookup_key);
-                free(index_key);
+                sap_arena_free_node_ptr(txn->db->arena, lookup_key, lookup_len);
+                sap_arena_free_node_ptr(txn->db->arena, index_key, index_len);
                 break;
             }
         }
 
-        free(lookup_key);
-        free(index_key);
+        sap_arena_free_node_ptr(txn->db->arena, lookup_key, lookup_len);
+        sap_arena_free_node_ptr(txn->db->arena, index_key, index_len);
     }
 
     if (cp && expired.count > 0)
@@ -3794,38 +3847,43 @@ static int txn_sweep_ttl_inner(struct BTreeTxnState *txn, uint32_t data_dbi, uin
         uint64_t last_expiry = expired.expiries[last_idx];
         uint8_t *new_cp_key = NULL;
         uint32_t new_cp_len = 0;
-        if (ttl_encode_index_key(expired.keys[last_idx], expired.lens[last_idx], last_expiry,
+        if (ttl_encode_index_key(txn->db->arena, expired.keys[last_idx], expired.lens[last_idx], last_expiry,
                                  &new_cp_key, &new_cp_len) == ERR_OK)
         {
             if (new_cp_len > cp->index_cap)
             {
-                void *n = realloc(cp->index_key, new_cp_len);
+                void *n = NULL;
+                sap_arena_alloc_node(txn->db->arena, new_cp_len, (void**)&n, NULL);
                 if (n)
                 {
+                    if (cp->index_len > 0 && cp->index_key)
+                        __builtin_memcpy(n, cp->index_key, cp->index_len);
+                    if (cp->index_key)
+                        sap_arena_free_node_ptr(txn->db->arena, cp->index_key, cp->index_cap);
                     cp->index_key = (uint8_t *)n;
                     cp->index_cap = new_cp_len;
                 }
             }
             if (new_cp_len <= cp->index_cap)
             {
-                memcpy(cp->index_key, new_cp_key, new_cp_len);
+                __builtin_memcpy(cp->index_key, new_cp_key, new_cp_len);
                 cp->index_len = new_cp_len;
             }
-            free(new_cp_key);
+            sap_arena_free_node_ptr(txn->db->arena, new_cp_key, new_cp_len);
         }
     }
 
-    ttl_key_list_clear(&expired);
+    ttl_key_list_clear(txn->db->arena, &expired);
     if (rc == ERR_OK)
         *deleted_count_out = deleted;
     return rc;
 }
 
-void sap_sweep_checkpoint_clear(SapSweepCheckpoint *cp)
+void sap_sweep_checkpoint_clear(SapMemArena *arena, SapSweepCheckpoint *cp)
 {
     if (cp)
     {
-        free(cp->index_key);
+        if (cp->index_key) sap_arena_free_node_ptr(arena, cp->index_key, cp->index_cap);
         cp->index_key = NULL;
         cp->index_len = 0;
         cp->index_cap = 0;
@@ -3889,12 +3947,12 @@ int txn_sweep_ttl_dbi(Txn *txn_pub, uint32_t data_dbi, uint32_t ttl_dbi, uint64_
 
 static void txn_free_mem(struct BTreeTxnState *t)
 {
-    free(t->new_pages);
-    free(t->old_pages);
+    if (t->new_pages) sap_arena_free_node_ptr(t->db->arena, t->new_pages, t->new_cap * sizeof(uint32_t));
+    if (t->old_pages) sap_arena_free_node_ptr(t->db->arena, t->old_pages, t->old_cap * sizeof(uint32_t));
     txn_changes_clear(t);
     txn_readbuf_clear(t);
     txn_scratch_clear(t);
-    free(t);
+    sap_arena_free_node_ptr(t->db->arena, t, sizeof(*t));
 }
 
 static int btree_on_begin(SapTxnCtx *ctx, void *parent_state, void **state_out)
@@ -3915,7 +3973,8 @@ static int btree_on_begin(SapTxnCtx *ctx, void *parent_state, void **state_out)
         return ERR_BUSY;
     }
 
-    struct BTreeTxnState *txn = (struct BTreeTxnState *)calloc(1, sizeof(*txn));
+    struct BTreeTxnState *txn = NULL;
+    sap_arena_alloc_node_zero(db->arena, sizeof(*txn), (void**)&txn, NULL);
     if (!txn)
     {
         if (!par)
@@ -3974,9 +4033,17 @@ static int btree_on_begin(SapTxnCtx *ctx, void *parent_state, void **state_out)
             if (db->num_readers >= db->cap_readers)
             {
                 uint32_t nc = db->cap_readers ? db->cap_readers * 2 : 8;
-                uint64_t *na = (uint64_t *)realloc(db->active_readers, nc * sizeof(uint64_t));
+                uint64_t *na = NULL;
+                uint32_t nodeno = 0;
+                /* Active readers using calloc pattern as an array resize, we can use arena_realloc but we need the nodeno */
+                /* Rather than changing arena.h again, let's just do an alloc + copy + free */
+                sap_arena_alloc_node(db->arena, nc * sizeof(uint64_t), (void**)&na, &nodeno);
                 if (na)
                 {
+                    if (db->active_readers) {
+                        __builtin_memcpy(na, db->active_readers, db->num_readers * sizeof(uint64_t));
+                        sap_arena_free_node_ptr(db->arena, db->active_readers, db->cap_readers * sizeof(uint64_t));
+                    }
                     db->active_readers = na;
                     db->cap_readers = nc;
                 }
@@ -4022,7 +4089,7 @@ static int btree_on_commit(SapTxnCtx *ctx, void *state)
             par_saved_new_pages = (uint32_t *)malloc(bytes);
             if (!par_saved_new_pages)
                 return ERR_OOM;
-            memcpy(par_saved_new_pages, par->new_pages, bytes);
+            __builtin_memcpy(par_saved_new_pages, par->new_pages, bytes);
         }
         if (par_saved_old_cnt > 0)
         {
@@ -4033,7 +4100,7 @@ static int btree_on_commit(SapTxnCtx *ctx, void *state)
                 free(par_saved_new_pages);
                 return ERR_OOM;
             }
-            memcpy(par_saved_old_pages, par->old_pages, bytes);
+            __builtin_memcpy(par_saved_old_pages, par->old_pages, bytes);
         }
 
         for (uint32_t i = 0; i < nd; i++)
@@ -4045,7 +4112,7 @@ static int btree_on_commit(SapTxnCtx *ctx, void *state)
         par->num_pages = txn->num_pages;
         for (uint32_t i = 0; i < txn->new_cnt; i++)
         {
-            if (u32_push(&par->new_pages, &par->new_cnt, &par->new_cap, txn->new_pages[i]) < 0)
+            if (u32_push(par->db->arena, &par->new_pages, &par->new_cnt, &par->new_cap, txn->new_pages[i]) < 0)
             {
                 rc = ERR_OOM;
                 goto nested_commit_rollback;
@@ -4055,7 +4122,7 @@ static int btree_on_commit(SapTxnCtx *ctx, void *state)
         {
             uint32_t p = txn->old_pages[i];
             u32_remove(par->new_pages, &par->new_cnt, p);
-            if (u32_push(&par->old_pages, &par->old_cnt, &par->old_cap, p) < 0)
+            if (u32_push(par->db->arena, &par->old_pages, &par->old_cnt, &par->old_cap, p) < 0)
             {
                 rc = ERR_OOM;
                 goto nested_commit_rollback;
@@ -4081,12 +4148,12 @@ nested_commit_rollback:
         par->num_pages = txn->saved_npages;
         if (par_saved_new_cnt > 0 && par->new_pages && par_saved_new_pages)
         {
-            memcpy(par->new_pages, par_saved_new_pages,
+            __builtin_memcpy(par->new_pages, par_saved_new_pages,
                    (size_t)par_saved_new_cnt * sizeof(uint32_t));
         }
         if (par_saved_old_cnt > 0 && par->old_pages && par_saved_old_pages)
         {
-            memcpy(par->old_pages, par_saved_old_pages,
+            __builtin_memcpy(par->old_pages, par_saved_old_pages,
                    (size_t)par_saved_old_cnt * sizeof(uint32_t));
         }
         par->new_cnt = par_saved_new_cnt;
@@ -4117,7 +4184,7 @@ nested_commit_rollback:
     watch_snap = watch_snapshot_locked(db, &watch_count);
     SAP_MUTEX_UNLOCK(db->write_mutex);
     txn_notify_watchers(txn, watch_snap, watch_count);
-    watch_snapshot_free(watch_snap, watch_count);
+    watch_snapshot_free(txn->db->arena, watch_snap, watch_count);
     txn_free_mem(txn);
     return ERR_OK;
 }
@@ -4239,25 +4306,29 @@ static void btree_on_env_destroy(void *state)
         for (uint32_t i = 0; i < lim; i++)
             if (db->pages[i])
                 sap_arena_free_page_ptr(db->arena, db->pages[i]);
-        free(db->pages);
+        sap_arena_free_node_ptr(db->arena, db->pages, db->pages_cap * sizeof(void *));
     }
-    free(db->active_readers);
-    free(db->deferred);
+    if (db->active_readers)
+        sap_arena_free_node_ptr(db->arena, db->active_readers, db->cap_readers * sizeof(*db->active_readers));
+    if (db->deferred)
+        sap_arena_free_node_ptr(db->arena, db->deferred, db->cap_deferred * sizeof(*db->deferred));
     if (db->watches)
     {
         for (uint32_t i = 0; i < db->num_watches; i++)
-            free(db->watches[i].prefix);
-        free(db->watches);
+            if (db->watches[i].prefix)
+                sap_arena_free_node_ptr(db->arena, db->watches[i].prefix, db->watches[i].prefix_len);
+        sap_arena_free_node_ptr(db->arena, db->watches, db->cap_watches * sizeof(*db->watches));
     }
     if (db->old_page_arrays)
     {
         for (uint32_t i = 0; i < db->num_old_arrays; i++)
-            free(db->old_page_arrays[i]);
-        free(db->old_page_arrays);
+            if (db->old_page_arrays[i])
+                sap_arena_free_node_ptr(db->arena, db->old_page_arrays[i], db->pages_cap * sizeof(void *));
+        sap_arena_free_node_ptr(db->arena, db->old_page_arrays, db->cap_old_arrays * sizeof(void **));
     }
     SAP_MUTEX_DESTROY(db->write_mutex);
     SAP_MUTEX_DESTROY(db->reader_mutex);
-    free(db);
+    sap_arena_free_node_ptr(db->arena, db, sizeof(*db));
 }
 
 static const SapTxnSubsystemCallbacks btree_subsystem_cbs = {
@@ -4300,7 +4371,8 @@ int sap_btree_subsystem_init(SapEnv *env, keycmp_fn cmp, void *cmp_ctx)
     if (max_dbs == 0)
         return ERR_INVALID;
 
-    struct BTreeEnvState *db = (struct BTreeEnvState *)calloc(1, sizeof(*db));
+    struct BTreeEnvState *db = NULL;
+    sap_arena_alloc_node_zero(arena, sizeof(*db), (void**)&db, NULL);
     if (!db)
         return ERR_OOM;
     
@@ -4317,10 +4389,10 @@ int sap_btree_subsystem_init(SapEnv *env, keycmp_fn cmp, void *cmp_ctx)
     SAP_MUTEX_INIT(db->write_mutex);
     SAP_MUTEX_INIT(db->reader_mutex);
     db->pages_cap = 64;
-    db->pages = (void **)calloc(db->pages_cap, sizeof(void *));
+    sap_arena_alloc_node_zero(arena, db->pages_cap * sizeof(void *), (void**)&db->pages, NULL);
     if (!db->pages)
     {
-        free(db);
+        sap_arena_free_node_ptr(arena, db, sizeof(*db));
         return ERR_OOM; /* note: env still owns 'db' pointer via subsystem state? No, caller owns env, we failed to alloc db state */
     }
 
@@ -4335,7 +4407,7 @@ int sap_btree_subsystem_init(SapEnv *env, keycmp_fn cmp, void *cmp_ctx)
                Caller will destroy env anyway on error usually. */
             return ERR_OOM;
         }
-        memset(pg, 0, page_size);
+        __builtin_memset(pg, 0, page_size);
         db->pages[i] = pg;
     }
     db->num_pages = 2;
@@ -4371,8 +4443,8 @@ DB *db_open(SapMemArena *arena, uint32_t page_size, keycmp_fn cmp, void *cmp_ctx
            But this is a legacy wrapper. Ideally we fix leak. */
         struct BTreeEnvState *db = sap_env_subsystem_state(env, SAP_SUBSYSTEM_DB);
         if (db) {
-            if (db->pages) free(db->pages);
-            free(db);
+            if (db->pages) sap_arena_free_node_ptr(arena, db->pages, db->pages_cap * sizeof(void *));
+            sap_arena_free_node_ptr(arena, db, sizeof(*db));
         }
         sap_env_destroy(env);
         return NULL;
@@ -4384,8 +4456,8 @@ DB *db_open(SapMemArena *arena, uint32_t page_size, keycmp_fn cmp, void *cmp_ctx
     {
         struct BTreeEnvState *db = sap_env_subsystem_state(env, SAP_SUBSYSTEM_DB);
         if (db) {
-            if (db->pages) free(db->pages);
-            free(db);
+            if (db->pages) sap_arena_free_node_ptr(arena, db->pages, db->pages_cap * sizeof(void *));
+            sap_arena_free_node_ptr(arena, db, sizeof(*db));
         }
         sap_env_destroy(env);
         return NULL;
@@ -4510,7 +4582,7 @@ int sap_db_corruption_stats_reset(struct SapEnv *db_pub)
     __atomic_store_n(&db->stats.abort_loop_limit_hit, 0, __ATOMIC_RELAXED);
     __atomic_store_n(&db->stats.abort_bounds_break, 0, __ATOMIC_RELAXED);
 #else
-    memset(&db->stats, 0, sizeof(db->stats));
+    __builtin_memset(&db->stats, 0, sizeof(db->stats));
 #endif
     return ERR_OK;
 }
@@ -4529,7 +4601,7 @@ int sap_db_freelist_check(struct SapEnv *db_pub, SapFreelistCheckResult *result)
     struct BTreeEnvState *db = db_pub ? sap_env_subsystem_state((SapEnv*)db_pub, SAP_SUBSYSTEM_DB) : NULL;
     if (!db || !result)
         return ERR_INVALID;
-    memset(result, 0, sizeof(*result));
+    __builtin_memset(result, 0, sizeof(*result));
 
     SAP_MUTEX_LOCK(db->write_mutex);
     if (db->write_txn)
@@ -4675,7 +4747,7 @@ int db_restore(DB *db_pub, sap_read_fn reader, void *ctx)
         }
         new_cap *= 2;
     }
-    new_pages = (void **)calloc(new_cap, sizeof(void *));
+    sap_arena_alloc_node_zero(db->arena, (uint32_t)(new_cap * sizeof(void *)), (void**)&new_pages, NULL);
     if (!new_pages)
     {
         SAP_MUTEX_UNLOCK(db->reader_mutex);
@@ -4694,7 +4766,7 @@ int db_restore(DB *db_pub, sap_read_fn reader, void *ctx)
                 sap_arena_free_page_ptr(db->arena, pg);
             for (uint32_t i = 0; i < loaded; i++)
                 sap_arena_free_page_ptr(db->arena, new_pages[i]);
-            free(new_pages);
+            sap_arena_free_node_ptr(db->arena, new_pages, new_cap * sizeof(void *));
             SAP_MUTEX_UNLOCK(db->reader_mutex);
             SAP_MUTEX_UNLOCK(db->write_mutex);
             return ERR_OOM;
@@ -4737,7 +4809,7 @@ int db_restore(DB *db_pub, sap_read_fn reader, void *ctx)
 
             for (uint32_t i = 0; i < snap_npages; i++)
                 sap_arena_free_page_ptr(db->arena, new_pages[i]);
-            free(new_pages);
+            sap_arena_free_node_ptr(db->arena, new_pages, new_cap * sizeof(void *));
             SAP_MUTEX_UNLOCK(db->reader_mutex);
             SAP_MUTEX_UNLOCK(db->write_mutex);
             return ERR_CORRUPT;
@@ -4781,7 +4853,7 @@ static int watch_same(const struct WatchRec *wr, uint32_t dbi, const void *prefi
         return 0;
     if (prefix_len == 0)
         return 1;
-    return memcmp(wr->prefix, prefix, prefix_len) == 0;
+    return __builtin_memcmp(wr->prefix, prefix, prefix_len) == 0;
 }
 
 static int db_has_watch_locked(const struct BTreeEnvState *db, uint32_t dbi)
@@ -4842,7 +4914,7 @@ int db_watch_dbi(DB *db_pub, uint32_t dbi, const void *prefix, uint32_t prefix_l
     }
 
     wr = &db->watches[db->num_watches];
-    memset(wr, 0, sizeof(*wr));
+    __builtin_memset(wr, 0, sizeof(*wr));
     wr->dbi = dbi;
     wr->prefix_len = prefix_len;
     wr->cb = cb;
@@ -4855,7 +4927,7 @@ int db_watch_dbi(DB *db_pub, uint32_t dbi, const void *prefix, uint32_t prefix_l
             SAP_MUTEX_UNLOCK(db->write_mutex);
             return ERR_OOM;
         }
-        memcpy(wr->prefix, prefix, prefix_len);
+        __builtin_memcpy(wr->prefix, prefix, prefix_len);
     }
     db->num_watches++;
     SAP_MUTEX_UNLOCK(db->write_mutex);
@@ -4890,7 +4962,7 @@ int db_unwatch_dbi(DB *db_pub, uint32_t dbi, const void *prefix, uint32_t prefix
 
         free(wr->prefix);
         if (i + 1 < db->num_watches)
-            memmove(&db->watches[i], &db->watches[i + 1],
+            __builtin_memmove(&db->watches[i], &db->watches[i + 1],
                     (size_t)(db->num_watches - i - 1) * sizeof(*db->watches));
         db->num_watches--;
         SAP_MUTEX_UNLOCK(db->write_mutex);
@@ -4990,7 +5062,8 @@ Cursor *cursor_open_dbi(Txn *txn_pub, uint32_t dbi)
     struct BTreeTxnState *txn = txn_pub ? sap_txn_subsystem_state((SapTxnCtx*)txn_pub, SAP_SUBSYSTEM_DB) : NULL;
     if (!txn || dbi >= txn->db->num_dbs)
         return NULL;
-    struct Cursor *c = (struct Cursor *)calloc(1, sizeof(*c));
+    struct Cursor *c = NULL;
+    sap_arena_alloc_node_zero(txn->db->arena, sizeof(*c), (void**)&c, NULL);
     if (!c)
         return NULL;
     c->txn = txn;
@@ -5001,7 +5074,12 @@ Cursor *cursor_open_dbi(Txn *txn_pub, uint32_t dbi)
 
 Cursor *cursor_open(Txn *txn_pub) { return cursor_open_dbi(txn_pub, 0); }
 
-void cursor_close(Cursor *c) { free(c); }
+void cursor_close(Cursor *c) { 
+    if (c) {
+        struct Cursor *cur = (struct Cursor *)c;
+        sap_arena_free_node_ptr(cur->txn->db->arena, cur, sizeof(*cur));
+    }
+}
 
 int cursor_renew(Cursor *cp, Txn *txn_pub)
 {
@@ -5015,8 +5093,8 @@ int cursor_renew(Cursor *cp, Txn *txn_pub)
         return ERR_INVALID;
     c->txn = txn;
     c->depth = -1;
-    memset(c->stack, 0, sizeof(c->stack));
-    memset(c->idx, 0, sizeof(c->idx));
+    __builtin_memset(c->stack, 0, sizeof(c->stack));
+    __builtin_memset(c->idx, 0, sizeof(c->idx));
     return ERR_OK;
 }
 
@@ -5519,8 +5597,8 @@ int txn_del_dup_dbi(Txn *txn, uint32_t dbi, const void *key, uint32_t key_len, c
     if (!comp)
         return ERR_OOM;
     wr32(comp, key_len);
-    memcpy(comp + 4, key, key_len);
-    memcpy(comp + 4 + key_len, val, val_len);
+    __builtin_memcpy(comp + 4, key, key_len);
+    __builtin_memcpy(comp + 4 + key_len, val, val_len);
     int rc = txn_del_dbi(txn, dbi, comp, (uint32_t)comp_len64);
     txn_scratch_release(tt, scratch_mark);
     return rc;
@@ -5718,7 +5796,7 @@ int cursor_count_dup(Cursor *cp, uint64_t *count)
     if (comp)
     {
         wr32(comp, saved_kl);
-        memcpy(comp + 4, kbuf, saved_kl);
+        __builtin_memcpy(comp + 4, kbuf, saved_kl);
         cursor_seek(cp, comp, comp_len);
     }
     txn_scratch_release(c->txn, scratch_mark);
@@ -5769,7 +5847,7 @@ static int cursor_seek_dupsort_key(Cursor *cp, const void *key, uint32_t key_len
         return ERR_OOM;
     }
     wr32(comp, key_len);
-    memcpy(comp + 4, key, key_len);
+    __builtin_memcpy(comp + 4, key, key_len);
     rc = cursor_seek(cp, comp, comp_len);
     txn_scratch_release(txn, scratch_mark);
 
@@ -5857,7 +5935,7 @@ int cursor_seek_prefix(Cursor *cp, const void *prefix, uint32_t prefix_len)
     uint32_t kl, vl;
     if (cursor_get(cp, &k, &kl, &v, &vl) != ERR_OK)
         return ERR_NOT_FOUND;
-    if (kl < prefix_len || memcmp(k, prefix, prefix_len) != 0)
+    if (kl < prefix_len || __builtin_memcmp(k, prefix, prefix_len) != 0)
     {
         c->depth = -1;
         return ERR_NOT_FOUND;
@@ -5873,5 +5951,5 @@ int cursor_in_prefix(Cursor *cp, const void *prefix, uint32_t prefix_len)
         return 0;
     if (kl < prefix_len)
         return 0;
-    return memcmp(k, prefix, prefix_len) == 0;
+    return __builtin_memcmp(k, prefix, prefix_len) == 0;
 }

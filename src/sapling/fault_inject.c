@@ -5,7 +5,7 @@
  */
 #include "common/fault_inject.h"
 
-#include <string.h>
+/* #include <string.h> removed for Lambkin -nostdlib */
 
 void sap_fi_reset(SapFaultInjector *fi)
 {
@@ -13,7 +13,7 @@ void sap_fi_reset(SapFaultInjector *fi)
     {
         return;
     }
-    memset(fi, 0, sizeof(*fi));
+    __builtin_memset(fi, 0, sizeof(*fi));
 }
 
 int sap_fi_add_rule(SapFaultInjector *fi, const char *site, uint32_t fail_at_hit)
@@ -74,7 +74,7 @@ int sap_fi_should_fail(SapFaultInjector *fi, const char *site)
     for (i = 0; i < fi->num_rules; i++)
     {
         SapFaultRule *rule = &fi->rules[i];
-        if (!rule->active || !rule->site || strcmp(rule->site, site) != 0)
+        if (!rule->active || !rule->site || __builtin_strcmp(rule->site, site) != 0)
         {
             continue;
         }
