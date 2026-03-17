@@ -9,6 +9,7 @@ interface host-a11y {
     group,
     text,
     button,
+    text-area,
   }
 
   record bounds {
@@ -26,6 +27,8 @@ interface host-a11y {
   create-node: func(role: role, bounds: bounds, label: option<list<u8>>) -> node-result;
   add-child: func(parent: option<node>, child: node) -> status;
   update-frame: func(node: node, bounds: bounds) -> status;
+  update-label: func(node: node, label: option<list<u8>>) -> status;
+  update-value: func(node: node, value: option<list<u8>>) -> status;
   destroy-node: func(node: node) -> status;
 }
 

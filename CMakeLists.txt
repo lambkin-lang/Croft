@@ -4809,7 +4809,7 @@ endif()
 if(CROFT_BUILD_TESTS)
     enable_testing()
 
-    add_executable(test_croft tests/test_main.c tests/test_queue.c tests/host_tests/test_fs.c tests/test_editor_text_model.c tests/test_editor_line_cache.c tests/test_editor_syntax.c tests/test_editor_brackets.c tests/test_editor_folding.c tests/test_editor_whitespace.c tests/test_editor_search.c tests/test_editor_status.c tests/test_editor_document.c tests/test_editor_commands.c tests/test_editor_scene_runtime.c tests/test_scene_accessibility.c tests/test_editor_find_replace.c tests/test_editor_wrap_layout.c tests/test_editor_metrics_and_composition.c tests/test_editor_decorations.c tests/test_json_viewer_state.c tests/test_wit_resource_codegen.c tests/test_wit_text_runtime.c tests/test_wit_text_program.c tests/test_wit_store_runtime.c tests/test_wit_mailbox_runtime.c tests/test_wit_host_fs_runtime.c tests/test_wit_host_clock_runtime.c tests/test_wit_host_editor_input_runtime.c tests/test_wit_host_popup_menu_runtime.c tests/wasm_guests/thatch_json_guest.c src/runtime/json_viewer_state.c)
+    add_executable(test_croft tests/test_main.c tests/test_queue.c tests/host_tests/test_fs.c tests/test_editor_text_model.c tests/test_editor_line_cache.c tests/test_editor_syntax.c tests/test_editor_brackets.c tests/test_editor_folding.c tests/test_editor_whitespace.c tests/test_editor_search.c tests/test_editor_status.c tests/test_editor_document.c tests/test_editor_commands.c tests/test_editor_scene_runtime.c tests/test_scene_accessibility.c tests/test_editor_find_replace.c tests/test_editor_wrap_layout.c tests/test_editor_metrics_and_composition.c tests/test_editor_decorations.c tests/test_json_viewer_state.c tests/test_json_viewer_window_app.c tests/test_wit_resource_codegen.c tests/test_wit_text_runtime.c tests/test_wit_text_program.c tests/test_wit_store_runtime.c tests/test_wit_mailbox_runtime.c tests/test_wit_host_fs_runtime.c tests/test_wit_host_clock_runtime.c tests/test_wit_host_editor_input_runtime.c tests/test_wit_host_popup_menu_runtime.c tests/wasm_guests/thatch_json_guest.c src/runtime/json_viewer_state.c src/runtime/json_viewer_window_app.c)
     target_include_directories(test_croft PRIVATE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
     target_link_libraries(test_croft
         PRIVATE
@@ -4823,8 +4823,11 @@ if(CROFT_BUILD_TESTS)
             croft_wit_mailbox_runtime
             croft_wit_host_fs_runtime
             croft_wit_host_clock_runtime
+            croft_wit_host_clock
             croft_wit_host_editor_input_runtime
+            croft_wit_host_gpu2d
             croft_wit_host_popup_menu_runtime
+            croft_wit_host_window
     )
     if(TARGET croft_scene_text_editor_tgfx_metal)
         target_link_libraries(test_croft PRIVATE croft_scene_text_editor_tgfx_metal)
@@ -4836,7 +4839,7 @@ if(CROFT_BUILD_TESTS)
     if(TARGET croft_a11y_stub)
         target_link_libraries(test_croft PRIVATE croft_a11y_stub)
     endif()
-    add_dependencies(test_croft common_wit_schema_gen host_fs_wit_schema_gen host_clock_wit_schema_gen host_editor_input_wit_schema_gen host_popup_menu_wit_schema_gen)
+    add_dependencies(test_croft common_wit_schema_gen host_fs_wit_schema_gen host_clock_wit_schema_gen host_window_wit_schema_gen host_gpu2d_wit_schema_gen host_editor_input_wit_schema_gen host_popup_menu_wit_schema_gen)
     target_compile_definitions(test_croft PRIVATE
         CROFT_WIT_FS_SAMPLE_PATH="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/wit_host_fs_sample.txt"
     )

@@ -31,6 +31,8 @@ static host_a11y_role croft_scene_a11y_default_role(croft_scene_a11y_role role)
             return ROLE_TEXT;
         case CROFT_SCENE_A11Y_ROLE_BUTTON:
             return ROLE_BUTTON;
+        case CROFT_SCENE_A11Y_ROLE_TEXT_AREA:
+            return ROLE_TEXT_AREA;
         default:
             return ROLE_UNKNOWN;
     }
@@ -76,6 +78,22 @@ static void croft_scene_a11y_default_update_frame(void* userdata,
     host_a11y_update_frame((void*)(uintptr_t)node, x, y, w, h);
 }
 
+static void croft_scene_a11y_default_update_label(void* userdata,
+                                                  croft_scene_a11y_handle node,
+                                                  const char* label)
+{
+    (void)userdata;
+    host_a11y_update_label((void*)(uintptr_t)node, label);
+}
+
+static void croft_scene_a11y_default_update_value(void* userdata,
+                                                  croft_scene_a11y_handle node,
+                                                  const char* value)
+{
+    (void)userdata;
+    host_a11y_update_value((void*)(uintptr_t)node, value);
+}
+
 static void croft_scene_a11y_default_destroy_node(void* userdata, croft_scene_a11y_handle node)
 {
     (void)userdata;
@@ -88,6 +106,8 @@ static const croft_scene_a11y_bridge_vtbl g_default_bridge = {
     .create_node = croft_scene_a11y_default_create_node,
     .add_child = croft_scene_a11y_default_add_child,
     .update_frame = croft_scene_a11y_default_update_frame,
+    .update_label = croft_scene_a11y_default_update_label,
+    .update_value = croft_scene_a11y_default_update_value,
     .destroy_node = croft_scene_a11y_default_destroy_node
 };
 
@@ -148,6 +168,20 @@ void croft_scene_a11y_update_frame(croft_scene_a11y_handle node, float x, float 
 {
     if (g_scene_a11y.vtbl && g_scene_a11y.vtbl->update_frame) {
         g_scene_a11y.vtbl->update_frame(g_scene_a11y.userdata, node, x, y, w, h);
+    }
+}
+
+void croft_scene_a11y_update_label(croft_scene_a11y_handle node, const char* label)
+{
+    if (g_scene_a11y.vtbl && g_scene_a11y.vtbl->update_label) {
+        g_scene_a11y.vtbl->update_label(g_scene_a11y.userdata, node, label);
+    }
+}
+
+void croft_scene_a11y_update_value(croft_scene_a11y_handle node, const char* value)
+{
+    if (g_scene_a11y.vtbl && g_scene_a11y.vtbl->update_value) {
+        g_scene_a11y.vtbl->update_value(g_scene_a11y.userdata, node, value);
     }
 }
 

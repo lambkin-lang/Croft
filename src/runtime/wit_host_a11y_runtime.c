@@ -83,9 +83,38 @@ static host_a11y_role croft_wit_host_a11y_role(uint8_t role)
             return ROLE_TEXT;
         case SAP_WIT_HOST_A11Y_ROLE_BUTTON:
             return ROLE_BUTTON;
+        case SAP_WIT_HOST_A11Y_ROLE_TEXT_AREA:
+            return ROLE_TEXT_AREA;
         default:
             return ROLE_UNKNOWN;
     }
+}
+
+static int32_t croft_wit_host_a11y_copy_optional_string(uint8_t present,
+                                                        const uint8_t* data,
+                                                        uint32_t len,
+                                                        char** out_text)
+{
+    char* text = NULL;
+
+    if (!out_text) {
+        return -1;
+    }
+    *out_text = NULL;
+    if (!present) {
+        return 0;
+    }
+
+    text = (char*)malloc((size_t)len + 1u);
+    if (!text) {
+        return -1;
+    }
+    if (len > 0u) {
+        memcpy(text, data, len);
+    }
+    text[len] = '\0';
+    *out_text = text;
+    return 0;
 }
 
 static int32_t croft_wit_host_a11y_slots_reserve(croft_wit_host_a11y_runtime* runtime, size_t needed)
@@ -331,6 +360,66 @@ static int32_t croft_wit_host_a11y_dispatch_update_frame(
     return 0;
 }
 
+static int32_t croft_wit_host_a11y_dispatch_update_label(
+    void* ctx,
+    const SapWitHostA11yUpdateLabel* request,
+    SapWitHostA11yReply* reply_out)
+{
+    croft_wit_host_a11y_runtime* runtime = (croft_wit_host_a11y_runtime*)ctx;
+    croft_wit_host_a11y_slot* node;
+    char* label = NULL;
+
+    if (!runtime || !request || !reply_out) {
+        return -1;
+    }
+    node = croft_wit_host_a11y_lookup(runtime, request->node);
+    if (!node) {
+        croft_wit_host_a11y_reply_status_err(reply_out, "invalid-handle");
+        return 0;
+    }
+    if (croft_wit_host_a11y_copy_optional_string(request->has_label,
+                                                 request->label_data,
+                                                 request->label_len,
+                                                 &label) != 0) {
+        croft_wit_host_a11y_reply_status_err(reply_out, "internal");
+        return 0;
+    }
+    host_a11y_update_label(node->native_node, label);
+    free(label);
+    croft_wit_host_a11y_reply_status_ok(reply_out);
+    return 0;
+}
+
+static int32_t croft_wit_host_a11y_dispatch_update_value(
+    void* ctx,
+    const SapWitHostA11yUpdateValue* request,
+    SapWitHostA11yReply* reply_out)
+{
+    croft_wit_host_a11y_runtime* runtime = (croft_wit_host_a11y_runtime*)ctx;
+    croft_wit_host_a11y_slot* node;
+    char* value = NULL;
+
+    if (!runtime || !request || !reply_out) {
+        return -1;
+    }
+    node = croft_wit_host_a11y_lookup(runtime, request->node);
+    if (!node) {
+        croft_wit_host_a11y_reply_status_err(reply_out, "invalid-handle");
+        return 0;
+    }
+    if (croft_wit_host_a11y_copy_optional_string(request->has_value,
+                                                 request->value_data,
+                                                 request->value_len,
+                                                 &value) != 0) {
+        croft_wit_host_a11y_reply_status_err(reply_out, "internal");
+        return 0;
+    }
+    host_a11y_update_value(node->native_node, value);
+    free(value);
+    croft_wit_host_a11y_reply_status_ok(reply_out);
+    return 0;
+}
+
 static int32_t croft_wit_host_a11y_dispatch_destroy_node(
     void* ctx,
     const SapWitHostA11yDestroyNode* request,
@@ -360,6 +449,8 @@ static const SapWitHostA11yDispatchOps g_croft_wit_host_a11y_dispatch_ops = {
     .create_node = croft_wit_host_a11y_dispatch_create_node,
     .add_child = croft_wit_host_a11y_dispatch_add_child,
     .update_frame = croft_wit_host_a11y_dispatch_update_frame,
+    .update_label = croft_wit_host_a11y_dispatch_update_label,
+    .update_value = croft_wit_host_a11y_dispatch_update_value,
     .destroy_node = croft_wit_host_a11y_dispatch_destroy_node,
 };
 
@@ -417,6 +508,8 @@ static uint8_t croft_wit_host_a11y_bridge_role(croft_scene_a11y_role role)
             return SAP_WIT_HOST_A11Y_ROLE_TEXT;
         case CROFT_SCENE_A11Y_ROLE_BUTTON:
             return SAP_WIT_HOST_A11Y_ROLE_BUTTON;
+        case CROFT_SCENE_A11Y_ROLE_TEXT_AREA:
+            return SAP_WIT_HOST_A11Y_ROLE_TEXT_AREA;
         default:
             return SAP_WIT_HOST_A11Y_ROLE_UNKNOWN;
     }
@@ -487,6 +580,38 @@ static void croft_wit_host_a11y_bridge_update_frame(void* userdata,
     croft_wit_host_a11y_runtime_dispatch(runtime, &command, &reply);
 }
 
+static void croft_wit_host_a11y_bridge_update_label(void* userdata,
+                                                    croft_scene_a11y_handle node,
+                                                    const char* label)
+{
+    croft_wit_host_a11y_runtime* runtime = (croft_wit_host_a11y_runtime*)userdata;
+    SapWitHostA11yCommand command = {0};
+    SapWitHostA11yReply reply = {0};
+
+    command.case_tag = SAP_WIT_HOST_A11Y_COMMAND_UPDATE_LABEL;
+    command.val.update_label.node = (SapWitHostA11yNodeResource)node;
+    command.val.update_label.has_label = label ? 1u : 0u;
+    command.val.update_label.label_data = (const uint8_t*)label;
+    command.val.update_label.label_len = label ? (uint32_t)strlen(label) : 0u;
+    croft_wit_host_a11y_runtime_dispatch(runtime, &command, &reply);
+}
+
+static void croft_wit_host_a11y_bridge_update_value(void* userdata,
+                                                    croft_scene_a11y_handle node,
+                                                    const char* value)
+{
+    croft_wit_host_a11y_runtime* runtime = (croft_wit_host_a11y_runtime*)userdata;
+    SapWitHostA11yCommand command = {0};
+    SapWitHostA11yReply reply = {0};
+
+    command.case_tag = SAP_WIT_HOST_A11Y_COMMAND_UPDATE_VALUE;
+    command.val.update_value.node = (SapWitHostA11yNodeResource)node;
+    command.val.update_value.has_value = value ? 1u : 0u;
+    command.val.update_value.value_data = (const uint8_t*)value;
+    command.val.update_value.value_len = value ? (uint32_t)strlen(value) : 0u;
+    croft_wit_host_a11y_runtime_dispatch(runtime, &command, &reply);
+}
+
 static void croft_wit_host_a11y_bridge_destroy_node(void* userdata, croft_scene_a11y_handle node)
 {
     croft_wit_host_a11y_runtime* runtime = (croft_wit_host_a11y_runtime*)userdata;
@@ -506,6 +631,8 @@ void croft_wit_host_a11y_runtime_install_bridge(croft_wit_host_a11y_runtime* run
         .create_node = croft_wit_host_a11y_bridge_create_node,
         .add_child = croft_wit_host_a11y_bridge_add_child,
         .update_frame = croft_wit_host_a11y_bridge_update_frame,
+        .update_label = croft_wit_host_a11y_bridge_update_label,
+        .update_value = croft_wit_host_a11y_bridge_update_value,
         .destroy_node = croft_wit_host_a11y_bridge_destroy_node
     };
 

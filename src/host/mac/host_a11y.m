@@ -11,6 +11,7 @@
     host_a11y_role _croftRole;
     NSRect _frameInScreenCoordinates;
     NSString* _label;
+    NSString* _value;
     NSMutableArray<CroftAccessibilityElement*>* _children;
     __weak id _parent;
 }
@@ -18,6 +19,8 @@
 - (instancetype)initWithRole:(host_a11y_role)role config:(const host_a11y_node_config*)config;
 - (void)addChild:(CroftAccessibilityElement*)child;
 - (void)updateFrame:(NSRect)frame;
+- (void)updateLabel:(const char*)label;
+- (void)updateValue:(const char*)value;
 
 @end
 
@@ -35,6 +38,7 @@
         } else {
             _label = @"";
         }
+        _value = _label;
         
         // Map our agnostic role to the Apple-specific NSAccessibilityRole string mix-in
         switch (role) {
@@ -47,10 +51,12 @@
             case ROLE_TEXT:
                 // Apple specifically wants StaticText for read-only blocks
                 [self setAccessibilityRole:NSAccessibilityStaticTextRole];
-                [self setAccessibilityValue:_label];
                 break;
             case ROLE_BUTTON:
                 [self setAccessibilityRole:NSAccessibilityButtonRole];
+                break;
+            case ROLE_TEXT_AREA:
+                [self setAccessibilityRole:NSAccessibilityTextAreaRole];
                 break;
             default:
                 [self setAccessibilityRole:NSAccessibilityUnknownRole];
@@ -58,6 +64,7 @@
         }
         
         [self setAccessibilityLabel:_label];
+        [self setAccessibilityValue:_value];
     }
     return self;
 }
@@ -71,9 +78,35 @@
     _frameInScreenCoordinates = frame;
 }
 
+- (void)updateLabel:(const char*)label {
+    if (label) {
+        _label = [NSString stringWithUTF8String:label];
+    } else {
+        _label = @"";
+    }
+    [self setAccessibilityLabel:_label];
+}
+
+- (void)updateValue:(const char*)value {
+    if (value) {
+        _value = [NSString stringWithUTF8String:value];
+    } else {
+        _value = @"";
+    }
+    [self setAccessibilityValue:_value];
+}
+
 // OS queries this to build the geometry boundaries dynamically
 - (NSRect)accessibilityFrame {
     return _frameInScreenCoordinates;
+}
+
+- (NSString*)accessibilityLabel {
+    return _label;
+}
+
+- (id)accessibilityValue {
+    return _value;
 }
 
 - (id)accessibilityParent {
@@ -153,6 +186,20 @@ void host_a11y_update_frame(void* a11y_node, float x, float y, float w, float h)
     // whereas GLFW is top-left. Depending on our Scene graph origins we might need
     // to invert the Y axis using NSScreen here. But for testing, we just pass raw bounds.
     [node updateFrame:NSMakeRect(x, y, w, h)];
+}
+
+void host_a11y_update_label(void* a11y_node, const char* label) {
+    if (!a11y_node) return;
+
+    CroftAccessibilityElement* node = (__bridge CroftAccessibilityElement*)a11y_node;
+    [node updateLabel:label];
+}
+
+void host_a11y_update_value(void* a11y_node, const char* value) {
+    if (!a11y_node) return;
+
+    CroftAccessibilityElement* node = (__bridge CroftAccessibilityElement*)a11y_node;
+    [node updateValue:value];
 }
 
 void host_a11y_destroy_node(void* a11y_node) {

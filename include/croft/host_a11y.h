@@ -14,6 +14,7 @@ typedef enum {
     ROLE_GROUP = 2,
     ROLE_TEXT = 3,
     ROLE_BUTTON = 4,
+    ROLE_TEXT_AREA = 5,
 } host_a11y_role;
 
 // A generic "mix-in" struct for OS-specific affordances not available everywhere.
@@ -53,6 +54,9 @@ void host_a11y_add_child(void* parent_a11y_node, void* child_a11y_node);
 // 5. Update the bounding box of a node (e.g., when the window is dragged or scrolling)
 //    Many OSes query this dynamically, but we can preemptively push frame updates too.
 void host_a11y_update_frame(void* a11y_node, float x, float y, float w, float h);
+
+void host_a11y_update_label(void* a11y_node, const char* label);
+void host_a11y_update_value(void* a11y_node, const char* value);
 
 // 6. Free the allocated OS node
 void host_a11y_destroy_node(void* a11y_node);

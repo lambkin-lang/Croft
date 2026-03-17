@@ -3266,7 +3266,33 @@ static void text_editor_hit_test(scene_node *n, float x, float y, hit_result *ou
 }
 
 static void text_editor_update_accessibility(scene_node *n) {
-    // Phase 4 will map this to ROLE_TEXT_AREA
+    text_editor_node* te = (text_editor_node*)n;
+    croft_editor_status_snapshot snapshot;
+    char status_text[96];
+    char label[128];
+    const char* value = "";
+
+    if (!te || !te->base.a11y_handle) {
+        return;
+    }
+
+    snapshot = text_editor_status_snapshot_from_node(te);
+    if (croft_editor_status_format(&snapshot, status_text, sizeof(status_text)) != 0) {
+        status_text[0] = '\0';
+    }
+
+    if (status_text[0] != '\0') {
+        snprintf(label, sizeof(label), "Code Editor. %s.", status_text);
+    } else {
+        snprintf(label, sizeof(label), "Code Editor.");
+    }
+
+    if (te->text_model.utf8) {
+        value = te->text_model.utf8;
+    }
+
+    croft_scene_a11y_update_label(te->base.a11y_handle, label);
+    croft_scene_a11y_update_value(te->base.a11y_handle, value);
 }
 
 static uint32_t text_editor_hit_index_at_point(text_editor_node *te,
@@ -3916,7 +3942,7 @@ void text_editor_node_init(text_editor_node *n, struct SapEnv *env, float x, flo
         .x = x, .y = y, .width = sx, .height = sy,
         .label = "Code Editor"
     };
-    n->base.a11y_handle = croft_scene_a11y_create_node(CROFT_SCENE_A11Y_ROLE_TEXT, &cfg);
+    n->base.a11y_handle = croft_scene_a11y_create_node(CROFT_SCENE_A11Y_ROLE_TEXT_AREA, &cfg);
 }
 
 void text_editor_node_bind_document(text_editor_node *n, struct croft_editor_document *document) {

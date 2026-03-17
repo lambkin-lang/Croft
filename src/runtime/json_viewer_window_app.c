@@ -12,8 +12,6 @@
 #endif
 
 enum {
-    CROFT_JSON_VIEWER_GPU_CAP_TEXT = 1u << 0,
-    CROFT_JSON_VIEWER_GPU_CAP_PRESENT = 1u << 1,
     CROFT_JSON_VIEWER_MOUSE_PRESS = 1,
     CROFT_JSON_VIEWER_MOUSE_LEFT = 0
 };
@@ -478,29 +476,31 @@ static int croft_json_viewer_handle_event(CroftJsonViewerWindowAppState *state,
         {
             uint32_t line_index = 0u;
 
-            if (event->val.mouse.action == CROFT_JSON_VIEWER_MOUSE_PRESS
-                    && event->val.mouse.button == CROFT_JSON_VIEWER_MOUSE_LEFT) {
+            if (event->val.mouse.action != CROFT_JSON_VIEWER_MOUSE_PRESS
+                    || event->val.mouse.button != CROFT_JSON_VIEWER_MOUSE_LEFT) {
+                return 0;
+            }
+
+            {
                 uint32_t index = 0u;
 
-                if (!croft_json_viewer_sidebar_index_at_point(state,
-                                                              layout,
-                                                              state->cursor_x,
-                                                              state->cursor_y,
-                                                              &index)) {
-                    return 0;
+                if (croft_json_viewer_sidebar_index_at_point(state,
+                                                             layout,
+                                                             state->cursor_x,
+                                                             state->cursor_y,
+                                                             &index)) {
+                    if (croft_json_viewer_state_select_path_index(&state->viewer, index) != ERR_OK) {
+                        return 0;
+                    }
+                    if (state->cursor_x <= layout->sidebar_x + 50.0f
+                            && croft_json_viewer_state_path_is_expandable(&state->viewer, index)) {
+                        return croft_json_viewer_state_toggle_path_index(&state->viewer, index) == ERR_OK;
+                    }
+                    return 1;
                 }
-                if (croft_json_viewer_state_select_path_index(&state->viewer, index) != ERR_OK) {
-                    return 0;
-                }
-                if (state->cursor_x <= layout->sidebar_x + 50.0f
-                        && croft_json_viewer_state_path_is_expandable(&state->viewer, index)) {
-                    return croft_json_viewer_state_toggle_path_index(&state->viewer, index) == ERR_OK;
-                }
-                return 1;
             }
-            if (event->val.mouse.action == CROFT_JSON_VIEWER_MOUSE_PRESS
-                    && event->val.mouse.button == CROFT_JSON_VIEWER_MOUSE_LEFT
-                    && state->cursor_x >= layout->content_x
+
+            if (state->cursor_x >= layout->content_x
                     && state->cursor_x <= layout->content_x + layout->content_w
                     && state->cursor_y >= layout->content_text_y
                     && state->cursor_y <= layout->content_bottom
@@ -990,8 +990,8 @@ int croft_json_viewer_window_app_run(CroftJsonViewerWindowAppState *state,
         goto cleanup;
     }
     sap_wit_dispose_host_gpu2d_reply(&gpu_reply);
-    if ((caps & CROFT_JSON_VIEWER_GPU_CAP_TEXT) == 0u
-            || (caps & CROFT_JSON_VIEWER_GPU_CAP_PRESENT) == 0u) {
+    if ((caps & SAP_WIT_HOST_GPU2D_CAPABILITIES_TEXT) == 0u
+            || (caps & SAP_WIT_HOST_GPU2D_CAPABILITIES_PRESENT) == 0u) {
         rc = ERR_TYPE;
         goto cleanup;
     }
@@ -1037,13 +1037,25 @@ int croft_json_viewer_window_app_run(CroftJsonViewerWindowAppState *state,
         }
         sap_wit_dispose_host_window_reply(&window_reply);
 
+        window_cmd.case_tag = SAP_WIT_HOST_WINDOW_COMMAND_FRAMEBUFFER_SIZE;
+        window_cmd.val.framebuffer_size.window = window;
+        rc = config->window_dispatch(config->dispatch_ctx, &window_cmd, &window_reply);
+        if (rc != ERR_OK || !expect_window_size(&window_reply, &width, &height)) {
+            if (rc == ERR_OK) {
+                sap_wit_dispose_host_window_reply(&window_reply);
+                rc = ERR_TYPE;
+            }
+            goto cleanup;
+        }
+        sap_wit_dispose_host_window_reply(&window_reply);
+        croft_json_viewer_layout_init(&layout, width, height);
+
         window_cmd.case_tag = SAP_WIT_HOST_WINDOW_COMMAND_NEXT_EVENT;
         window_cmd.val.next_event.window = window;
         for (;;) {
             SapWitHostWindowEvent event = {0};
             int event_status;
 
-            croft_json_viewer_layout_init(&layout, 1080u, 720u);
             rc = config->window_dispatch(config->dispatch_ctx, &window_cmd, &window_reply);
             if (rc != ERR_OK) {
                 goto cleanup;
@@ -1087,18 +1099,6 @@ int croft_json_viewer_window_app_run(CroftJsonViewerWindowAppState *state,
         if (now_ms - start_ms >= (uint64_t)auto_close_ms) {
             break;
         }
-
-        window_cmd.case_tag = SAP_WIT_HOST_WINDOW_COMMAND_FRAMEBUFFER_SIZE;
-        window_cmd.val.framebuffer_size.window = window;
-        rc = config->window_dispatch(config->dispatch_ctx, &window_cmd, &window_reply);
-        if (rc != ERR_OK || !expect_window_size(&window_reply, &width, &height)) {
-            if (rc == ERR_OK) {
-                sap_wit_dispose_host_window_reply(&window_reply);
-                rc = ERR_TYPE;
-            }
-            goto cleanup;
-        }
-        sap_wit_dispose_host_window_reply(&window_reply);
 
         gpu_cmd.case_tag = SAP_WIT_HOST_GPU2D_COMMAND_BEGIN_FRAME;
         gpu_cmd.val.begin_frame.surface = surface;

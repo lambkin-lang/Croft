@@ -296,6 +296,8 @@ extern int test_wit_host_editor_input_runtime_composition_actions(void);
 extern int test_wit_host_popup_menu_runtime_empty_popup(void);
 extern int test_wit_host_popup_menu_runtime_unavailable_without_window(void);
 extern int test_json_viewer_state_path_selection_and_expansion(void);
+extern int test_json_viewer_window_app_content_click_selects_and_toggles(void);
+extern int test_json_viewer_window_app_content_click_uses_live_layout(void);
 
 extern void run_test_fs(int argc, char **argv);
 
@@ -462,6 +464,8 @@ int main(void)
     RUN_TEST(test_wit_host_popup_menu_runtime_empty_popup);
     RUN_TEST(test_wit_host_popup_menu_runtime_unavailable_without_window);
     RUN_TEST(test_json_viewer_state_path_selection_and_expansion);
+    RUN_TEST(test_json_viewer_window_app_content_click_selects_and_toggles);
+    RUN_TEST(test_json_viewer_window_app_content_click_uses_live_layout);
 
     printf("\n[host_fs]\n");
     RUN_TEST(run_tier2_fs_tests);
